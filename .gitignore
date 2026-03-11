@@ -5,3 +5,9 @@ scratch/
 *.out
 .env
 .mcp.json
+
+# AI assistant configs
+.claude/
+
+# Ralphex local config
+.ralphex/
