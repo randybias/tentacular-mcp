@@ -328,21 +328,21 @@ Address the highest-priority bugs in tentacular-mcp that affect daily operations
 
 Final verification that all changes work together, existing tests pass, and the chart plus code are ready for deployment.
 
-- [ ] Pull latest from remote before starting.
-- [ ] Run full Go test suite: `go test ./pkg/... -v -count=1 -race` — all tests must pass.
-- [ ] Run Go vet: `go vet ./...` — no issues.
-- [ ] Run linter: `golangci-lint run` — no issues.
-- [ ] Run helm lint: `helm lint charts/tentacular-platform/` — passes.
-- [ ] Run helm template with test values: `helm template test charts/tentacular-platform/ -f charts/tentacular-platform/ci/test-values.yaml` — renders without errors.
-- [ ] Run helm template with dev values: `helm template test charts/tentacular-platform/ -f charts/tentacular-platform/ci/dev-values.yaml` — renders without errors.
-- [ ] Verify binary builds: `go build -o /dev/null ./cmd/tentacular-mcp/` — succeeds.
-- [ ] Verify: ExoskeletonConfig correctly parses all TENTACULAR_EXOSKELETON_* env vars (config_test.go passes).
-- [ ] Verify: IdentityCompiler produces deterministic normalized identifiers for Postgres and NATS (identity_test.go passes).
-- [ ] Verify: PostgresRegistrar handles register/reregister/unregister with correct SQL (postgres_test.go passes).
-- [ ] Verify: NATSRegistrar handles register/reregister/unregister with correct permissions (nats_test.go passes).
-- [ ] Verify: CredentialInjector produces correct Secret structure with `<dep>.<field>` keys (credential_test.go passes).
-- [ ] Verify: ExoskeletonController orchestrates full lifecycle (controller_test.go passes).
-- [ ] Verify: wf_apply with exoskeleton disabled is unchanged from baseline behavior (deploy tests pass).
-- [ ] Verify: wf_apply with exoskeleton enabled triggers registration for tentacular-* deps (deploy tests pass).
-- [ ] Verify: wf_remove with cleanup triggers unregistration (deploy tests pass).
-- [ ] Verify: exo_status, exo_registration, exo_list tools return correct data (exoskeleton tool tests pass).
+- [x] Pull latest from remote before starting.
+- [x] Run full Go test suite: `go test ./pkg/... -v -count=1 -race` — all tests must pass.
+- [x] Run Go vet: `go vet ./...` — no issues.
+- [x] Run linter: `golangci-lint run` — no issues.
+- [x] Run helm lint: `helm lint charts/tentacular-platform/` — passes.
+- [x] Run helm template with test values: `helm template test charts/tentacular-platform/ -f charts/tentacular-platform/ci/test-values.yaml` — renders without errors.
+- [x] Run helm template with dev values: `helm template test charts/tentacular-platform/ -f charts/tentacular-platform/ci/dev-values.yaml` — renders without errors.
+- [x] Verify binary builds: `go build -o /dev/null ./cmd/tentacular-mcp/` — succeeds.
+- [x] Verify: ExoskeletonConfig correctly parses all TENTACULAR_EXOSKELETON_* env vars (config_test.go passes).
+- [x] Verify: IdentityCompiler produces deterministic normalized identifiers for Postgres and NATS (identity_test.go passes).
+- [x] Verify: PostgresRegistrar handles register/reregister/unregister with correct SQL (postgres_test.go passes).
+- [x] Verify: NATSRegistrar handles register/reregister/unregister with correct permissions (nats_test.go passes).
+- [x] Verify: CredentialInjector produces correct Secret structure with `<dep>.<field>` keys (credential_test.go passes).
+- [x] Verify: ExoskeletonController orchestrates full lifecycle (controller_test.go passes).
+- [x] Verify: wf_apply with exoskeleton disabled is unchanged from baseline behavior (deploy tests pass).
+- [x] Verify: wf_apply with exoskeleton enabled triggers registration for tentacular-* deps (deploy tests pass).
+- [x] Verify: wf_remove with cleanup triggers unregistration (deploy tests pass).
+- [x] Verify: exo_status, exo_registration, exo_list tools return correct data (exoskeleton tool tests pass).
