@@ -161,23 +161,33 @@ func (c *ExoskeletonController) Unregister(ctx context.Context, namespace, workf
 }
 
 // workflowYAMLDeps is the internal representation of a workflow YAML for
-// dependency detection.
+// dependency detection. Matches the contract.dependencies map format used
+// by the workflow schema (same as extractModuleDeps in deploy.go).
 type workflowYAMLDeps struct {
-	Dependencies []string `yaml:"dependencies"`
+	Contract *contractYAMLDeps `yaml:"contract"`
+}
+
+type contractYAMLDeps struct {
+	Dependencies map[string]interface{} `yaml:"dependencies"`
 }
 
 // DetectExoskeletonDeps parses workflow YAML content and returns dependency
-// names that match the "tentacular-" prefix.
+// names that match the "tentacular-" prefix. Dependencies are parsed from
+// the contract.dependencies map (keys are dependency names).
 func DetectExoskeletonDeps(workflowYAML string) ([]string, error) {
 	var doc workflowYAMLDeps
 	if err := yaml.Unmarshal([]byte(workflowYAML), &doc); err != nil {
 		return nil, fmt.Errorf("parse workflow YAML: %w", err)
 	}
 
+	if doc.Contract == nil || doc.Contract.Dependencies == nil {
+		return nil, nil
+	}
+
 	var deps []string
-	for _, d := range doc.Dependencies {
-		if strings.HasPrefix(d, "tentacular-") {
-			deps = append(deps, d)
+	for name := range doc.Contract.Dependencies {
+		if strings.HasPrefix(name, "tentacular-") {
+			deps = append(deps, name)
 		}
 	}
 

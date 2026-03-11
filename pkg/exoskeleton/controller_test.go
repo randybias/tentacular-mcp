@@ -386,33 +386,43 @@ func TestDetectExoskeletonDeps(t *testing.T) {
 		{
 			name: "both postgres and nats",
 			yaml: `
-dependencies:
-  - tentacular-postgres
-  - tentacular-nats
-  - redis
+contract:
+  dependencies:
+    tentacular-postgres:
+      protocol: postgresql
+    tentacular-nats:
+      protocol: nats
+    redis:
+      protocol: redis
 `,
 			expected: []string{"tentacular-postgres", "tentacular-nats"},
 		},
 		{
 			name: "postgres only",
 			yaml: `
-dependencies:
-  - tentacular-postgres
-  - external-api
+contract:
+  dependencies:
+    tentacular-postgres:
+      protocol: postgresql
+    external-api:
+      protocol: http
 `,
 			expected: []string{"tentacular-postgres"},
 		},
 		{
 			name: "no tentacular deps",
 			yaml: `
-dependencies:
-  - redis
-  - mongodb
+contract:
+  dependencies:
+    redis:
+      protocol: redis
+    mongodb:
+      protocol: mongodb
 `,
 			expected: nil,
 		},
 		{
-			name:     "no dependencies key",
+			name:     "no contract key",
 			yaml:     `name: my-workflow`,
 			expected: nil,
 		},
@@ -429,10 +439,14 @@ dependencies:
 		{
 			name: "future tentacular services",
 			yaml: `
-dependencies:
-  - tentacular-postgres
-  - tentacular-nats
-  - tentacular-rustfs
+contract:
+  dependencies:
+    tentacular-postgres:
+      protocol: postgresql
+    tentacular-nats:
+      protocol: nats
+    tentacular-rustfs:
+      protocol: s3
 `,
 			expected: []string{"tentacular-postgres", "tentacular-nats", "tentacular-rustfs"},
 		},
@@ -453,9 +467,14 @@ dependencies:
 			if len(deps) != len(tt.expected) {
 				t.Fatalf("expected %d deps, got %d: %v", len(tt.expected), len(deps), deps)
 			}
-			for i, d := range deps {
-				if d != tt.expected[i] {
-					t.Errorf("dep[%d]: got %s, want %s", i, d, tt.expected[i])
+			// Use set comparison since map iteration order is non-deterministic
+			depSet := make(map[string]bool)
+			for _, d := range deps {
+				depSet[d] = true
+			}
+			for _, e := range tt.expected {
+				if !depSet[e] {
+					t.Errorf("expected dep %q not found in %v", e, deps)
 				}
 			}
 		})

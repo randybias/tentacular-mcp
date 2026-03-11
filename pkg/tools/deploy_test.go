@@ -873,7 +873,7 @@ func TestWorkflowApplyWithExoskeletonAndTentacularDeps(t *testing.T) {
 			"kind":       "ConfigMap",
 			"metadata":   map[string]interface{}{"name": "my-workflow-config"},
 			"data": map[string]interface{}{
-				"workflow.yaml": "dependencies:\n  - tentacular-postgres\n  - tentacular-nats\n",
+				"workflow.yaml": "contract:\n  dependencies:\n    tentacular-postgres:\n      protocol: postgresql\n    tentacular-nats:\n      protocol: nats\n",
 			},
 		},
 	}
@@ -931,7 +931,7 @@ func TestWorkflowApplyWithExoskeletonNoTentacularDeps(t *testing.T) {
 			"kind":       "ConfigMap",
 			"metadata":   map[string]interface{}{"name": "my-config"},
 			"data": map[string]interface{}{
-				"workflow.yaml": "dependencies:\n  - redis\n  - rabbitmq\n",
+				"workflow.yaml": "contract:\n  dependencies:\n    redis:\n      protocol: redis\n    rabbitmq:\n      protocol: amqp\n",
 			},
 		},
 	}
@@ -980,7 +980,7 @@ func TestWorkflowApplyWithNilExoskeletonController(t *testing.T) {
 			"kind":       "ConfigMap",
 			"metadata":   map[string]interface{}{"name": "my-config"},
 			"data": map[string]interface{}{
-				"workflow.yaml": "dependencies:\n  - tentacular-postgres\n",
+				"workflow.yaml": "contract:\n  dependencies:\n    tentacular-postgres:\n      protocol: postgresql\n",
 			},
 		},
 	}

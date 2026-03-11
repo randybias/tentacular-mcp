@@ -1,6 +1,7 @@
 package exoskeleton
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -53,9 +54,9 @@ func TestCompileIdentity_SpecialCharacters(t *testing.T) {
 	if id.PostgresRole != "tn_tent_my_app_v2_workflow_1_" {
 		t.Errorf("PostgresRole = %q, want %q", id.PostgresRole, "tn_tent_my_app_v2_workflow_1_")
 	}
-	// NATS preserves hyphens-to-underscores
-	if id.NATSPrincipal != "tent_my.app@v2.workflow#1!" {
-		t.Errorf("NATSPrincipal = %q, want %q", id.NATSPrincipal, "tent_my.app@v2.workflow#1!")
+	// NATS also sanitizes special chars (dots, @, #, !) to underscores
+	if id.NATSPrincipal != "tent_my_app_v2.workflow_1_" {
+		t.Errorf("NATSPrincipal = %q, want %q", id.NATSPrincipal, "tent_my_app_v2.workflow_1_")
 	}
 }
 
@@ -73,9 +74,10 @@ func TestCompileIdentity_LongNames_Truncation(t *testing.T) {
 	if len(id.PostgresSchema) > 63 {
 		t.Errorf("PostgresSchema length = %d, should be <= 63", len(id.PostgresSchema))
 	}
-	// Should have hash suffix
-	if !strings.Contains(id.PostgresRole, "_") {
-		t.Error("truncated PostgresRole should contain hash suffix separator")
+	// Should end with a hash suffix like _abcdef01
+	hashSuffix := regexp.MustCompile(`_[0-9a-f]{8}$`)
+	if !hashSuffix.MatchString(id.PostgresRole) {
+		t.Errorf("truncated PostgresRole %q should end with a hex hash suffix", id.PostgresRole)
 	}
 }
 

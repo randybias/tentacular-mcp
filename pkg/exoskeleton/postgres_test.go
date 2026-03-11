@@ -464,9 +464,9 @@ func TestRegisterSchemaError(t *testing.T) {
 func TestPasswordGeneration(t *testing.T) {
 	passwords := make(map[string]bool)
 	for i := 0; i < 100; i++ {
-		pw, err := generatePassword()
+		pw, err := generateRandomHex()
 		if err != nil {
-			t.Fatalf("generatePassword failed: %v", err)
+			t.Fatalf("generateRandomHex failed: %v", err)
 		}
 		if len(pw) != 64 {
 			t.Errorf("password should be 64 hex chars, got %d", len(pw))

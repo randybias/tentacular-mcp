@@ -1,6 +1,7 @@
 package exoskeleton
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -163,7 +164,7 @@ func TestValidate_PostgresEnabled_MissingHost(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() should fail when Postgres enabled but host missing")
 	}
-	if got := err.Error(); !contains(got, "TENTACULAR_POSTGRES_ADMIN_HOST") {
+	if got := err.Error(); !strings.Contains(got, "TENTACULAR_POSTGRES_ADMIN_HOST") {
 		t.Errorf("error should mention missing host env var, got: %s", got)
 	}
 }
@@ -181,7 +182,7 @@ func TestValidate_PostgresEnabled_MissingPassword(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() should fail when Postgres enabled but password missing")
 	}
-	if got := err.Error(); !contains(got, "TENTACULAR_POSTGRES_ADMIN_PASSWORD") {
+	if got := err.Error(); !strings.Contains(got, "TENTACULAR_POSTGRES_ADMIN_PASSWORD") {
 		t.Errorf("error should mention missing password env var, got: %s", got)
 	}
 }
@@ -196,7 +197,7 @@ func TestValidate_NATSEnabled_MissingURL(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate() should fail when NATS enabled but URL missing")
 	}
-	if got := err.Error(); !contains(got, "TENTACULAR_NATS_URL") {
+	if got := err.Error(); !strings.Contains(got, "TENTACULAR_NATS_URL") {
 		t.Errorf("error should mention missing NATS URL env var, got: %s", got)
 	}
 }
@@ -231,13 +232,13 @@ func TestValidate_MultipleFieldsMissing(t *testing.T) {
 		t.Fatal("Validate() should fail with multiple missing fields")
 	}
 	got := err.Error()
-	if !contains(got, "TENTACULAR_POSTGRES_ADMIN_HOST") {
+	if !strings.Contains(got, "TENTACULAR_POSTGRES_ADMIN_HOST") {
 		t.Errorf("error should mention missing Postgres host, got: %s", got)
 	}
-	if !contains(got, "TENTACULAR_POSTGRES_ADMIN_PASSWORD") {
+	if !strings.Contains(got, "TENTACULAR_POSTGRES_ADMIN_PASSWORD") {
 		t.Errorf("error should mention missing Postgres password, got: %s", got)
 	}
-	if !contains(got, "TENTACULAR_NATS_URL") {
+	if !strings.Contains(got, "TENTACULAR_NATS_URL") {
 		t.Errorf("error should mention missing NATS URL, got: %s", got)
 	}
 }
@@ -253,20 +254,8 @@ func TestValidate_RustFSEnabled_MissingFields(t *testing.T) {
 		t.Fatal("Validate() should fail when RustFS enabled but fields missing")
 	}
 	got := err.Error()
-	if !contains(got, "TENTACULAR_RUSTFS_ENDPOINT") {
+	if !strings.Contains(got, "TENTACULAR_RUSTFS_ENDPOINT") {
 		t.Errorf("error should mention missing RustFS endpoint, got: %s", got)
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}

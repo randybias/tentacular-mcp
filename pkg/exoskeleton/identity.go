@@ -27,8 +27,8 @@ const (
 	maxPostgresIDLen  = 63
 )
 
-// nonAlphanumeric matches any character that is not a lowercase letter or digit.
-var nonAlphanumeric = regexp.MustCompile(`[^a-z0-9]`)
+// nonAlphanumericOrUnderscore matches any character that is not a lowercase letter, digit, or underscore.
+var nonAlphanumericOrUnderscore = regexp.MustCompile(`[^a-z0-9_]`)
 
 // CompileIdentity produces a deterministic Identity for the given namespace
 // and workflow. All identifiers are derived from the same inputs.
@@ -68,14 +68,20 @@ func sanitizePostgres(s string) string {
 	// Replace hyphens with underscores first, then replace remaining
 	// non-alphanumeric (excluding underscore) characters.
 	s = strings.ReplaceAll(s, "-", "_")
-	return nonAlphanumeric.ReplaceAllString(s, "_")
+	return nonAlphanumericOrUnderscore.ReplaceAllString(s, "_")
 }
 
-// sanitizeNATS replaces non-alphanumeric characters with dots for NATS
-// subject hierarchy. Consecutive dots are collapsed to a single dot.
+// natsUnsafe matches characters that are not safe in NATS subject tokens.
+// NATS subjects use dots as hierarchy separators and > / * as wildcards,
+// so those characters (plus spaces) must be replaced.
+var natsUnsafe = regexp.MustCompile(`[^a-z0-9_]`)
+
+// sanitizeNATS replaces hyphens with underscores and strips all other
+// non-alphanumeric characters (dots, wildcards, spaces) to produce a
+// safe NATS subject token.
 func sanitizeNATS(s string) string {
 	s = strings.ReplaceAll(s, "-", "_")
-	return s
+	return natsUnsafe.ReplaceAllString(s, "_")
 }
 
 // truncatePostgresID ensures a Postgres identifier does not exceed

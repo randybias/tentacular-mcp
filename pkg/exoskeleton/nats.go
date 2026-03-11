@@ -2,8 +2,6 @@ package exoskeleton
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"sync"
 )
@@ -208,9 +206,5 @@ func (a *InMemoryNATSAdmin) DeleteUser(_ context.Context, principal string) erro
 
 // generateNATSToken creates a cryptographically random 32-byte hex-encoded token.
 func generateNATSToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
+	return generateRandomHex()
 }

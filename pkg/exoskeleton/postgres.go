@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // DBExecutor abstracts database operations to allow unit testing with mocks.
@@ -53,9 +54,39 @@ func NewPostgresRegistrar(config PostgresConfig) *PostgresRegistrar {
 }
 
 // SetDB sets the database executor for the registrar. This is used to inject
-// a real *sql.DB after Connect() or a mock for testing.
+// a mock for testing.
 func (r *PostgresRegistrar) SetDB(db DBQuerier) {
 	r.db = db
+}
+
+// Connect opens a real database connection using the registrar's config.
+// Must be called before Register/Unregister can be used in production.
+func (r *PostgresRegistrar) Connect() error {
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		r.config.Host, r.config.Port, r.config.User, r.config.Password, r.config.Database, r.config.SSLMode)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		return fmt.Errorf("postgres registrar: open connection: %w", err)
+	}
+	r.db = &sqlDBAdapter{db: db}
+	return nil
+}
+
+// sqlDBAdapter wraps *sql.DB to implement the DBQuerier interface.
+type sqlDBAdapter struct {
+	db *sql.DB
+}
+
+func (a *sqlDBAdapter) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return a.db.ExecContext(ctx, query, args...)
+}
+
+func (a *sqlDBAdapter) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return a.db.QueryRowContext(ctx, query, args...)
+}
+
+func (a *sqlDBAdapter) QueryRowScan(ctx context.Context, query string, dest []any, args ...any) error {
+	return a.db.QueryRowContext(ctx, query, args...).Scan(dest...)
 }
 
 // Register provisions a new Postgres role and schema for the given identity.
@@ -72,7 +103,7 @@ func (r *PostgresRegistrar) Register(ctx context.Context, id Identity) (*Postgre
 		return nil, fmt.Errorf("postgres registrar: invalid schema name %q", id.PostgresSchema)
 	}
 
-	password, err := generatePassword()
+	password, err := generateRandomHex()
 	if err != nil {
 		return nil, fmt.Errorf("postgres registrar: failed to generate password: %w", err)
 	}
@@ -129,6 +160,13 @@ func (r *PostgresRegistrar) ReRegister(ctx context.Context, id Identity) (*Postg
 		return nil, fmt.Errorf("postgres registrar: not connected")
 	}
 
+	if !validIdentifier.MatchString(id.PostgresRole) {
+		return nil, fmt.Errorf("postgres registrar: invalid role name %q", id.PostgresRole)
+	}
+	if !validIdentifier.MatchString(id.PostgresSchema) {
+		return nil, fmt.Errorf("postgres registrar: invalid schema name %q", id.PostgresSchema)
+	}
+
 	// Check if role exists
 	var roleExists bool
 	err := r.db.QueryRowScan(ctx,
@@ -141,7 +179,7 @@ func (r *PostgresRegistrar) ReRegister(ctx context.Context, id Identity) (*Postg
 	}
 
 	// If role doesn't exist, create it (handles drift)
-	password, err := generatePassword()
+	password, err := generateRandomHex()
 	if err != nil {
 		return nil, fmt.Errorf("postgres registrar: failed to generate password: %w", err)
 	}
@@ -211,6 +249,13 @@ func (r *PostgresRegistrar) Unregister(ctx context.Context, id Identity) error {
 		return fmt.Errorf("postgres registrar: not connected")
 	}
 
+	if !validIdentifier.MatchString(id.PostgresRole) {
+		return fmt.Errorf("postgres registrar: invalid role name %q", id.PostgresRole)
+	}
+	if !validIdentifier.MatchString(id.PostgresSchema) {
+		return fmt.Errorf("postgres registrar: invalid schema name %q", id.PostgresSchema)
+	}
+
 	dropSchemaSQL := fmt.Sprintf(
 		`DROP SCHEMA IF EXISTS %s CASCADE`,
 		quoteIdent(id.PostgresSchema),
@@ -231,8 +276,9 @@ func (r *PostgresRegistrar) Unregister(ctx context.Context, id Identity) error {
 	return nil
 }
 
-// generatePassword creates a cryptographically random 32-byte hex-encoded password.
-func generatePassword() (string, error) {
+// generateRandomHex creates a cryptographically random 32-byte hex-encoded string.
+// Used for both Postgres passwords and NATS tokens.
+func generateRandomHex() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
@@ -241,6 +287,7 @@ func generatePassword() (string, error) {
 }
 
 // quoteIdent quotes a Postgres identifier with double quotes.
+// Embedded double quotes are escaped by doubling them per SQL standard.
 func quoteIdent(s string) string {
-	return `"` + s + `"`
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }

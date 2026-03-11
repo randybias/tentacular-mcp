@@ -78,9 +78,10 @@ func main() {
 
 		if exoCfg.PostgresEnabled {
 			pg := exoskeleton.NewPostgresRegistrar(exoCfg.Postgres)
-			// Note: SetDB must be called with a real *sql.DB connection before
-			// Register/Unregister can be used. In production this happens via
-			// a connect-on-first-use pattern or an explicit Connect() call.
+			if err := pg.Connect(); err != nil {
+				slog.Error("failed to connect postgres registrar", "error", err)
+				os.Exit(1)
+			}
 			pgReg = pg
 		}
 

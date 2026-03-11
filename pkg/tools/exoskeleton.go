@@ -5,9 +5,11 @@ import (
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
+	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
 
@@ -36,14 +38,14 @@ type ExoRegistrationParams struct {
 
 // ExoRegistrationResult is the result of exo_registration.
 type ExoRegistrationResult struct {
-	Registered       bool   `json:"registered"`
-	Namespace        string `json:"namespace"`
-	Workflow         string `json:"workflow"`
-	PostgresRole     string `json:"postgres_role,omitempty"`
-	PostgresSchema   string `json:"postgres_schema,omitempty"`
+	Registered        bool   `json:"registered"`
+	Namespace         string `json:"namespace"`
+	Workflow          string `json:"workflow"`
+	PostgresRole      string `json:"postgres_role,omitempty"`
+	PostgresSchema    string `json:"postgres_schema,omitempty"`
 	NATSSubjectPrefix string `json:"nats_subject_prefix,omitempty"`
-	SecretName       string `json:"secret_name,omitempty"`
-	SecretCreated    string `json:"secret_created,omitempty"`
+	SecretName        string `json:"secret_name,omitempty"`
+	SecretCreated     string `json:"secret_created,omitempty"`
 }
 
 // ExoListParams are the parameters for exo_list (empty, cluster-scoped).
@@ -74,6 +76,9 @@ func registerExoskeletonTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exos
 		Name:        "exo_registration",
 		Description: "Show exoskeleton registration details for a specific tentacle (Postgres role/schema, NATS subject prefix, credential Secret).",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params ExoRegistrationParams) (*mcp.CallToolResult, ExoRegistrationResult, error) {
+		if err := guard.CheckNamespace(params.Namespace); err != nil {
+			return nil, ExoRegistrationResult{}, err
+		}
 		result, err := handleExoRegistration(ctx, client, exoCtrl, params)
 		return nil, result, err
 	})
@@ -182,9 +187,11 @@ func handleExoRegistration(ctx context.Context, client *k8s.Client, exoCtrl *exo
 
 	secret, err := client.Clientset.CoreV1().Secrets(params.Namespace).Get(ctx, secretName, metav1.GetOptions{})
 	if err != nil {
-		// Secret not found — not registered
-		result.Registered = false
-		return result, nil
+		if k8serrors.IsNotFound(err) {
+			result.Registered = false
+			return result, nil
+		}
+		return ExoRegistrationResult{}, fmt.Errorf("check exoskeleton secret: %w", err)
 	}
 
 	result.Registered = true

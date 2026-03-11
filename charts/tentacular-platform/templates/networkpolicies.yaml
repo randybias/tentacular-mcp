@@ -138,6 +138,28 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ include "tentacular-platform.namespace.system" . }}
 ---
+{{/*
+Allow egress from tentacular-system to tentacular-exoskeleton
+(corresponding egress rule — both ingress and egress are needed because
+default-deny applies to both directions).
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-exoskeleton
+  namespace: {{ include "tentacular-platform.namespace.system" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "tentacular-platform.namespace.exoskeleton" . }}
+---
 {{- end }}
 {{/*
 Allow ingress from any tent-* namespace to tentacular-exoskeleton
