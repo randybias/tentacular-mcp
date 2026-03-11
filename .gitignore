@@ -11,6 +11,7 @@ scratch/
 
 # Ralphex local config
 .ralphex/
+docs/plans/
 
 # Local tool binaries
 .helm-bin
