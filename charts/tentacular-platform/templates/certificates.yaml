@@ -1,0 +1,46 @@
+{{/*
+Certificate resources for platform endpoints.
+Works regardless of whether cert-manager was installed by this chart or pre-exists.
+Requires cert-manager CRDs to be present in the cluster.
+*/}}
+{{- $issuerName := "" }}
+{{- if .Values.tls.clusterIssuers.production }}
+{{- $issuerName = printf "%s-letsencrypt-production" (include "tentacular-platform.fullname" .) }}
+{{- else }}
+{{- $issuerName = printf "%s-letsencrypt-staging" (include "tentacular-platform.fullname" .) }}
+{{- end }}
+{{- if .Values.tls.certificates.mcp.create }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "tentacular-platform.fullname" . }}-mcp
+  namespace: {{ include "tentacular-platform.namespace.system" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.tls.certificates.mcp.secretName }}
+  issuerRef:
+    name: {{ $issuerName }}
+    kind: ClusterIssuer
+  dnsNames:
+    - {{ printf "mcp.%s" (required "global.domain is required when tls.certificates.mcp.create is true" .Values.global.domain) }}
+{{- end }}
+{{- if and .Values.tls.certificates.mcp.create .Values.tls.certificates.auth.create }}
+---
+{{- end }}
+{{- if .Values.tls.certificates.auth.create }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "tentacular-platform.fullname" . }}-auth
+  namespace: {{ include "tentacular-platform.namespace.system" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.tls.certificates.auth.secretName }}
+  issuerRef:
+    name: {{ $issuerName }}
+    kind: ClusterIssuer
+  dnsNames:
+    - {{ printf "auth.%s" (required "global.domain is required when tls.certificates.auth.create is true" .Values.global.domain) }}
+{{- end }}

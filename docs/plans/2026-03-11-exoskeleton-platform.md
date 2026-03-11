@@ -122,13 +122,13 @@ Add jetstack/cert-manager as an optional subchart (disabled by default). Add Clu
 - Create: `charts/tentacular-platform/templates/clusterissuer.yaml`
 - Create: `charts/tentacular-platform/templates/certificates.yaml`
 
-- [ ] Add jetstack/cert-manager dependency to Chart.yaml: `name: cert-manager`, repository `https://charts.jetstack.io`, stable version with multi-arch images (linux/amd64 + linux/arm64), condition `cert-manager.enabled`.
-- [ ] Add cert-manager section to values.yaml: `enabled: false` (off by default — most clusters have it pre-installed). When enabled: `crds.enabled: true` to install CRDs. Add a separate `tls` section at the top level: `tls.clusterIssuers.create: false`, `tls.clusterIssuers.email: ""`, `tls.clusterIssuers.production: true` (use production LE or staging), `tls.certificates.mcp.create: false`, `tls.certificates.mcp.secretName: mcp-tls`, `tls.certificates.auth.create: false`, `tls.certificates.auth.secretName: auth-tls`.
-- [ ] Create `charts/tentacular-platform/templates/clusterissuer.yaml`: Let's Encrypt ClusterIssuer (production and/or staging based on toggle). Uses HTTP-01 solver. Conditional on `tls.clusterIssuers.create`. Works regardless of whether cert-manager was installed by this chart or pre-exists.
-- [ ] Create `charts/tentacular-platform/templates/certificates.yaml`: Certificate resources for MCP endpoint (`mcp.<global.domain>`) and auth endpoint (`auth.<global.domain>`). Conditional on their respective create toggles. Reference the ClusterIssuer by name.
-- [ ] Update ci/test-values.yaml: keep cert-manager disabled, keep tls resources disabled (they need CRDs present to template).
-- [ ] Run `helm dependency update charts/tentacular-platform/`.
-- [ ] Verify: helm lint passes. Verify: `helm template` succeeds with cert-manager disabled. Create a separate ci/tls-values.yaml if needed to test with TLS enabled (skipping CRD-dependent resources if CRDs aren't installed).
+- [x] Add jetstack/cert-manager dependency to Chart.yaml: `name: cert-manager`, repository `https://charts.jetstack.io`, stable version with multi-arch images (linux/amd64 + linux/arm64), condition `cert-manager.enabled`.
+- [x] Add cert-manager section to values.yaml: `enabled: false` (off by default — most clusters have it pre-installed). When enabled: `crds.enabled: true` to install CRDs. Add a separate `tls` section at the top level: `tls.clusterIssuers.create: false`, `tls.clusterIssuers.email: ""`, `tls.clusterIssuers.production: true` (use production LE or staging), `tls.certificates.mcp.create: false`, `tls.certificates.mcp.secretName: mcp-tls`, `tls.certificates.auth.create: false`, `tls.certificates.auth.secretName: auth-tls`.
+- [x] Create `charts/tentacular-platform/templates/clusterissuer.yaml`: Let's Encrypt ClusterIssuer (production and/or staging based on toggle). Uses HTTP-01 solver. Conditional on `tls.clusterIssuers.create`. Works regardless of whether cert-manager was installed by this chart or pre-exists.
+- [x] Create `charts/tentacular-platform/templates/certificates.yaml`: Certificate resources for MCP endpoint (`mcp.<global.domain>`) and auth endpoint (`auth.<global.domain>`). Conditional on their respective create toggles. Reference the ClusterIssuer by name.
+- [x] Update ci/test-values.yaml: keep cert-manager disabled, keep tls resources disabled (they need CRDs present to template).
+- [x] Run `helm dependency update charts/tentacular-platform/`.
+- [x] Verify: helm lint passes. Verify: `helm template` succeeds with cert-manager disabled. Create a separate ci/tls-values.yaml if needed to test with TLS enabled (skipping CRD-dependent resources if CRDs aren't installed).
 
 ### Task 5: Integrate tentacular-mcp subchart and esm-sh module proxy
 

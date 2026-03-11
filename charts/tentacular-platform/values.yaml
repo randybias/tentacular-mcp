@@ -87,6 +87,31 @@ nats:
 cert-manager:
   # -- Enable cert-manager deployment (disabled by default)
   enabled: false
+  # -- Install cert-manager CRDs (required if cert-manager is not already installed)
+  crds:
+    enabled: true
+
+# -- TLS configuration for platform endpoints
+# Works regardless of whether cert-manager was installed by this chart or pre-exists
+tls:
+  clusterIssuers:
+    # -- Create Let's Encrypt ClusterIssuer resources
+    create: false
+    # -- Email address for Let's Encrypt registration
+    email: ""
+    # -- Use Let's Encrypt production server (false = staging)
+    production: true
+  certificates:
+    mcp:
+      # -- Create Certificate for MCP endpoint (mcp.<global.domain>)
+      create: false
+      # -- Secret name for MCP TLS certificate
+      secretName: mcp-tls
+    auth:
+      # -- Create Certificate for auth endpoint (auth.<global.domain>)
+      create: false
+      # -- Secret name for auth TLS certificate
+      secretName: auth-tls
 
 # -- Tentacular MCP server subchart configuration
 tentacular-mcp:
