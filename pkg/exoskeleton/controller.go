@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+	"k8s.io/client-go/kubernetes"
 )
 
 // PostgresRegistrarI abstracts postgres registration for testability.
@@ -35,6 +36,20 @@ type ExoskeletonController struct {
 	postgres   PostgresRegistrarI
 	nats       NATSRegistrarI
 	credential CredentialInjectorI
+}
+
+// Config returns the exoskeleton configuration.
+func (c *ExoskeletonController) Config() *ExoskeletonConfig {
+	return c.config
+}
+
+// K8sClientset returns the kubernetes.Interface from the credential injector,
+// or nil if no credential injector is configured.
+func (c *ExoskeletonController) K8sClientset() kubernetes.Interface {
+	if ci, ok := c.credential.(*CredentialInjector); ok && ci != nil {
+		return ci.clientset
+	}
+	return nil
 }
 
 // NewExoskeletonController creates a controller with the given config and components.

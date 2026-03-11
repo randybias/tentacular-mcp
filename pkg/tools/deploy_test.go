@@ -646,30 +646,6 @@ func TestWorkflowApplyConfigMapLargeDataIntegrity(t *testing.T) {
 
 // --- Exoskeleton integration tests ---
 
-// mockExoRegistrar records Register/Unregister calls for testing.
-type mockExoRegistrar struct {
-	registerCalls   []mockExoCall
-	unregisterCalls []mockExoCall
-	registerErr     error
-	unregisterErr   error
-}
-
-type mockExoCall struct {
-	Namespace string
-	Workflow  string
-	Deps      []string
-}
-
-func (m *mockExoRegistrar) Register(ctx context.Context, namespace, workflow string, deps []string) error {
-	m.registerCalls = append(m.registerCalls, mockExoCall{Namespace: namespace, Workflow: workflow, Deps: deps})
-	return m.registerErr
-}
-
-func (m *mockExoRegistrar) Unregister(ctx context.Context, namespace, workflow string) error {
-	m.unregisterCalls = append(m.unregisterCalls, mockExoCall{Namespace: namespace, Workflow: workflow})
-	return m.unregisterErr
-}
-
 // testExoController creates an ExoskeletonController backed by mock registrars.
 func testExoController(t *testing.T, pgEnabled, natsEnabled bool) (*exoskeleton.ExoskeletonController, *mockPgRegistrar, *mockNatsRegistrar) {
 	t.Helper()

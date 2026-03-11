@@ -300,14 +300,14 @@ Create new MCP tools for querying exoskeleton status and tentacle registration d
 - Create: `pkg/tools/exoskeleton_test.go`
 - Modify: `pkg/tools/register.go`
 
-- [ ] Pull latest from remote before starting.
-- [ ] Create `pkg/tools/exoskeleton.go` with three tools:
+- [x] Pull latest from remote before starting.
+- [x] Create `pkg/tools/exoskeleton.go` with three tools:
   - `exo_status`: returns which exoskeleton services are enabled, their feature flag state, and basic connection health (can the MCP server reach Postgres? NATS?). Requires no namespace parameter — this is cluster-level information.
   - `exo_registration`: given namespace + workflow parameters, returns the tentacle's exoskeleton registration details: Postgres role/schema, NATS subject prefix, whether a credential Secret exists, Secret creation timestamp. Returns "not registered" if no exoskeleton Secret found for the tentacle.
   - `exo_list`: list all tentacles that have exoskeleton registrations by scanning Secrets with the `tentacular.io/exoskeleton: "true"` label across all namespaces. Return namespace, workflow, registration timestamp for each.
-- [ ] Register all three tools in `pkg/tools/register.go`.
-- [ ] Create `pkg/tools/exoskeleton_test.go`: test `exo_status` with enabled and disabled configs, test `exo_registration` with existing and non-existing registrations using fake K8s client, test `exo_list` with multiple registrations across namespaces.
-- [ ] Run all validation commands — all tests pass, lint clean.
+- [x] Register all three tools in `pkg/tools/register.go`.
+- [x] Create `pkg/tools/exoskeleton_test.go`: test `exo_status` with enabled and disabled configs, test `exo_registration` with existing and non-existing registrations using fake K8s client, test `exo_list` with multiple registrations across namespaces.
+- [x] Run all validation commands — all tests pass, lint clean.
 
 ### Task 14: Fix critical bugs from GitHub issues
 
