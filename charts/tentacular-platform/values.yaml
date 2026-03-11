@@ -143,11 +143,12 @@ tentacular-mcp:
       cpu: 500m
       memory: 256Mi
   # -- Extra environment variable sources (e.g., Secrets, ConfigMaps)
-  # When exoskeleton.enabled is true, add the exoskeleton Secret as an envFrom source:
-  #   extraEnvFrom:
-  #     - secretRef:
-  #         name: tentacular-exoskeleton-config
-  extraEnvFrom: []
+  # The exoskeleton Secret is included by default (optional: true means the pod
+  # still starts if the Secret doesn't exist, e.g., when exoskeleton is disabled).
+  extraEnvFrom:
+    - secretRef:
+        name: tentacular-exoskeleton-config
+        optional: true
 
 # -- Exoskeleton configuration for MCP server
 # Controls how backing-service connection details are wired to the MCP server

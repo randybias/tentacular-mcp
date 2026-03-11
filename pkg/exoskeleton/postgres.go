@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -62,13 +63,29 @@ func (r *PostgresRegistrar) SetDB(db DBQuerier) {
 // Connect opens a real database connection using the registrar's config.
 // Must be called before Register/Unregister can be used in production.
 func (r *PostgresRegistrar) Connect() error {
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		r.config.Host, r.config.Port, r.config.User, r.config.Password, r.config.Database, r.config.SSLMode)
+	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		url.QueryEscape(r.config.User),
+		url.QueryEscape(r.config.Password),
+		r.config.Host, r.config.Port,
+		url.QueryEscape(r.config.Database),
+		url.QueryEscape(r.config.SSLMode))
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return fmt.Errorf("postgres registrar: open connection: %w", err)
 	}
+	if err := db.PingContext(context.Background()); err != nil {
+		_ = db.Close()
+		return fmt.Errorf("postgres registrar: ping: %w", err)
+	}
 	r.db = &sqlDBAdapter{db: db}
+	return nil
+}
+
+// Close closes the underlying database connection pool.
+func (r *PostgresRegistrar) Close() error {
+	if a, ok := r.db.(*sqlDBAdapter); ok && a.db != nil {
+		return a.db.Close()
+	}
 	return nil
 }
 

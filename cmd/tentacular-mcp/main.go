@@ -65,6 +65,7 @@ func main() {
 	}
 
 	var exoCtrl *exoskeleton.ExoskeletonController
+	var pgRegistrar *exoskeleton.PostgresRegistrar
 	if exoCfg.Enabled {
 		if err := exoCfg.Validate(); err != nil {
 			slog.Error("exoskeleton config validation failed", "error", err)
@@ -81,12 +82,12 @@ func main() {
 		var natsReg exoskeleton.NATSRegistrarI
 
 		if exoCfg.PostgresEnabled {
-			pg := exoskeleton.NewPostgresRegistrar(exoCfg.Postgres)
-			if err := pg.Connect(); err != nil {
+			pgRegistrar = exoskeleton.NewPostgresRegistrar(exoCfg.Postgres)
+			if err := pgRegistrar.Connect(); err != nil {
 				slog.Error("failed to connect postgres registrar", "error", err)
 				os.Exit(1)
 			}
-			pgReg = pg
+			pgReg = pgRegistrar
 		}
 
 		if exoCfg.NATSEnabled {
@@ -152,6 +153,12 @@ func main() {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server shutdown failed", "error", err)
 		os.Exit(1)
+	}
+
+	if pgRegistrar != nil {
+		if err := pgRegistrar.Close(); err != nil {
+			slog.Warn("postgres registrar close failed", "error", err)
+		}
 	}
 
 	slog.Info("server stopped")
