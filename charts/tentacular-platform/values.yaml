@@ -32,6 +32,25 @@ networkPolicies:
 postgresql:
   # -- Enable PostgreSQL deployment
   enabled: true
+  # -- namespaceOverride is set automatically by the chart via the exoskeleton namespace helper
+  auth:
+    # -- Database name for the tentacular platform
+    database: tentacular
+    # -- Admin username for provisioning per-tentacle roles and schemas
+    username: tentacular_admin
+    # -- Admin password (must be provided by user or via existingSecret)
+    password: ""
+    # -- Use an existing Secret for PostgreSQL credentials instead of password above
+    existingSecret: ""
+  primary:
+    # -- Init scripts ConfigMap for bootstrapping admin role permissions
+    initdb:
+      scriptsConfigMap: tentacular-postgres-init
+    persistence:
+      # -- PVC size for PostgreSQL data
+      size: 5Gi
+      # -- Storage class (empty string uses cluster default)
+      storageClass: ""
 
 # -- NATS subchart configuration (nats/nats)
 nats:

@@ -21,5 +21,10 @@ keywords:
   - exoskeleton
   - kubernetes
 
-# Subchart dependencies are added in subsequent tasks
-dependencies: []
+# Subchart dependencies
+dependencies:
+  - name: postgresql
+    # Multi-arch images (linux/amd64 + linux/arm64) verified for this version
+    version: "16.7.27"
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: postgresql.enabled

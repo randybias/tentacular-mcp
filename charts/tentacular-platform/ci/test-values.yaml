@@ -18,6 +18,8 @@ networkPolicies:
 
 postgresql:
   enabled: true
+  auth:
+    password: test-postgres-password
 
 nats:
   enabled: true

@@ -87,13 +87,13 @@ Add bitnami/postgresql as a Helm subchart dependency with defaults for the tenta
 - Modify: `charts/tentacular-platform/ci/test-values.yaml`
 - Create: `charts/tentacular-platform/templates/postgres-init-configmap.yaml`
 
-- [ ] Add bitnami/postgresql dependency to Chart.yaml: `name: postgresql`, repository `oci://registry-1.docker.io/bitnamicharts`, version constraint `~16.x` (must have multi-arch images: linux/amd64 + linux/arm64), condition `postgresql.enabled`. Verify the chosen version publishes multi-arch manifests before pinning.
-- [ ] Add postgresql configuration to values.yaml under the `postgresql:` key. Set: `auth.database: tentacular`, `auth.username: tentacular_admin`, `auth.password: ""` (user must provide or use existingSecret), `auth.existingSecret: ""`, `primary.persistence.size: 5Gi`, `primary.persistence.storageClass: ""` (use cluster default). Note in a YAML comment that `namespaceOverride` is set automatically by the chart.
-- [ ] Create `charts/tentacular-platform/templates/postgres-init-configmap.yaml`: ConfigMap in the exoskeleton namespace containing an init SQL script that runs `ALTER ROLE tentacular_admin CREATEROLE;` (idempotent — ALTER is safe to re-run). Conditional on `postgresql.enabled`. Reference this ConfigMap from postgresql values via `primary.initdb.scriptsConfigMap`.
-- [ ] Update ci/test-values.yaml: set postgresql.auth.password to a test value so template rendering succeeds.
-- [ ] Run `helm dependency update charts/tentacular-platform/` to fetch the subchart tarball.
-- [ ] Verify: `helm template test charts/tentacular-platform/ -f charts/tentacular-platform/ci/test-values.yaml` renders a PostgreSQL StatefulSet.
-- [ ] Verify: helm lint passes.
+- [x] Add bitnami/postgresql dependency to Chart.yaml: `name: postgresql`, repository `oci://registry-1.docker.io/bitnamicharts`, version constraint `~16.x` (must have multi-arch images: linux/amd64 + linux/arm64), condition `postgresql.enabled`. Verify the chosen version publishes multi-arch manifests before pinning.
+- [x] Add postgresql configuration to values.yaml under the `postgresql:` key. Set: `auth.database: tentacular`, `auth.username: tentacular_admin`, `auth.password: ""` (user must provide or use existingSecret), `auth.existingSecret: ""`, `primary.persistence.size: 5Gi`, `primary.persistence.storageClass: ""` (use cluster default). Note in a YAML comment that `namespaceOverride` is set automatically by the chart.
+- [x] Create `charts/tentacular-platform/templates/postgres-init-configmap.yaml`: ConfigMap in the exoskeleton namespace containing an init SQL script that runs `ALTER ROLE tentacular_admin CREATEROLE;` (idempotent — ALTER is safe to re-run). Conditional on `postgresql.enabled`. Reference this ConfigMap from postgresql values via `primary.initdb.scriptsConfigMap`.
+- [x] Update ci/test-values.yaml: set postgresql.auth.password to a test value so template rendering succeeds.
+- [x] Run `helm dependency update charts/tentacular-platform/` to fetch the subchart tarball.
+- [x] Verify: `helm template test charts/tentacular-platform/ -f charts/tentacular-platform/ci/test-values.yaml` renders a PostgreSQL StatefulSet.
+- [x] Verify: helm lint passes.
 
 ### Task 3: Add NATS as embedded subchart dependency
 

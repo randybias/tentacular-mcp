@@ -16,8 +16,8 @@ ci/
 *.swp
 *.swo
 *~
-# Chart packages
-*.tgz
+# Chart packages (only at root level, not in charts/ subdirectory)
+tentacular-platform-*.tgz
 # Documentation source
 *.md
 # Test files
