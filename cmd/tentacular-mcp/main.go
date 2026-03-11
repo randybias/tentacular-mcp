@@ -9,6 +9,10 @@ import (
 	"syscall"
 	"time"
 
+	// Register the "postgres" database/sql driver so that
+	// sql.Open("postgres", ...) works at runtime.
+	_ "github.com/lib/pq"
+
 	"github.com/randybias/tentacular-mcp/pkg/auth"
 	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"

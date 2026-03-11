@@ -195,7 +195,7 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 		// Exoskeleton: unregister backing-service credentials before removing manifests.
 		// Only runs when controller is non-nil and cleanup is enabled.
 		// Continue with manifest removal even if unregistration partially fails.
-		if exoCtrl != nil && exoCtrl.Config().CleanupOnUndeploy {
+		if exoCtrl != nil && exoCtrl.Config() != nil && exoCtrl.Config().CleanupOnUndeploy {
 			if unregErr := exoCtrl.Unregister(ctx, params.Namespace, params.Name); unregErr != nil {
 				slog.Warn("exoskeleton: unregistration had issues (continuing with removal)",
 					"namespace", params.Namespace,
@@ -345,6 +345,11 @@ func handleWorkflowApply(ctx context.Context, client *k8s.Client, params Workflo
 		for _, item := range list.Items {
 			key := resourceKey(gvr, item.GetName())
 			if !appliedKeys[key] {
+				// Skip exoskeleton-managed Secrets — they are created by
+				// the exoskeleton credential injector, not user manifests.
+				if item.GetLabels()[exoskeleton.ExoskeletonLabel] == "true" {
+					continue
+				}
 				err := client.Dynamic.Resource(gvr).Namespace(params.Namespace).Delete(ctx, item.GetName(), metav1.DeleteOptions{})
 				if err != nil {
 					continue // best-effort GC
