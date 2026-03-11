@@ -1,0 +1,44 @@
+# CI test values - minimal overrides for automated testing
+global:
+  domain: test.tentacular.local
+
+namespaces:
+  system:
+    create: true
+    name: tentacular-system
+  exoskeleton:
+    create: true
+    name: tentacular-exoskeleton
+  support:
+    create: true
+    name: tentacular-support
+
+networkPolicies:
+  enabled: true
+
+postgresql:
+  enabled: true
+
+nats:
+  enabled: true
+
+cert-manager:
+  enabled: false
+
+tentacular-mcp:
+  enabled: true
+
+esm-sh:
+  enabled: true
+
+ingress:
+  mode: none
+
+rustfs:
+  enabled: false
+
+keycloak:
+  enabled: false
+
+spire:
+  enabled: false

@@ -1,0 +1,164 @@
+{{- if .Values.networkPolicies.enabled }}
+{{/*
+Default-deny ingress and egress for each managed namespace.
+*/}}
+{{- if .Values.namespaces.system.create }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: {{ include "tentacular-platform.namespace.system" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+{{- end }}
+{{- if .Values.namespaces.exoskeleton.create }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: {{ include "tentacular-platform.namespace.exoskeleton" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+{{- end }}
+{{- if .Values.namespaces.support.create }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: {{ include "tentacular-platform.namespace.support" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+{{- end }}
+{{/*
+Allow DNS egress (UDP 53 to kube-dns) from each managed namespace.
+*/}}
+{{- if .Values.namespaces.system.create }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: {{ include "tentacular-platform.namespace.system" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+{{- end }}
+{{- if .Values.namespaces.exoskeleton.create }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: {{ include "tentacular-platform.namespace.exoskeleton" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+{{- end }}
+{{- if .Values.namespaces.support.create }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: {{ include "tentacular-platform.namespace.support" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+{{- end }}
+{{/*
+Allow ingress from tentacular-system to tentacular-exoskeleton
+(MCP server needs to reach backing services like PostgreSQL, NATS).
+*/}}
+{{- if and .Values.namespaces.system.create .Values.namespaces.exoskeleton.create }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-system-to-exoskeleton
+  namespace: {{ include "tentacular-platform.namespace.exoskeleton" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "tentacular-platform.namespace.system" . }}
+---
+{{- end }}
+{{/*
+Allow ingress from any tent-* namespace to tentacular-exoskeleton
+(tentacle pods need to reach their scoped backing services).
+*/}}
+{{- if .Values.namespaces.exoskeleton.create }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-tentacles-to-exoskeleton
+  namespace: {{ include "tentacular-platform.namespace.exoskeleton" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              tentacular.io/managed-by: tentacular
+{{- end }}
+{{- end }}

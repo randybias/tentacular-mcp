@@ -1,0 +1,25 @@
+apiVersion: v2
+name: tentacular-platform
+description: Umbrella Helm chart for the complete Tentacular platform - deploys MCP server, PostgreSQL, NATS, esm-sh proxy, namespace management, and network policies in a single install
+type: application
+version: 0.1.0
+appVersion: "0.2.0"
+
+home: https://github.com/tentacular-ai/tentacular-mcp
+sources:
+  - https://github.com/tentacular-ai/tentacular-mcp
+  - https://github.com/tentacular-ai/tentacular
+
+maintainers:
+  - name: Randy Bias
+    url: https://github.com/randybias
+
+keywords:
+  - tentacular
+  - mcp
+  - platform
+  - exoskeleton
+  - kubernetes
+
+# Subchart dependencies are added in subsequent tasks
+dependencies: []

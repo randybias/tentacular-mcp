@@ -1,0 +1,82 @@
+# -- Global settings shared across all subcharts
+global:
+  # -- Base domain for platform endpoints (e.g., tentacular.example.com)
+  domain: ""
+  # -- Image pull secrets for private registries
+  imagePullSecrets: []
+
+# -- Namespace configuration
+namespaces:
+  system:
+    # -- Create the system namespace (MCP server, platform control plane)
+    create: true
+    # -- Name of the system namespace
+    name: tentacular-system
+  exoskeleton:
+    # -- Create the exoskeleton namespace (PostgreSQL, NATS, backing services)
+    create: true
+    # -- Name of the exoskeleton namespace
+    name: tentacular-exoskeleton
+  support:
+    # -- Create the support namespace (esm-sh proxy, auxiliary services)
+    create: true
+    # -- Name of the support namespace
+    name: tentacular-support
+
+# -- Network policy configuration
+networkPolicies:
+  # -- Enable default-deny network policies with explicit allow rules
+  enabled: true
+
+# -- PostgreSQL subchart configuration (bitnami/postgresql)
+postgresql:
+  # -- Enable PostgreSQL deployment
+  enabled: true
+
+# -- NATS subchart configuration (nats/nats)
+nats:
+  # -- Enable NATS deployment
+  enabled: true
+
+# -- cert-manager subchart configuration (jetstack/cert-manager)
+# Most clusters have cert-manager pre-installed; enable only if needed
+cert-manager:
+  # -- Enable cert-manager deployment (disabled by default)
+  enabled: false
+
+# -- Tentacular MCP server subchart configuration
+tentacular-mcp:
+  # -- Enable MCP server deployment
+  enabled: true
+
+# -- esm-sh module proxy configuration
+esm-sh:
+  # -- Enable esm-sh proxy deployment
+  enabled: true
+
+# -- Ingress configuration
+ingress:
+  # -- Ingress mode: none, nodeport, ingress, istio, alb-istio
+  # none: no external exposure, use kubectl port-forward
+  # nodeport: expose MCP via NodePort for simple/test deployments
+  # ingress: standard Kubernetes Ingress (Traefik, nginx, or AWS ALB)
+  # istio: Istio Gateway + VirtualService
+  # alb-istio: AWS ALB fronting Istio
+  mode: none
+
+# -- Future components (disabled placeholders)
+
+# -- RustFS object storage (S3-compatible)
+rustfs:
+  # -- Enable RustFS deployment (not yet implemented)
+  enabled: false
+
+# -- Keycloak identity and access management
+keycloak:
+  # -- Enable Keycloak deployment (not yet implemented)
+  enabled: false
+
+# -- SPIRE workload identity
+spire:
+  # -- Enable SPIRE deployment (not yet implemented)
+  enabled: false
