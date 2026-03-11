@@ -446,12 +446,21 @@ func handleWorkflowStatus(ctx context.Context, client *k8s.Client, params Workfl
 		Resources: resources,
 	}
 
-	// Get deployment replicas and version from the typed API for accurate status
-	deploy, err := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
-	if err == nil {
-		result.Replicas = *deploy.Spec.Replicas
-		result.Available = deploy.Status.AvailableReplicas
-		result.Ready = deploy.Status.AvailableReplicas >= *deploy.Spec.Replicas && *deploy.Spec.Replicas > 0
+	// Get deployment replicas and version from the typed API for accurate status.
+	// Use label selector (not exact name) to find the primary deployment, since the
+	// Deployment resource name may differ from the release/workflow name.
+	depList, err := client.Clientset.AppsV1().Deployments(params.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+	if err == nil && len(depList.Items) > 0 {
+		deploy := depList.Items[0]
+		specReplicas := int32(1)
+		if deploy.Spec.Replicas != nil {
+			specReplicas = *deploy.Spec.Replicas
+		}
+		result.Replicas = specReplicas
+		result.Available = deploy.Status.ReadyReplicas
+		result.Ready = deploy.Status.ReadyReplicas >= specReplicas && specReplicas > 0
 		if v, ok := deploy.Labels["app.kubernetes.io/version"]; ok {
 			result.Version = v
 		}

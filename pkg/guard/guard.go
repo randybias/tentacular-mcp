@@ -6,12 +6,13 @@ import "fmt"
 // These are either Kubernetes control-plane namespaces or the tentacular
 // server's own namespace.
 var systemNamespaces = map[string]bool{
-	"tentacular-system":  true,
-	"tentacular-support": true,
-	"kube-system":        true,
-	"kube-public":        true,
-	"kube-node-lease":    true,
-	"default":            true,
+	"tentacular-system":      true,
+	"tentacular-support":     true,
+	"tentacular-exoskeleton": true,
+	"kube-system":            true,
+	"kube-public":            true,
+	"kube-node-lease":        true,
+	"default":                true,
 }
 
 // CheckNamespace returns an error if the given namespace is a protected

@@ -317,12 +317,12 @@ Address the highest-priority bugs in tentacular-mcp that affect daily operations
 - Modify: relevant files per bug (see checklist below)
 - Modify: `pkg/guard/guard.go`
 
-- [ ] Pull latest from remote before starting. Check issue status on GitHub — some may have been fixed by concurrent work.
-- [ ] Fix tentacular-mcp#38 (wf_status returns 0/0 replicas): investigate the wf_status handler in `pkg/tools/deploy.go`, find where replica count and readiness state are read from the Deployment object, fix the field mapping so it correctly reports `.status.readyReplicas` and `.spec.replicas`. Add regression test that creates a fake Deployment with known replica counts and verifies wf_status returns them correctly.
-- [ ] Fix tentacular-mcp#45 (wf_list shows system namespaces): modify the wf_list handler in `pkg/tools/discover.go` to filter out namespaces with the `tentacular.io/system: "true"` annotation OR matching the hardcoded system namespace names (tentacular-system, tentacular-support, tentacular-exoskeleton). Add regression test.
-- [ ] Fix tentacular-mcp#31 (wf_restart not available in deployed server): verify that `wf_restart` is registered in `pkg/tools/register.go`. If the registration call is missing, add it. This may have been a stale image issue — confirm the tool is registered in code. Add a test that verifies all expected tools are registered.
-- [ ] Add `tentacular-exoskeleton` to the namespace blocklist in `pkg/guard/guard.go` so MCP tools cannot accidentally deploy workflows into the exoskeleton namespace. Add test for the new entry.
-- [ ] Run all validation commands — all tests pass, lint clean.
+- [x] Pull latest from remote before starting. Check issue status on GitHub — some may have been fixed by concurrent work.
+- [x] Fix tentacular-mcp#38 (wf_status returns 0/0 replicas): investigate the wf_status handler in `pkg/tools/deploy.go`, find where replica count and readiness state are read from the Deployment object, fix the field mapping so it correctly reports `.status.readyReplicas` and `.spec.replicas`. Add regression test that creates a fake Deployment with known replica counts and verifies wf_status returns them correctly.
+- [x] Fix tentacular-mcp#45 (wf_list shows system namespaces): modify the wf_list handler in `pkg/tools/discover.go` to filter out namespaces with the `tentacular.io/system: "true"` annotation OR matching the hardcoded system namespace names (tentacular-system, tentacular-support, tentacular-exoskeleton). Add regression test.
+- [x] Fix tentacular-mcp#31 (wf_restart not available in deployed server): verify that `wf_restart` is registered in `pkg/tools/register.go`. If the registration call is missing, add it. This may have been a stale image issue — confirm the tool is registered in code. Add a test that verifies all expected tools are registered.
+- [x] Add `tentacular-exoskeleton` to the namespace blocklist in `pkg/guard/guard.go` so MCP tools cannot accidentally deploy workflows into the exoskeleton namespace. Add test for the new entry.
+- [x] Run all validation commands — all tests pass, lint clean.
 
 ### Task 15: Verify acceptance criteria and run full test suite
 

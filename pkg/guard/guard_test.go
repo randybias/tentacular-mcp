@@ -10,6 +10,7 @@ func TestCheckNamespace_SystemNamespacesRejected(t *testing.T) {
 	blocked := []string{
 		"tentacular-system",
 		"tentacular-support",
+		"tentacular-exoskeleton",
 		"kube-system",
 		"kube-public",
 		"kube-node-lease",

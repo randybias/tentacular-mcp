@@ -109,6 +109,31 @@ func registerDiscoverTools(srv *mcp.Server, client *k8s.Client) {
 	})
 }
 
+// systemNamespacesForList is the set of namespaces that wf_list should never show.
+// These are platform infrastructure namespaces, not user workflow namespaces.
+var systemNamespacesForList = map[string]bool{
+	"tentacular-system":       true,
+	"tentacular-support":      true,
+	"tentacular-exoskeleton":  true,
+	"kube-system":             true,
+	"kube-public":             true,
+	"kube-node-lease":         true,
+	"default":                 true,
+}
+
+// isSystemNamespace returns true if the namespace should be filtered from wf_list results.
+// A namespace is considered system if it matches a hardcoded name or has the
+// tentacular.io/system annotation set to "true".
+func isSystemNamespace(ns string, annotations map[string]string) bool {
+	if systemNamespacesForList[ns] {
+		return true
+	}
+	if annotations != nil && annotations["tentacular.io/system"] == "true" {
+		return true
+	}
+	return false
+}
+
 func handleWfList(ctx context.Context, client *k8s.Client, params WfListParams) (WfListResult, error) {
 	ns := params.Namespace
 	depList, err := client.Clientset.AppsV1().Deployments(ns).List(ctx, metav1.ListOptions{
@@ -118,8 +143,25 @@ func handleWfList(ctx context.Context, client *k8s.Client, params WfListParams) 
 		return WfListResult{}, wrapListError("deployments", ns, err)
 	}
 
+	// When listing across all namespaces, build a cache of namespace annotations
+	// so we can filter out system namespaces efficiently.
+	nsAnnotations := map[string]map[string]string{}
+	if ns == "" {
+		nsList, nsErr := client.Clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+		if nsErr == nil {
+			for _, n := range nsList.Items {
+				nsAnnotations[n.Name] = n.Annotations
+			}
+		}
+	}
+
 	entries := make([]WfListEntry, 0, len(depList.Items))
 	for _, dep := range depList.Items {
+		// Filter out system namespaces when listing across all namespaces
+		if ns == "" && isSystemNamespace(dep.Namespace, nsAnnotations[dep.Namespace]) {
+			continue
+		}
+
 		entry := deploymentToListEntry(dep)
 
 		// Apply optional client-side filters

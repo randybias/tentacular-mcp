@@ -96,6 +96,134 @@ func TestWorkflowRemoveEmptyName(t *testing.T) {
 	}
 }
 
+// TestWorkflowStatusReplicaCounts verifies wf_status correctly reports replica counts
+// from a Deployment found by label selector. Regression test for issue #38.
+func TestWorkflowStatusReplicaCounts(t *testing.T) {
+	var replicas int32 = 3
+	var readyReplicas int32 = 2
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-app",
+			Namespace: "my-ns",
+			Labels: map[string]string{
+				"tentacular.io/release":     "my-app",
+				"app.kubernetes.io/version": "1.2.3",
+				k8s.ManagedByLabel:          k8s.ManagedByValue,
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"tentacular.io/release": "my-app"},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"tentacular.io/release": "my-app"},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "app", Image: "test:latest"}},
+				},
+			},
+		},
+		Status: appsv1.DeploymentStatus{
+			ReadyReplicas:     readyReplicas,
+			AvailableReplicas: readyReplicas,
+		},
+	}
+
+	scheme := deployScheme()
+	dynClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, deployGVRs)
+	staticClient := kubefake.NewClientset(managedNs("my-ns"), dep)
+
+	client := &k8s.Client{
+		Clientset: staticClient,
+		Dynamic:   dynClient,
+		Config:    &rest.Config{Host: "https://test-cluster:6443"},
+	}
+
+	ctx := context.Background()
+	result, err := handleWorkflowStatus(ctx, client, WorkflowStatusParams{
+		Namespace: "my-ns",
+		Name:      "my-app",
+	})
+	if err != nil {
+		t.Fatalf("handleWorkflowStatus: %v", err)
+	}
+	if result.Replicas != 3 {
+		t.Errorf("expected Replicas=3, got %d", result.Replicas)
+	}
+	if result.Available != 2 {
+		t.Errorf("expected Available=2 (ReadyReplicas), got %d", result.Available)
+	}
+	if result.Ready {
+		t.Error("expected Ready=false (2/3 ready), got true")
+	}
+	if result.Version != "1.2.3" {
+		t.Errorf("expected Version=1.2.3, got %q", result.Version)
+	}
+}
+
+// TestWorkflowStatusNilReplicas verifies wf_status handles nil Spec.Replicas safely.
+// Regression test for issue #38 - nil dereference panic.
+func TestWorkflowStatusNilReplicas(t *testing.T) {
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "nil-rep-app",
+			Namespace: "my-ns",
+			Labels: map[string]string{
+				"tentacular.io/release": "nil-rep-app",
+				k8s.ManagedByLabel:      k8s.ManagedByValue,
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: nil, // defaults to 1
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"tentacular.io/release": "nil-rep-app"},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"tentacular.io/release": "nil-rep-app"},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "app", Image: "test:latest"}},
+				},
+			},
+		},
+		Status: appsv1.DeploymentStatus{
+			ReadyReplicas:     1,
+			AvailableReplicas: 1,
+		},
+	}
+
+	scheme := deployScheme()
+	dynClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, deployGVRs)
+	staticClient := kubefake.NewClientset(managedNs("my-ns"), dep)
+
+	client := &k8s.Client{
+		Clientset: staticClient,
+		Dynamic:   dynClient,
+		Config:    &rest.Config{Host: "https://test-cluster:6443"},
+	}
+
+	ctx := context.Background()
+	result, err := handleWorkflowStatus(ctx, client, WorkflowStatusParams{
+		Namespace: "my-ns",
+		Name:      "nil-rep-app",
+	})
+	if err != nil {
+		t.Fatalf("handleWorkflowStatus: %v", err)
+	}
+	if result.Replicas != 1 {
+		t.Errorf("expected Replicas=1 (default for nil), got %d", result.Replicas)
+	}
+	if result.Available != 1 {
+		t.Errorf("expected Available=1, got %d", result.Available)
+	}
+	if !result.Ready {
+		t.Error("expected Ready=true (1/1 ready), got false")
+	}
+}
+
 // TestWorkflowStatusEmptyName verifies wf_status returns empty resources for non-existent name.
 func TestWorkflowStatusEmptyName(t *testing.T) {
 	client := newDeployTestClient()
