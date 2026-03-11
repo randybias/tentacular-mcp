@@ -293,14 +293,23 @@ func (r *PostgresRegistrar) Unregister(ctx context.Context, id Identity) error {
 	return nil
 }
 
+// hexOnly matches strings containing only hex characters [0-9a-f].
+var hexOnly = regexp.MustCompile(`^[0-9a-f]+$`)
+
 // generateRandomHex creates a cryptographically random 32-byte hex-encoded string.
-// Used for both Postgres passwords and NATS tokens.
+// The result is guaranteed to contain only [0-9a-f] characters, which is important
+// because these passwords are interpolated into SQL strings (PostgreSQL DDL statements
+// like CREATE ROLE and ALTER ROLE do not support parameterized queries for PASSWORD).
 func generateRandomHex() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(b), nil
+	s := hex.EncodeToString(b)
+	if !hexOnly.MatchString(s) {
+		return "", fmt.Errorf("generated password contains unexpected characters")
+	}
+	return s, nil
 }
 
 // quoteIdent quotes a Postgres identifier with double quotes.
