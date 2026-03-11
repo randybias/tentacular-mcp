@@ -8,5 +8,8 @@ dependencies:
 - name: cert-manager
   repository: https://charts.jetstack.io
   version: v1.17.4
-digest: sha256:c68056bf568b0c679a89dd99357fdede851d2032437719af18303e4297e1c195
-generated: "2026-03-11T17:26:58.031146087+02:00"
+- name: tentacular-mcp
+  repository: file://../tentacular-mcp
+  version: 0.1.0
+digest: sha256:49a23a07bfc201961222ddf9974c51cd7007f0b35641ea207e309ce9128ddb0a
+generated: "2026-03-11T17:31:23.602787543+02:00"

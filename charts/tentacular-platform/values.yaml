@@ -117,11 +117,74 @@ tls:
 tentacular-mcp:
   # -- Enable MCP server deployment
   enabled: true
+  # -- Do not create namespace (managed by umbrella chart)
+  namespace:
+    create: false
+  # -- Auth token for MCP server (must be provided by user or via existingSecret)
+  auth:
+    token: ""
+    existingSecret: ""
+  # -- Image configuration
+  image:
+    registry: ghcr.io
+    repository: randybias/tentacular-mcp
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  # -- Service configuration
+  service:
+    type: ClusterIP
+    port: 8080
+  # -- Resource requests and limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  # -- Extra environment variable sources (e.g., Secrets, ConfigMaps)
+  # When exoskeleton.enabled is true, add the exoskeleton Secret as an envFrom source:
+  #   extraEnvFrom:
+  #     - secretRef:
+  #         name: tentacular-exoskeleton-config
+  extraEnvFrom: []
+
+# -- Exoskeleton configuration for MCP server
+# Controls how backing-service connection details are wired to the MCP server
+exoskeleton:
+  # -- Enable exoskeleton subsystem
+  enabled: true
+  # -- Use an existing Secret instead of the auto-generated one
+  existingSecret: ""
+  # -- PostgreSQL SSL mode for tentacle connections
+  postgresSSLMode: "prefer"
 
 # -- esm-sh module proxy configuration
 esm-sh:
   # -- Enable esm-sh proxy deployment
   enabled: true
+  image:
+    # -- esm-sh container image repository
+    repository: ghcr.io/esm-dev/esm.sh
+    # -- esm-sh container image tag
+    tag: "v136"
+    # -- Image pull policy
+    pullPolicy: IfNotPresent
+  # -- Number of replicas
+  replicas: 1
+  # -- Resource requests and limits
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  # -- Enable persistent storage for module cache
+  persistence:
+    enabled: false
+    size: 1Gi
+    storageClass: ""
 
 # -- Ingress configuration
 ingress:

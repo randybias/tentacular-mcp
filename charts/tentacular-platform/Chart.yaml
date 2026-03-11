@@ -38,3 +38,9 @@ dependencies:
     version: "v1.17.4"
     repository: https://charts.jetstack.io
     condition: cert-manager.enabled
+  - name: tentacular-mcp
+    # Local reference for development; for releases use:
+    # repository: oci://ghcr.io/randybias/tentacular-mcp/charts
+    version: "0.1.0"
+    repository: "file://../tentacular-mcp"
+    condition: tentacular-mcp.enabled

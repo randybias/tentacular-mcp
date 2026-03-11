@@ -48,6 +48,10 @@ spec:
           env:
             - name: TOKEN_PATH
               value: /etc/tentacular-mcp/token
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: auth-secret
               mountPath: /etc/tentacular-mcp

@@ -1,0 +1,20 @@
+{{- if (index .Values "esm-sh" "enabled") }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tentacular-platform.fullname" . }}-esm-sh
+  namespace: {{ include "tentacular-platform.namespace.support" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: esm-sh
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "tentacular-platform.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: esm-sh
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+{{- end }}

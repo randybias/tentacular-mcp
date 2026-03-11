@@ -100,6 +100,9 @@ readinessProbe:
   initialDelaySeconds: 3
   periodSeconds: 5
 
+# -- Extra environment variable sources (Secrets, ConfigMaps) injected into the container
+extraEnvFrom: []
+
 # -- Node selector for pod scheduling
 nodeSelector: {}
 

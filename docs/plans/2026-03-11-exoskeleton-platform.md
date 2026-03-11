@@ -143,17 +143,17 @@ Add the existing tentacular-mcp chart as a subchart dependency and create templa
 - Create: `charts/tentacular-platform/templates/esm-sh-service.yaml`
 - Create: `charts/tentacular-platform/templates/esm-sh-networkpolicy.yaml`
 
-- [ ] Add tentacular-mcp as subchart dependency in Chart.yaml: `name: tentacular-mcp`, `repository: "file://../tentacular-mcp"` (local reference for development; YAML comment noting OCI registry path for releases), condition `tentacular-mcp.enabled`.
-- [ ] Add tentacular-mcp section to values.yaml: `enabled: true`. Wire through auth.token, image settings, service type. Add `exoskeleton.enabled`, `exoskeleton.existingSecret` (name of the Secret containing backing-service connection details) pointing to the exoskeleton-secret template. Add environment variable overrides for all TENTACULAR_EXOSKELETON_* flags.
-- [ ] Create `charts/tentacular-platform/templates/exoskeleton-secret.yaml`: generates a Secret in the system namespace with keys matching the MCP server's expected env vars: postgres-host, postgres-port, postgres-database, postgres-user, postgres-password, postgres-sslmode, nats-url, nats-token. Values derived from the postgresql and nats subchart values (service names, credentials). Conditional on any exoskeleton service being enabled. Add label `tentacular.io/exoskeleton-config: "true"`.
-- [ ] Wire the exoskeleton Secret into the tentacular-mcp subchart values: set `extraEnvFrom` or `extraVolumes`/`extraVolumeMounts` (check what the existing tentacular-mcp chart supports; if it doesn't support extra env/volume injection, note that the chart needs a small enhancement first and add a TODO).
-- [ ] Create `charts/tentacular-platform/templates/esm-sh-deployment.yaml`: Deployment in support namespace for esm-sh proxy. Image: `ghcr.io/esm-dev/esm.sh:v136` (configurable). Security context: runAsNonRoot, readOnlyRootFilesystem where possible, drop ALL capabilities. Resource defaults. Conditional on `esm-sh.enabled`.
-- [ ] Create `charts/tentacular-platform/templates/esm-sh-service.yaml`: ClusterIP Service on port 8080 for the proxy.
-- [ ] Create `charts/tentacular-platform/templates/esm-sh-networkpolicy.yaml`: conditional on both `esm-sh.enabled` AND `networkPolicies.enabled`. Allow inbound from any namespace with `tentacular.io/managed-by` label (workflow namespaces), allow outbound to internet (for module resolution), deny all else.
-- [ ] Add esm-sh section to values.yaml: `enabled: true`, `image.repository`, `image.tag`, `replicas: 1`, `resources` (requests/limits), `persistence.enabled: false`, `persistence.size: 1Gi`.
-- [ ] Update ci/test-values.yaml with appropriate overrides.
-- [ ] Verify: `helm template` renders MCP deployment, esm-sh deployment, and exoskeleton Secret correctly.
-- [ ] Verify: helm lint passes.
+- [x] Add tentacular-mcp as subchart dependency in Chart.yaml: `name: tentacular-mcp`, `repository: "file://../tentacular-mcp"` (local reference for development; YAML comment noting OCI registry path for releases), condition `tentacular-mcp.enabled`.
+- [x] Add tentacular-mcp section to values.yaml: `enabled: true`. Wire through auth.token, image settings, service type. Add `exoskeleton.enabled`, `exoskeleton.existingSecret` (name of the Secret containing backing-service connection details) pointing to the exoskeleton-secret template. Add environment variable overrides for all TENTACULAR_EXOSKELETON_* flags.
+- [x] Create `charts/tentacular-platform/templates/exoskeleton-secret.yaml`: generates a Secret in the system namespace with keys matching the MCP server's expected env vars: postgres-host, postgres-port, postgres-database, postgres-user, postgres-password, postgres-sslmode, nats-url, nats-token. Values derived from the postgresql and nats subchart values (service names, credentials). Conditional on any exoskeleton service being enabled. Add label `tentacular.io/exoskeleton-config: "true"`.
+- [x] Wire the exoskeleton Secret into the tentacular-mcp subchart values: set `extraEnvFrom` or `extraVolumes`/`extraVolumeMounts` (check what the existing tentacular-mcp chart supports; if it doesn't support extra env/volume injection, note that the chart needs a small enhancement first and add a TODO).
+- [x] Create `charts/tentacular-platform/templates/esm-sh-deployment.yaml`: Deployment in support namespace for esm-sh proxy. Image: `ghcr.io/esm-dev/esm.sh:v136` (configurable). Security context: runAsNonRoot, readOnlyRootFilesystem where possible, drop ALL capabilities. Resource defaults. Conditional on `esm-sh.enabled`.
+- [x] Create `charts/tentacular-platform/templates/esm-sh-service.yaml`: ClusterIP Service on port 8080 for the proxy.
+- [x] Create `charts/tentacular-platform/templates/esm-sh-networkpolicy.yaml`: conditional on both `esm-sh.enabled` AND `networkPolicies.enabled`. Allow inbound from any namespace with `tentacular.io/managed-by` label (workflow namespaces), allow outbound to internet (for module resolution), deny all else.
+- [x] Add esm-sh section to values.yaml: `enabled: true`, `image.repository`, `image.tag`, `replicas: 1`, `resources` (requests/limits), `persistence.enabled: false`, `persistence.size: 1Gi`.
+- [x] Update ci/test-values.yaml with appropriate overrides.
+- [x] Verify: `helm template` renders MCP deployment, esm-sh deployment, and exoskeleton Secret correctly.
+- [x] Verify: helm lint passes.
 
 ### Task 6: Add multi-backend ingress support and chart documentation
 
