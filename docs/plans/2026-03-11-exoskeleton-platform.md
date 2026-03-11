@@ -245,13 +245,13 @@ Create the NATS registrar that provisions per-tentacle credentials with scoped p
 - Create: `pkg/exoskeleton/nats.go`
 - Create: `pkg/exoskeleton/nats_test.go`
 
-- [ ] Pull latest from remote before starting.
-- [ ] Define a `NATSAdmin` interface in `pkg/exoskeleton/nats.go` for NATS management operations (user creation, permission setting, user deletion) to allow mocking in tests. The v1 implementation uses token-based auth — the registrar generates a scoped token or username+password pair for the tentacle. Add constructor `NewNATSRegistrar(config NATSConfig)`.
-- [ ] Implement `Register(ctx context.Context, id Identity) (*NATSRegistration, error)`: derive subject scope from identity (publish: `tentacular.<ns>.<wf>.>`, subscribe: `tentacular.<ns>.<wf>.>`). For v1 with simple token auth, generate a unique token for the tentacle and store the permission mapping. Return `NATSRegistration` struct with URL, Token/Credentials, SubjectPrefix, Principal.
-- [ ] Implement `ReRegister(ctx context.Context, id Identity) (*NATSRegistration, error)`: verify existing credentials are valid, optionally reissue. Preserve any JetStream durable state.
-- [ ] Implement `Unregister(ctx context.Context, id Identity) error`: revoke/invalidate the tentacle's credentials. Log what was cleaned up.
-- [ ] Create `pkg/exoskeleton/nats_test.go`: mock NATSAdmin interface. Test: Register creates correct subject scope matching IdentityCompiler output, ReRegister preserves state, Unregister revokes credentials, error handling for unreachable NATS.
-- [ ] Run all validation commands — all tests pass, lint clean.
+- [x] Pull latest from remote before starting.
+- [x] Define a `NATSAdmin` interface in `pkg/exoskeleton/nats.go` for NATS management operations (user creation, permission setting, user deletion) to allow mocking in tests. The v1 implementation uses token-based auth — the registrar generates a scoped token or username+password pair for the tentacle. Add constructor `NewNATSRegistrar(config NATSConfig)`.
+- [x] Implement `Register(ctx context.Context, id Identity) (*NATSRegistration, error)`: derive subject scope from identity (publish: `tentacular.<ns>.<wf>.>`, subscribe: `tentacular.<ns>.<wf>.>`). For v1 with simple token auth, generate a unique token for the tentacle and store the permission mapping. Return `NATSRegistration` struct with URL, Token/Credentials, SubjectPrefix, Principal.
+- [x] Implement `ReRegister(ctx context.Context, id Identity) (*NATSRegistration, error)`: verify existing credentials are valid, optionally reissue. Preserve any JetStream durable state.
+- [x] Implement `Unregister(ctx context.Context, id Identity) error`: revoke/invalidate the tentacle's credentials. Log what was cleaned up.
+- [x] Create `pkg/exoskeleton/nats_test.go`: mock NATSAdmin interface. Test: Register creates correct subject scope matching IdentityCompiler output, ReRegister preserves state, Unregister revokes credentials, error handling for unreachable NATS.
+- [x] Run all validation commands — all tests pass, lint clean.
 
 ### Task 11: Implement CredentialInjector and ExoskeletonController
 
