@@ -104,12 +104,12 @@ Add nats/nats as a Helm subchart dependency with JetStream enabled, token auth, 
 - Modify: `charts/tentacular-platform/values.yaml`
 - Modify: `charts/tentacular-platform/ci/test-values.yaml`
 
-- [ ] Add nats/nats dependency to Chart.yaml: `name: nats`, repository `https://nats-io.github.io/k8s/helm/charts/`, version constraint for a stable 1.x release of the chart, condition `nats.enabled`.
-- [ ] Add nats configuration to values.yaml under the `nats:` key. Set: `config.jetstream.enabled: true`, `config.jetstream.fileStore.pvc.size: 5Gi`, single replica for dev (replicaCount or similar). Add auth section with token-based auth (config.merge or auth block depending on chart version). Add a YAML comment noting that JWT-based auth is planned for production.
-- [ ] Update ci/test-values.yaml with NATS test token.
-- [ ] Run `helm dependency update charts/tentacular-platform/`.
-- [ ] Verify: `helm template test charts/tentacular-platform/ -f charts/tentacular-platform/ci/test-values.yaml` renders a NATS StatefulSet.
-- [ ] Verify: helm lint passes.
+- [x] Add nats/nats dependency to Chart.yaml: `name: nats`, repository `https://nats-io.github.io/k8s/helm/charts/`, version constraint for a stable 1.x release of the chart, condition `nats.enabled`.
+- [x] Add nats configuration to values.yaml under the `nats:` key. Set: `config.jetstream.enabled: true`, `config.jetstream.fileStore.pvc.size: 5Gi`, single replica for dev (replicaCount or similar). Add auth section with token-based auth (config.merge or auth block depending on chart version). Add a YAML comment noting that JWT-based auth is planned for production.
+- [x] Update ci/test-values.yaml with NATS test token.
+- [x] Run `helm dependency update charts/tentacular-platform/`.
+- [x] Verify: `helm template test charts/tentacular-platform/ -f charts/tentacular-platform/ci/test-values.yaml` renders a NATS StatefulSet.
+- [x] Verify: helm lint passes.
 
 ### Task 4: Add cert-manager as optional embedded subchart dependency
 

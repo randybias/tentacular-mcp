@@ -56,6 +56,31 @@ postgresql:
 nats:
   # -- Enable NATS deployment
   enabled: true
+  # -- namespaceOverride is set automatically by the chart via the exoskeleton namespace helper
+  config:
+    jetstream:
+      # -- Enable JetStream for persistent messaging
+      enabled: true
+      fileStore:
+        enabled: true
+        dir: /data
+        pvc:
+          enabled: true
+          # -- PVC size for JetStream file store
+          size: 5Gi
+          storageClassName: ""
+    # -- Single replica (no clustering) for dev; enable cluster for production
+    cluster:
+      enabled: false
+    # -- Token-based auth for NATS connections
+    # JWT-based auth is planned for production
+    merge:
+      authorization:
+        # -- NATS auth token (must be provided by user)
+        token: ""
+  # -- Disable NATS Box in platform deployment (not needed for tentacular)
+  natsBox:
+    enabled: false
 
 # -- cert-manager subchart configuration (jetstack/cert-manager)
 # Most clusters have cert-manager pre-installed; enable only if needed

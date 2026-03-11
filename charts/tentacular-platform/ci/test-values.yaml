@@ -23,6 +23,10 @@ postgresql:
 
 nats:
   enabled: true
+  config:
+    merge:
+      authorization:
+        token: "test-nats-token"
 
 cert-manager:
   enabled: false
