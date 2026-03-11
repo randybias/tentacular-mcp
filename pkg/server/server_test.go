@@ -25,7 +25,7 @@ func newTestServer(t *testing.T) (*server.Server, *httptest.Server) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	reconciler := proxy.NewReconciler(client, proxy.Options{Namespace: "tentacular-support"}, logger)
-	srv, err := server.New(client, reconciler, nil, testServerToken, logger)
+	srv, err := server.New(client, reconciler, nil, testServerToken, logger, nil)
 	if err != nil {
 		t.Fatalf("server.New: %v", err)
 	}

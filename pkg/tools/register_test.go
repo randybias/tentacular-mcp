@@ -35,7 +35,7 @@ func TestRegisterAll(t *testing.T) {
 	client := newTestClient()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	reconciler := proxy.NewReconciler(client, proxy.Options{Namespace: "tentacular-system"}, logger)
-	RegisterAll(srv, client, reconciler, nil)
+	RegisterAll(srv, client, reconciler, nil, nil)
 }
 
 // TestGuardCheckNamespace verifies the guard rejects tentacular-system.

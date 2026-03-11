@@ -60,6 +60,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	var exoCtrl *exoskeleton.ExoskeletonController
 	if exoCfg.Enabled {
 		if err := exoCfg.Validate(); err != nil {
 			slog.Error("exoskeleton config validation failed", "error", err)
@@ -71,11 +72,31 @@ func main() {
 			"rustfs", exoCfg.RustFSEnabled,
 			"cleanupOnUndeploy", exoCfg.CleanupOnUndeploy,
 		)
+
+		var pgReg exoskeleton.PostgresRegistrarI
+		var natsReg exoskeleton.NATSRegistrarI
+
+		if exoCfg.PostgresEnabled {
+			pg := exoskeleton.NewPostgresRegistrar(exoCfg.Postgres)
+			// Note: SetDB must be called with a real *sql.DB connection before
+			// Register/Unregister can be used. In production this happens via
+			// a connect-on-first-use pattern or an explicit Connect() call.
+			pgReg = pg
+		}
+
+		if exoCfg.NATSEnabled {
+			nr := exoskeleton.NewNATSRegistrar(exoCfg.NATS)
+			nr.SetAdmin(exoskeleton.NewInMemoryNATSAdmin())
+			natsReg = nr
+		}
+
+		credInj := exoskeleton.NewCredentialInjector(client.Clientset)
+		exoCtrl = exoskeleton.NewExoskeletonController(exoCfg, pgReg, natsReg, credInj)
 	} else {
 		slog.Info("exoskeleton disabled")
 	}
 
-	srv, err := server.New(client, reconciler, sched, token, logger)
+	srv, err := server.New(client, reconciler, sched, token, logger, exoCtrl)
 	if err != nil {
 		slog.Error("failed to create MCP server", "error", err)
 		os.Exit(1)

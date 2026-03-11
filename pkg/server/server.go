@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/randybias/tentacular-mcp/pkg/auth"
+	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 	"github.com/randybias/tentacular-mcp/pkg/proxy"
 	"github.com/randybias/tentacular-mcp/pkg/scheduler"
@@ -16,16 +17,18 @@ import (
 
 // Server wraps the MCP server with K8s client and auth.
 type Server struct {
-	mcpServer  *mcp.Server
-	client     *k8s.Client
-	reconciler *proxy.Reconciler
-	scheduler  *scheduler.Scheduler
-	token      string
-	logger     *slog.Logger
+	mcpServer     *mcp.Server
+	client        *k8s.Client
+	reconciler    *proxy.Reconciler
+	scheduler     *scheduler.Scheduler
+	exoController *exoskeleton.ExoskeletonController
+	token         string
+	logger        *slog.Logger
 }
 
 // New creates a new MCP server with all tools registered.
-func New(client *k8s.Client, reconciler *proxy.Reconciler, sched *scheduler.Scheduler, token string, logger *slog.Logger) (*Server, error) {
+// exoCtrl may be nil when the exoskeleton subsystem is disabled.
+func New(client *k8s.Client, reconciler *proxy.Reconciler, sched *scheduler.Scheduler, token string, logger *slog.Logger, exoCtrl *exoskeleton.ExoskeletonController) (*Server, error) {
 	mcpServer := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    "tentacular-mcp",
@@ -38,12 +41,13 @@ func New(client *k8s.Client, reconciler *proxy.Reconciler, sched *scheduler.Sche
 	)
 
 	s := &Server{
-		mcpServer:  mcpServer,
-		client:     client,
-		reconciler: reconciler,
-		scheduler:  sched,
-		token:      token,
-		logger:     logger,
+		mcpServer:     mcpServer,
+		client:        client,
+		reconciler:    reconciler,
+		scheduler:     sched,
+		exoController: exoCtrl,
+		token:         token,
+		logger:        logger,
 	}
 
 	s.registerTools()
@@ -75,5 +79,5 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 // registerTools registers all MCP tools by delegating to the tools package.
 func (s *Server) registerTools() {
-	tools.RegisterAll(s.mcpServer, s.client, s.reconciler, s.scheduler)
+	tools.RegisterAll(s.mcpServer, s.client, s.reconciler, s.scheduler, s.exoController)
 }

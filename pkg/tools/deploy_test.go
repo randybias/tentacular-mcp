@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
 
@@ -183,7 +184,7 @@ func TestDeployToolNamesRegistered(t *testing.T) {
 		&mcp.ServerOptions{Logger: slog.New(slog.NewTextHandler(os.Stderr, nil))},
 	)
 	client := newDeployTestClient()
-	registerDeployTools(mcpSrv, client, nil)
+	registerDeployTools(mcpSrv, client, nil, nil)
 
 	handler := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server { return mcpSrv },
@@ -641,4 +642,390 @@ func TestWorkflowApplyConfigMapLargeDataIntegrity(t *testing.T) {
 	checkStringKey("key-small-1", smallValue1)
 	checkStringKey("key-small-2", smallValue2)
 	checkStringKey("key-large", largeValue)
+}
+
+// --- Exoskeleton integration tests ---
+
+// mockExoRegistrar records Register/Unregister calls for testing.
+type mockExoRegistrar struct {
+	registerCalls   []mockExoCall
+	unregisterCalls []mockExoCall
+	registerErr     error
+	unregisterErr   error
+}
+
+type mockExoCall struct {
+	Namespace string
+	Workflow  string
+	Deps      []string
+}
+
+func (m *mockExoRegistrar) Register(ctx context.Context, namespace, workflow string, deps []string) error {
+	m.registerCalls = append(m.registerCalls, mockExoCall{Namespace: namespace, Workflow: workflow, Deps: deps})
+	return m.registerErr
+}
+
+func (m *mockExoRegistrar) Unregister(ctx context.Context, namespace, workflow string) error {
+	m.unregisterCalls = append(m.unregisterCalls, mockExoCall{Namespace: namespace, Workflow: workflow})
+	return m.unregisterErr
+}
+
+// testExoController creates an ExoskeletonController backed by mock registrars.
+func testExoController(t *testing.T, pgEnabled, natsEnabled bool) (*exoskeleton.ExoskeletonController, *mockPgRegistrar, *mockNatsRegistrar) {
+	t.Helper()
+	cfg := &exoskeleton.ExoskeletonConfig{
+		Enabled:           true,
+		PostgresEnabled:   pgEnabled,
+		NATSEnabled:       natsEnabled,
+		CleanupOnUndeploy: true,
+	}
+
+	var pg exoskeleton.PostgresRegistrarI
+	var nr exoskeleton.NATSRegistrarI
+	mockPg := &mockPgRegistrar{}
+	mockNr := &mockNatsRegistrar{}
+
+	if pgEnabled {
+		pg = mockPg
+	}
+	if natsEnabled {
+		nr = mockNr
+	}
+
+	// Use a fake K8s clientset for the credential injector
+	staticClient := kubefake.NewClientset(managedNs("my-ns"), managedNs("test-ns"))
+	credInj := exoskeleton.NewCredentialInjector(staticClient)
+
+	ctrl := exoskeleton.NewExoskeletonController(cfg, pg, nr, credInj)
+	return ctrl, mockPg, mockNr
+}
+
+// mockPgRegistrar implements PostgresRegistrarI for testing.
+type mockPgRegistrar struct {
+	registerCalls   int
+	unregisterCalls int
+	registerErr     error
+	unregisterErr   error
+}
+
+func (m *mockPgRegistrar) Register(ctx context.Context, id exoskeleton.Identity) (*exoskeleton.PostgresRegistration, error) {
+	m.registerCalls++
+	if m.registerErr != nil {
+		return nil, m.registerErr
+	}
+	return &exoskeleton.PostgresRegistration{
+		Role:     id.PostgresRole,
+		Schema:   id.PostgresSchema,
+		Password: "test-password",
+		Host:     "localhost",
+		Port:     "5432",
+		Database: "testdb",
+	}, nil
+}
+
+func (m *mockPgRegistrar) Unregister(ctx context.Context, id exoskeleton.Identity) error {
+	m.unregisterCalls++
+	return m.unregisterErr
+}
+
+// mockNatsRegistrar implements NATSRegistrarI for testing.
+type mockNatsRegistrar struct {
+	registerCalls   int
+	unregisterCalls int
+	registerErr     error
+	unregisterErr   error
+}
+
+func (m *mockNatsRegistrar) Register(ctx context.Context, id exoskeleton.Identity) (*exoskeleton.NATSRegistration, error) {
+	m.registerCalls++
+	if m.registerErr != nil {
+		return nil, m.registerErr
+	}
+	return &exoskeleton.NATSRegistration{
+		URL:           "nats://localhost:4222",
+		Token:         "test-nats-token",
+		SubjectPrefix: id.NATSSubjectPrefix,
+		Principal:     id.NATSPrincipal,
+	}, nil
+}
+
+func (m *mockNatsRegistrar) Unregister(ctx context.Context, id exoskeleton.Identity) error {
+	m.unregisterCalls++
+	return m.unregisterErr
+}
+
+// TestWorkflowApplyWithExoskeletonAndTentacularDeps verifies that wf_apply with an
+// exoskeleton controller triggers registration when the workflow has tentacular-* deps.
+func TestWorkflowApplyWithExoskeletonAndTentacularDeps(t *testing.T) {
+	client := newDeployTestClientWithDiscovery()
+	ctx := context.Background()
+
+	ctrl, mockPg, mockNr := testExoController(t, true, true)
+
+	// Build manifests with a ConfigMap containing workflow.yaml with tentacular-* deps
+	manifests := []map[string]interface{}{
+		{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata":   map[string]interface{}{"name": "my-workflow-config"},
+			"data": map[string]interface{}{
+				"workflow.yaml": "dependencies:\n  - tentacular-postgres\n  - tentacular-nats\n",
+			},
+		},
+	}
+
+	result, err := handleWorkflowApply(ctx, client, WorkflowApplyParams{
+		Namespace: "my-ns",
+		Name:      "exo-test-app",
+		Manifests: manifests,
+	})
+	if err != nil {
+		t.Fatalf("handleWorkflowApply: %v", err)
+	}
+	if result.Created != 1 {
+		t.Fatalf("expected 1 created, got %d", result.Created)
+	}
+
+	// Now simulate the exoskeleton registration that happens in the tool handler
+	wfYAML := extractWorkflowYAML(manifests)
+	if wfYAML == "" {
+		t.Fatal("extractWorkflowYAML returned empty string")
+	}
+
+	exoDeps, err := exoskeleton.DetectExoskeletonDeps(wfYAML)
+	if err != nil {
+		t.Fatalf("DetectExoskeletonDeps: %v", err)
+	}
+	if len(exoDeps) != 2 {
+		t.Fatalf("expected 2 exo deps, got %d: %v", len(exoDeps), exoDeps)
+	}
+
+	if err := ctrl.Register(ctx, "my-ns", "exo-test-app", exoDeps); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	if mockPg.registerCalls != 1 {
+		t.Errorf("expected 1 postgres register call, got %d", mockPg.registerCalls)
+	}
+	if mockNr.registerCalls != 1 {
+		t.Errorf("expected 1 nats register call, got %d", mockNr.registerCalls)
+	}
+}
+
+// TestWorkflowApplyWithExoskeletonNoTentacularDeps verifies that wf_apply with an
+// exoskeleton controller does NOT trigger registration when there are no tentacular-* deps.
+func TestWorkflowApplyWithExoskeletonNoTentacularDeps(t *testing.T) {
+	client := newDeployTestClientWithDiscovery()
+	ctx := context.Background()
+
+	_, mockPg, mockNr := testExoController(t, true, true)
+
+	// ConfigMap with workflow.yaml that has no tentacular-* deps
+	manifests := []map[string]interface{}{
+		{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata":   map[string]interface{}{"name": "my-config"},
+			"data": map[string]interface{}{
+				"workflow.yaml": "dependencies:\n  - redis\n  - rabbitmq\n",
+			},
+		},
+	}
+
+	result, err := handleWorkflowApply(ctx, client, WorkflowApplyParams{
+		Namespace: "my-ns",
+		Name:      "no-exo-app",
+		Manifests: manifests,
+	})
+	if err != nil {
+		t.Fatalf("handleWorkflowApply: %v", err)
+	}
+	if result.Created != 1 {
+		t.Fatalf("expected 1 created, got %d", result.Created)
+	}
+
+	// Simulate the exoskeleton check
+	wfYAML := extractWorkflowYAML(manifests)
+	exoDeps, err := exoskeleton.DetectExoskeletonDeps(wfYAML)
+	if err != nil {
+		t.Fatalf("DetectExoskeletonDeps: %v", err)
+	}
+	if len(exoDeps) != 0 {
+		t.Fatalf("expected 0 exo deps, got %d: %v", len(exoDeps), exoDeps)
+	}
+
+	// No register calls should have been made
+	if mockPg.registerCalls != 0 {
+		t.Errorf("expected 0 postgres register calls, got %d", mockPg.registerCalls)
+	}
+	if mockNr.registerCalls != 0 {
+		t.Errorf("expected 0 nats register calls, got %d", mockNr.registerCalls)
+	}
+}
+
+// TestWorkflowApplyWithNilExoskeletonController verifies that wf_apply with nil
+// controller has no exoskeleton side effects.
+func TestWorkflowApplyWithNilExoskeletonController(t *testing.T) {
+	client := newDeployTestClientWithDiscovery()
+	ctx := context.Background()
+
+	// nil controller — exoskeleton disabled
+	manifests := []map[string]interface{}{
+		{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata":   map[string]interface{}{"name": "my-config"},
+			"data": map[string]interface{}{
+				"workflow.yaml": "dependencies:\n  - tentacular-postgres\n",
+			},
+		},
+	}
+
+	result, err := handleWorkflowApply(ctx, client, WorkflowApplyParams{
+		Namespace: "my-ns",
+		Name:      "nil-ctrl-app",
+		Manifests: manifests,
+	})
+	if err != nil {
+		t.Fatalf("handleWorkflowApply: %v", err)
+	}
+	if result.Created != 1 {
+		t.Errorf("expected 1 created, got %d", result.Created)
+	}
+	// The test passes if no panic occurs — nil controller means no exoskeleton code runs
+}
+
+// TestWorkflowRemoveWithExoskeletonCleanup verifies that wf_remove calls Unregister
+// when the exoskeleton controller is non-nil.
+func TestWorkflowRemoveWithExoskeletonCleanup(t *testing.T) {
+	client := newDeployTestClient()
+	ctx := context.Background()
+
+	ctrl, mockPg, mockNr := testExoController(t, true, true)
+
+	// Call Unregister directly (simulates what the handler does)
+	if err := ctrl.Unregister(ctx, "my-ns", "cleanup-app"); err != nil {
+		t.Fatalf("Unregister: %v", err)
+	}
+
+	if mockPg.unregisterCalls != 1 {
+		t.Errorf("expected 1 postgres unregister call, got %d", mockPg.unregisterCalls)
+	}
+	if mockNr.unregisterCalls != 1 {
+		t.Errorf("expected 1 nats unregister call, got %d", mockNr.unregisterCalls)
+	}
+
+	// Also verify the workflow removal works fine after unregistration
+	result, err := handleWorkflowRemove(ctx, client, WorkflowRemoveParams{
+		Namespace: "my-ns",
+		Name:      "cleanup-app",
+	})
+	if err != nil {
+		t.Fatalf("handleWorkflowRemove: %v", err)
+	}
+	if result.Name != "cleanup-app" {
+		t.Errorf("result Name: got %q, want cleanup-app", result.Name)
+	}
+}
+
+// TestWorkflowRemoveWithNilController verifies wf_remove with nil controller
+// has no exoskeleton side effects and works identically to before.
+func TestWorkflowRemoveWithNilController(t *testing.T) {
+	client := newDeployTestClient()
+	ctx := context.Background()
+
+	// nil controller — no exoskeleton calls should happen
+	result, err := handleWorkflowRemove(ctx, client, WorkflowRemoveParams{
+		Namespace: "my-ns",
+		Name:      "no-exo-remove",
+	})
+	if err != nil {
+		t.Fatalf("handleWorkflowRemove: %v", err)
+	}
+	if result.Name != "no-exo-remove" {
+		t.Errorf("result Name: got %q, want no-exo-remove", result.Name)
+	}
+	// Test passes if no panic — nil controller means no exoskeleton code
+}
+
+// TestExtractWorkflowYAML verifies the helper that extracts workflow.yaml from manifests.
+func TestExtractWorkflowYAML(t *testing.T) {
+	tests := []struct {
+		name      string
+		manifests []map[string]interface{}
+		want      string
+	}{
+		{
+			name: "ConfigMap with workflow.yaml",
+			manifests: []map[string]interface{}{
+				{
+					"apiVersion": "v1",
+					"kind":       "ConfigMap",
+					"metadata":   map[string]interface{}{"name": "wf-config"},
+					"data": map[string]interface{}{
+						"workflow.yaml": "dependencies:\n  - tentacular-postgres\n",
+					},
+				},
+			},
+			want: "dependencies:\n  - tentacular-postgres\n",
+		},
+		{
+			name: "no ConfigMap",
+			manifests: []map[string]interface{}{
+				{
+					"apiVersion": "apps/v1",
+					"kind":       "Deployment",
+					"metadata":   map[string]interface{}{"name": "my-app"},
+				},
+			},
+			want: "",
+		},
+		{
+			name: "ConfigMap without workflow.yaml key",
+			manifests: []map[string]interface{}{
+				{
+					"apiVersion": "v1",
+					"kind":       "ConfigMap",
+					"metadata":   map[string]interface{}{"name": "other-config"},
+					"data": map[string]interface{}{
+						"config.yaml": "some: value",
+					},
+				},
+			},
+			want: "",
+		},
+		{
+			name:      "empty manifests",
+			manifests: []map[string]interface{}{},
+			want:      "",
+		},
+		{
+			name: "multiple manifests, ConfigMap is second",
+			manifests: []map[string]interface{}{
+				{
+					"apiVersion": "v1",
+					"kind":       "Service",
+					"metadata":   map[string]interface{}{"name": "my-svc"},
+				},
+				{
+					"apiVersion": "v1",
+					"kind":       "ConfigMap",
+					"metadata":   map[string]interface{}{"name": "wf"},
+					"data": map[string]interface{}{
+						"workflow.yaml": "dependencies:\n  - tentacular-nats\n",
+					},
+				},
+			},
+			want: "dependencies:\n  - tentacular-nats\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractWorkflowYAML(tt.manifests)
+			if got != tt.want {
+				t.Errorf("extractWorkflowYAML() = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }

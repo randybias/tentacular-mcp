@@ -16,7 +16,7 @@ import (
 func TestIntegration_MCPHealthEndpoint(t *testing.T) {
 	client := integrationClient(t)
 
-	srv, err := server.New(client, nil, nil, "test-token-health", slog.Default())
+	srv, err := server.New(client, nil, nil, "test-token-health", slog.Default(), nil)
 	if err != nil {
 		t.Fatalf("server.New: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestIntegration_MCPHealthEndpoint(t *testing.T) {
 func TestIntegration_MCPAuthRejected(t *testing.T) {
 	client := integrationClient(t)
 
-	srv, err := server.New(client, nil, nil, "test-token-auth", slog.Default())
+	srv, err := server.New(client, nil, nil, "test-token-auth", slog.Default(), nil)
 	if err != nil {
 		t.Fatalf("server.New: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestIntegration_MCPAuthRejected(t *testing.T) {
 func TestIntegration_MCPAuthWithBadToken(t *testing.T) {
 	client := integrationClient(t)
 
-	srv, err := server.New(client, nil, nil, "test-token-bad", slog.Default())
+	srv, err := server.New(client, nil, nil, "test-token-bad", slog.Default(), nil)
 	if err != nil {
 		t.Fatalf("server.New: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestIntegration_MCPAuthAccepted(t *testing.T) {
 	client := integrationClient(t)
 	token := "test-token-accepted"
 
-	srv, err := server.New(client, nil, nil, token, slog.Default())
+	srv, err := server.New(client, nil, nil, token, slog.Default(), nil)
 	if err != nil {
 		t.Fatalf("server.New: %v", err)
 	}

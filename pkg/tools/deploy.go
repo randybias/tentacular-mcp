@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 	"github.com/randybias/tentacular-mcp/pkg/proxy"
@@ -114,7 +115,7 @@ type WorkflowStatusResult struct {
 	Events    []WorkflowEventInfo      `json:"events,omitempty"`
 }
 
-func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.Scheduler) {
+func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.Scheduler, exoCtrl *exoskeleton.ExoskeletonController) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_apply",
 		Description: "Apply a set of Kubernetes manifests as a named deployment in a namespace. Uses release labels for tracking and garbage collection.",
@@ -142,6 +143,26 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 					}
 				}()
 			}
+
+			// Exoskeleton: register backing-service credentials for tentacular-* deps.
+			// Only runs when the controller is non-nil (exoskeleton enabled).
+			if exoCtrl != nil {
+				if wfYAML := extractWorkflowYAML(params.Manifests); wfYAML != "" {
+					exoDeps, parseErr := exoskeleton.DetectExoskeletonDeps(wfYAML)
+					if parseErr != nil {
+						slog.Warn("exoskeleton: failed to parse workflow YAML for deps", "error", parseErr)
+					} else if len(exoDeps) > 0 {
+						if regErr := exoCtrl.Register(ctx, params.Namespace, params.Name, exoDeps); regErr != nil {
+							return nil, WorkflowApplyResult{}, fmt.Errorf("exoskeleton registration failed: %w", regErr)
+						}
+						slog.Info("exoskeleton: registered backing services",
+							"namespace", params.Namespace,
+							"workflow", params.Name,
+							"deps", exoDeps,
+						)
+					}
+				}
+			}
 		}
 		return nil, result, err
 	})
@@ -156,6 +177,24 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 		if sched != nil {
 			sched.Deregister(params.Namespace, params.Name)
 		}
+
+		// Exoskeleton: unregister backing-service credentials before removing manifests.
+		// Continue with manifest removal even if unregistration partially fails.
+		if exoCtrl != nil {
+			if unregErr := exoCtrl.Unregister(ctx, params.Namespace, params.Name); unregErr != nil {
+				slog.Warn("exoskeleton: unregistration had issues (continuing with removal)",
+					"namespace", params.Namespace,
+					"workflow", params.Name,
+					"error", unregErr,
+				)
+			} else {
+				slog.Info("exoskeleton: unregistered backing services",
+					"namespace", params.Namespace,
+					"workflow", params.Name,
+				)
+			}
+		}
+
 		result, err := handleWorkflowRemove(ctx, client, params)
 		return nil, result, err
 	})
@@ -491,6 +530,25 @@ func resourceReadiness(obj unstructured.Unstructured, resource string) (bool, st
 		// Services, ConfigMaps, Secrets, NetworkPolicies, CronJobs: presence = ready
 		return true, ""
 	}
+}
+
+// extractWorkflowYAML finds the workflow.yaml content from the ConfigMap manifests.
+// Returns empty string if no ConfigMap with workflow.yaml data is found.
+func extractWorkflowYAML(manifests []map[string]interface{}) string {
+	for _, m := range manifests {
+		obj := &unstructured.Unstructured{Object: m}
+		if obj.GetKind() != "ConfigMap" {
+			continue
+		}
+		data, ok, _ := unstructured.NestedStringMap(obj.Object, "data")
+		if !ok {
+			continue
+		}
+		if wfYAML, ok := data["workflow.yaml"]; ok {
+			return wfYAML
+		}
+	}
+	return ""
 }
 
 // workflowYAML is the minimal structure used to parse contract.dependencies from

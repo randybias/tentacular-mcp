@@ -282,14 +282,14 @@ Integrate the ExoskeletonController into the existing deployment tools so that t
 - Modify: `pkg/tools/register.go`
 - Create or modify: test files for deploy handlers
 
-- [ ] Pull latest from remote before starting. Review current state of `pkg/tools/deploy.go`, `pkg/tools/register.go`, `pkg/server/server.go`, and `cmd/tentacular-mcp/main.go` for any upstream changes.
-- [ ] Modify `cmd/tentacular-mcp/main.go`: construct the ExoskeletonController from the loaded config (create registrars, credential injector). Pass it to the server/tool registration. When exoskeleton is disabled, pass a nil controller.
-- [ ] Modify `pkg/server/server.go` or `pkg/tools/register.go`: accept the ExoskeletonController and pass it to the deploy tool handlers.
-- [ ] Modify `pkg/tools/deploy.go` wf_apply handler: after successful manifest application, if the ExoskeletonController is non-nil, extract the workflow ConfigMap from the applied manifests, parse it for tentacular-* dependencies using `DetectExoskeletonDeps`. If deps found, call `controller.Register(ctx, namespace, workflow, deps)`. If registration fails, return the error to the caller with an actionable message (do not silently continue). If no tentacular-* deps, skip registration entirely.
-- [ ] Modify `pkg/tools/deploy.go` wf_remove handler: before removing manifests, if ExoskeletonController is non-nil and cleanup is enabled, call `controller.Unregister(ctx, namespace, workflow)`. Log the outcome. Continue with manifest removal even if unregistration partially fails (log warnings, don't block undeploy).
-- [ ] Ensure backward compatibility: when ExoskeletonController is nil (disabled), wf_apply and wf_remove execute identically to current code — no new code paths, no new function calls, zero overhead.
-- [ ] Add tests: test wf_apply with exoskeleton controller (mock) and tentacular-* deps (Register called), test wf_apply with controller but no tentacular-* deps (Register not called), test wf_apply with nil controller (no exoskeleton calls), test wf_remove with cleanup enabled (Unregister called), test wf_remove with cleanup disabled (Unregister not called).
-- [ ] Run all validation commands — all tests pass, lint clean, binary builds.
+- [x] Pull latest from remote before starting. Review current state of `pkg/tools/deploy.go`, `pkg/tools/register.go`, `pkg/server/server.go`, and `cmd/tentacular-mcp/main.go` for any upstream changes.
+- [x] Modify `cmd/tentacular-mcp/main.go`: construct the ExoskeletonController from the loaded config (create registrars, credential injector). Pass it to the server/tool registration. When exoskeleton is disabled, pass a nil controller.
+- [x] Modify `pkg/server/server.go` or `pkg/tools/register.go`: accept the ExoskeletonController and pass it to the deploy tool handlers.
+- [x] Modify `pkg/tools/deploy.go` wf_apply handler: after successful manifest application, if the ExoskeletonController is non-nil, extract the workflow ConfigMap from the applied manifests, parse it for tentacular-* dependencies using `DetectExoskeletonDeps`. If deps found, call `controller.Register(ctx, namespace, workflow, deps)`. If registration fails, return the error to the caller with an actionable message (do not silently continue). If no tentacular-* deps, skip registration entirely.
+- [x] Modify `pkg/tools/deploy.go` wf_remove handler: before removing manifests, if ExoskeletonController is non-nil and cleanup is enabled, call `controller.Unregister(ctx, namespace, workflow)`. Log the outcome. Continue with manifest removal even if unregistration partially fails (log warnings, don't block undeploy).
+- [x] Ensure backward compatibility: when ExoskeletonController is nil (disabled), wf_apply and wf_remove execute identically to current code — no new code paths, no new function calls, zero overhead.
+- [x] Add tests: test wf_apply with exoskeleton controller (mock) and tentacular-* deps (Register called), test wf_apply with controller but no tentacular-* deps (Register not called), test wf_apply with nil controller (no exoskeleton calls), test wf_remove with cleanup enabled (Unregister called), test wf_remove with cleanup disabled (Unregister not called).
+- [x] Run all validation commands — all tests pass, lint clean, binary builds.
 
 ### Task 13: Add exoskeleton MCP tools
 
