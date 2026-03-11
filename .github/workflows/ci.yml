@@ -94,7 +94,7 @@ jobs:
 
       - uses: azure/setup-helm@v4
 
-      - name: Lint chart
+      - name: Lint tentacular-mcp chart
         run: helm lint charts/tentacular-mcp/
 
       - name: Template with token
@@ -113,6 +113,17 @@ jobs:
         run: |
           ! helm template test charts/tentacular-mcp/ \
             --namespace tentacular-system 2>&1
+
+      - name: Update tentacular-platform dependencies
+        run: helm dependency update charts/tentacular-platform/
+
+      - name: Lint tentacular-platform chart
+        run: helm lint charts/tentacular-platform/
+
+      - name: Template tentacular-platform with test values
+        run: |
+          helm template test charts/tentacular-platform/ \
+            -f charts/tentacular-platform/ci/test-values.yaml
 
   coverage:
     name: Coverage

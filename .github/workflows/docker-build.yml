@@ -93,3 +93,14 @@ jobs:
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
           cache-from: type=registry,ref=ghcr.io/randybias/tentacular-mcp:buildcache
           cache-to: type=registry,ref=ghcr.io/randybias/tentacular-mcp:buildcache,mode=max
+
+      - name: Verify multi-arch manifests
+        if: steps.push.outputs.push == 'true' && steps.platforms.outputs.platforms == 'linux/amd64,linux/arm64'
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          TAG="${{ steps.meta.outputs.version }}"
+          echo "Verifying multi-arch manifests for ${IMAGE}:${TAG}"
+          docker buildx imagetools inspect "${IMAGE}:${TAG}" | tee /tmp/manifest.txt
+          grep -q 'linux/amd64' /tmp/manifest.txt || { echo "ERROR: missing linux/amd64"; exit 1; }
+          grep -q 'linux/arm64' /tmp/manifest.txt || { echo "ERROR: missing linux/arm64"; exit 1; }
+          echo "Multi-arch verification passed"
