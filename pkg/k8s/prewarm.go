@@ -92,8 +92,8 @@ func PrewarmModules(ctx context.Context, client *Client, proxyNamespace string, 
 	wg.Wait()
 
 	if len(errs) > 0 {
-		// Log aggregate but do not fail -- pre-warm is best-effort.
 		slog.Warn("some modules failed to pre-warm", "count", len(errs))
+		return fmt.Errorf("%d of %d modules failed to pre-warm", len(errs), len(deps))
 	}
 	return nil
 }

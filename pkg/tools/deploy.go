@@ -137,6 +137,9 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WorkflowApplyResult{}, err
 		}
+		if err := guard.CheckName(params.Name); err != nil {
+			return nil, WorkflowApplyResult{}, err
+		}
 		result, err := handleWorkflowApply(ctx, client, params)
 		if err == nil {
 			if sched != nil {
@@ -188,6 +191,9 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WorkflowRemoveResult{}, err
 		}
+		if err := guard.CheckName(params.Name); err != nil {
+			return nil, WorkflowRemoveResult{}, err
+		}
 		if sched != nil {
 			sched.Deregister(params.Namespace, params.Name)
 		}
@@ -219,6 +225,9 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 		Description: "Get status of all resources belonging to a named deployment in a namespace.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WorkflowStatusParams) (*mcp.CallToolResult, WorkflowStatusResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
+			return nil, WorkflowStatusResult{}, err
+		}
+		if err := guard.CheckName(params.Name); err != nil {
 			return nil, WorkflowStatusResult{}, err
 		}
 		result, err := handleWorkflowStatus(ctx, client, params)
