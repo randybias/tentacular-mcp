@@ -1,0 +1,93 @@
+# Production profile - standard Kubernetes Ingress with TLS
+# Usage: helm install tentacular charts/tentacular-platform/ -f charts/tentacular-platform/ci/prod-values.yaml
+# NOTE: Replace placeholder values (domain, auth token, passwords) before deploying
+global:
+  domain: tentacular.example.com
+
+namespaces:
+  system:
+    create: true
+  exoskeleton:
+    create: true
+  support:
+    create: true
+
+networkPolicies:
+  enabled: true
+
+postgresql:
+  enabled: true
+  auth:
+    # CHANGE: Use existingSecret in production instead of plaintext password
+    password: "CHANGE-ME-use-existing-secret"
+  primary:
+    persistence:
+      size: 20Gi
+
+nats:
+  enabled: true
+  config:
+    merge:
+      authorization:
+        # CHANGE: Use a strong token in production
+        token: "CHANGE-ME-strong-nats-token"
+
+cert-manager:
+  enabled: true
+  crds:
+    enabled: true
+
+tls:
+  clusterIssuers:
+    create: true
+    email: admin@example.com
+    production: true
+  certificates:
+    mcp:
+      create: true
+      secretName: mcp-tls
+    auth:
+      create: false
+
+tentacular-mcp:
+  enabled: true
+  namespace:
+    create: false
+  auth:
+    # CHANGE: Use a strong token in production
+    token: "CHANGE-ME-strong-mcp-token"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  extraEnvFrom:
+    - secretRef:
+        name: tentacular-exoskeleton-config
+
+exoskeleton:
+  enabled: true
+  postgresSSLMode: "require"
+
+esm-sh:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+ingress:
+  mode: ingress
+  className: nginx
+  mcp:
+    hostname: mcp.tentacular.example.com
+  tls:
+    enabled: true
+    secretName: mcp-tls
+  annotations: {}

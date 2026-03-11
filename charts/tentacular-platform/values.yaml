@@ -195,6 +195,41 @@ ingress:
   # istio: Istio Gateway + VirtualService
   # alb-istio: AWS ALB fronting Istio
   mode: none
+  # -- MCP endpoint configuration
+  mcp:
+    # -- Hostname for MCP endpoint (e.g., mcp.example.com)
+    hostname: ""
+  # -- Auth endpoint configuration (optional second endpoint)
+  auth:
+    # -- Enable auth endpoint routing
+    enabled: false
+    # -- Hostname for auth endpoint (e.g., auth.example.com)
+    hostname: ""
+  # -- TLS configuration for ingress
+  tls:
+    # -- Enable TLS termination
+    enabled: false
+    # -- TLS secret name (if not using cert-manager)
+    secretName: ""
+  # -- Ingress class name (for ingress mode: traefik, nginx, alb)
+  className: ""
+  # -- Freeform annotations for the Ingress resource
+  # Useful for ALB-specific annotations like:
+  #   alb.ingress.kubernetes.io/scheme: internet-facing
+  #   alb.ingress.kubernetes.io/target-type: ip
+  #   alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:...
+  annotations: {}
+  # -- Istio-specific configuration (for istio and alb-istio modes)
+  istio:
+    gateway:
+      # -- Gateway resource name
+      name: tentacular-gateway
+      # -- Gateway server configuration (ports, hosts, TLS)
+      servers: []
+  # -- NodePort configuration (for nodeport mode)
+  nodeport:
+    # -- NodePort number for MCP service (30000-32767)
+    mcp: 30080
 
 # -- Future components (disabled placeholders)
 

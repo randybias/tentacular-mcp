@@ -1,0 +1,21 @@
+{{- if eq .Values.ingress.mode "nodeport" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tentacular-platform.fullname" . }}-mcp-nodeport
+  namespace: {{ include "tentacular-platform.namespace.system" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-nodeport
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: tentacular-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: {{ .Values.ingress.nodeport.mcp | default 30080 }}
+      protocol: TCP
+{{- end }}

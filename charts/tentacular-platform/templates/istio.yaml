@@ -1,0 +1,92 @@
+{{- if or (eq .Values.ingress.mode "istio") (eq .Values.ingress.mode "alb-istio") }}
+{{- $mcpHost := .Values.ingress.mcp.hostname | default (printf "mcp.%s" .Values.global.domain) -}}
+{{- $gatewayName := .Values.ingress.istio.gateway.name | default "tentacular-gateway" -}}
+---
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: {{ $gatewayName }}
+  namespace: {{ include "tentacular-platform.namespace.system" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: istio-gateway
+  {{- if eq .Values.ingress.mode "alb-istio" }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    {{- if .Values.ingress.istio.gateway.servers }}
+    {{- toYaml .Values.ingress.istio.gateway.servers | nindent 4 }}
+    {{- else }}
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - {{ $mcpHost | quote }}
+        {{- if and .Values.ingress.auth.enabled .Values.ingress.auth.hostname }}
+        - {{ .Values.ingress.auth.hostname | quote }}
+        {{- end }}
+    {{- if .Values.ingress.tls.enabled }}
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        mode: SIMPLE
+        credentialName: {{ .Values.ingress.tls.secretName | default "tentacular-tls" }}
+      hosts:
+        - {{ $mcpHost | quote }}
+        {{- if and .Values.ingress.auth.enabled .Values.ingress.auth.hostname }}
+        - {{ .Values.ingress.auth.hostname | quote }}
+        {{- end }}
+    {{- end }}
+    {{- end }}
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ include "tentacular-platform.fullname" . }}-mcp
+  namespace: {{ include "tentacular-platform.namespace.system" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: istio-virtualservice
+spec:
+  hosts:
+    - {{ $mcpHost | quote }}
+  gateways:
+    - {{ $gatewayName }}
+  http:
+    - route:
+        - destination:
+            host: {{ .Release.Name }}-tentacular-mcp.{{ include "tentacular-platform.namespace.system" . }}.svc.cluster.local
+            port:
+              number: 8080
+{{- if and .Values.ingress.auth.enabled .Values.ingress.auth.hostname }}
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ include "tentacular-platform.fullname" . }}-auth
+  namespace: {{ include "tentacular-platform.namespace.system" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: istio-virtualservice
+spec:
+  hosts:
+    - {{ .Values.ingress.auth.hostname | quote }}
+  gateways:
+    - {{ $gatewayName }}
+  http:
+    - route:
+        - destination:
+            host: {{ .Release.Name }}-tentacular-mcp-auth.{{ include "tentacular-platform.namespace.system" . }}.svc.cluster.local
+            port:
+              number: 8081
+{{- end }}
+{{- end }}

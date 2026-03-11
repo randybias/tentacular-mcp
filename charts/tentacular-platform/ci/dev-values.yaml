@@ -1,0 +1,74 @@
+# Development profile - single-node dev cluster
+# Usage: helm install tentacular charts/tentacular-platform/ -f charts/tentacular-platform/ci/dev-values.yaml
+global:
+  domain: dev.tentacular.local
+
+namespaces:
+  system:
+    create: true
+  exoskeleton:
+    create: true
+  support:
+    create: true
+
+networkPolicies:
+  enabled: true
+
+postgresql:
+  enabled: true
+  auth:
+    password: dev-postgres-password
+  primary:
+    persistence:
+      size: 2Gi
+
+nats:
+  enabled: true
+  config:
+    merge:
+      authorization:
+        token: "dev-nats-token"
+
+cert-manager:
+  enabled: false
+
+tls:
+  clusterIssuers:
+    create: false
+
+tentacular-mcp:
+  enabled: true
+  namespace:
+    create: false
+  auth:
+    token: "dev-mcp-auth-token"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+  extraEnvFrom:
+    - secretRef:
+        name: tentacular-exoskeleton-config
+
+exoskeleton:
+  enabled: true
+  postgresSSLMode: "disable"
+
+esm-sh:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 125m
+      memory: 128Mi
+
+ingress:
+  mode: nodeport
+  nodeport:
+    mcp: 30080

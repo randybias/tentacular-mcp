@@ -1,0 +1,91 @@
+# AWS profile - ALB Ingress Controller or ALB fronting Istio
+# Usage: helm install tentacular charts/tentacular-platform/ -f charts/tentacular-platform/ci/aws-values.yaml
+# NOTE: Replace placeholder values (domain, certificate ARN, auth token, passwords) before deploying
+global:
+  domain: tentacular.example.com
+
+namespaces:
+  system:
+    create: true
+  exoskeleton:
+    create: true
+  support:
+    create: true
+
+networkPolicies:
+  enabled: true
+
+postgresql:
+  enabled: true
+  auth:
+    # CHANGE: Use existingSecret in production instead of plaintext password
+    password: "CHANGE-ME-use-existing-secret"
+  primary:
+    persistence:
+      size: 20Gi
+      storageClass: gp3
+
+nats:
+  enabled: true
+  config:
+    merge:
+      authorization:
+        # CHANGE: Use a strong token in production
+        token: "CHANGE-ME-strong-nats-token"
+
+# cert-manager disabled - use AWS Certificate Manager (ACM) instead
+cert-manager:
+  enabled: false
+
+tls:
+  clusterIssuers:
+    create: false
+
+tentacular-mcp:
+  enabled: true
+  namespace:
+    create: false
+  auth:
+    # CHANGE: Use a strong token in production
+    token: "CHANGE-ME-strong-mcp-token"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  extraEnvFrom:
+    - secretRef:
+        name: tentacular-exoskeleton-config
+
+exoskeleton:
+  enabled: true
+  postgresSSLMode: "require"
+
+esm-sh:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+ingress:
+  mode: alb-istio
+  mcp:
+    hostname: mcp.tentacular.example.com
+  tls:
+    enabled: true
+    secretName: tentacular-tls
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    # CHANGE: Set your ACM certificate ARN
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:ACCOUNT:certificate/CHANGE-ME"
+  istio:
+    gateway:
+      name: tentacular-gateway
