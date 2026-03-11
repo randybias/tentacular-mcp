@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/randybias/tentacular-mcp/pkg/auth"
+	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 	"github.com/randybias/tentacular-mcp/pkg/proxy"
 	"github.com/randybias/tentacular-mcp/pkg/scheduler"
@@ -51,6 +52,28 @@ func main() {
 	reconciler := proxy.NewReconciler(client, proxyOpts, logger)
 
 	sched := scheduler.New(client, logger)
+
+	// Load exoskeleton configuration from environment
+	exoCfg, err := exoskeleton.LoadFromEnv()
+	if err != nil {
+		slog.Error("failed to load exoskeleton config", "error", err)
+		os.Exit(1)
+	}
+
+	if exoCfg.Enabled {
+		if err := exoCfg.Validate(); err != nil {
+			slog.Error("exoskeleton config validation failed", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("exoskeleton enabled",
+			"postgres", exoCfg.PostgresEnabled,
+			"nats", exoCfg.NATSEnabled,
+			"rustfs", exoCfg.RustFSEnabled,
+			"cleanupOnUndeploy", exoCfg.CleanupOnUndeploy,
+		)
+	} else {
+		slog.Info("exoskeleton disabled")
+	}
 
 	srv, err := server.New(client, reconciler, sched, token, logger)
 	if err != nil {
