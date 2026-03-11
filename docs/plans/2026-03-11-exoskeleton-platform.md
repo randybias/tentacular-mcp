@@ -229,13 +229,13 @@ Create the Postgres registrar that provisions per-tentacle roles and schemas usi
 - Create: `pkg/exoskeleton/postgres.go`
 - Create: `pkg/exoskeleton/postgres_test.go`
 
-- [ ] Pull latest from remote before starting.
-- [ ] Define a `DBExecutor` interface in `pkg/exoskeleton/postgres.go` with methods: `ExecContext(ctx, query, args...)`, `QueryRowContext(ctx, query, args...)`. This allows unit testing with a mock instead of a real database. Add a constructor `NewPostgresRegistrar(config PostgresConfig)` that creates the registrar and a `Connect(ctx) error` method that dials the admin connection.
-- [ ] Implement `Register(ctx context.Context, id Identity) (*PostgresRegistration, error)`: generate a strong random password (32 bytes, hex-encoded), execute `CREATE ROLE IF NOT EXISTS <role> WITH LOGIN PASSWORD '<pw>'`, execute `CREATE SCHEMA IF NOT EXISTS <schema> AUTHORIZATION <role>`, execute `GRANT USAGE, CREATE ON SCHEMA <schema> TO <role>`. Return `PostgresRegistration` struct with Role, Schema, Password, Host, Port, Database.
-- [ ] Implement `ReRegister(ctx context.Context, id Identity) (*PostgresRegistration, error)`: verify role exists (query pg_roles), verify schema exists (query information_schema.schemata), verify grants are correct. If role doesn't exist, create it (handles drift). Do NOT drop or recreate schema. Optionally rotate password if a rotation flag is set. Return updated registration.
-- [ ] Implement `Unregister(ctx context.Context, id Identity) error`: execute `DROP SCHEMA IF EXISTS <schema> CASCADE`, execute `DROP ROLE IF EXISTS <role>`. Log what was dropped. Handle "role cannot be dropped because some objects depend on it" errors by logging a warning.
-- [ ] Create `pkg/exoskeleton/postgres_test.go`: implement a mock DBExecutor that records executed SQL statements. Test: Register generates correct SQL sequence and returns valid registration, ReRegister does not issue DROP statements, Unregister issues DROP CASCADE, password generation produces unique values, error handling for connection failures and permission errors.
-- [ ] Run all validation commands — all tests pass, lint clean.
+- [x] Pull latest from remote before starting.
+- [x] Define a `DBExecutor` interface in `pkg/exoskeleton/postgres.go` with methods: `ExecContext(ctx, query, args...)`, `QueryRowContext(ctx, query, args...)`. This allows unit testing with a mock instead of a real database. Add a constructor `NewPostgresRegistrar(config PostgresConfig)` that creates the registrar and a `Connect(ctx) error` method that dials the admin connection.
+- [x] Implement `Register(ctx context.Context, id Identity) (*PostgresRegistration, error)`: generate a strong random password (32 bytes, hex-encoded), execute `CREATE ROLE IF NOT EXISTS <role> WITH LOGIN PASSWORD '<pw>'`, execute `CREATE SCHEMA IF NOT EXISTS <schema> AUTHORIZATION <role>`, execute `GRANT USAGE, CREATE ON SCHEMA <schema> TO <role>`. Return `PostgresRegistration` struct with Role, Schema, Password, Host, Port, Database.
+- [x] Implement `ReRegister(ctx context.Context, id Identity) (*PostgresRegistration, error)`: verify role exists (query pg_roles), verify schema exists (query information_schema.schemata), verify grants are correct. If role doesn't exist, create it (handles drift). Do NOT drop or recreate schema. Optionally rotate password if a rotation flag is set. Return updated registration.
+- [x] Implement `Unregister(ctx context.Context, id Identity) error`: execute `DROP SCHEMA IF EXISTS <schema> CASCADE`, execute `DROP ROLE IF EXISTS <role>`. Log what was dropped. Handle "role cannot be dropped because some objects depend on it" errors by logging a warning.
+- [x] Create `pkg/exoskeleton/postgres_test.go`: implement a mock DBExecutor that records executed SQL statements. Test: Register generates correct SQL sequence and returns valid registration, ReRegister does not issue DROP statements, Unregister issues DROP CASCADE, password generation produces unique values, error handling for connection failures and permission errors.
+- [x] Run all validation commands — all tests pass, lint clean.
 
 ### Task 10: Implement NATSRegistrar
 
