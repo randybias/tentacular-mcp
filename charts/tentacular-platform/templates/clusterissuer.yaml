@@ -21,8 +21,8 @@ spec:
       - http01:
           ingress: {}
 {{- end }}
----
 {{- if not .Values.tls.clusterIssuers.production }}
+---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:

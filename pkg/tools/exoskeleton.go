@@ -66,7 +66,7 @@ type ExoListResult struct {
 func registerExoskeletonTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exoskeleton.ExoskeletonController) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "exo_status",
-		Description: "Show exoskeleton subsystem status: which services are enabled and their connection health.",
+		Description: "Show exoskeleton subsystem status: which services are enabled and their configuration.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params ExoStatusParams) (*mcp.CallToolResult, ExoStatusResult, error) {
 		result, err := handleExoStatus(ctx, client, exoCtrl)
 		return nil, result, err
