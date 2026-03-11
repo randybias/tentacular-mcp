@@ -11,5 +11,5 @@ data:
     -- Grant CREATEROLE to the tentacular admin user so the MCP server
     -- can provision per-tentacle roles and schemas at runtime.
     -- ALTER ROLE is idempotent and safe to re-run.
-    ALTER ROLE tentacular_admin CREATEROLE;
+    ALTER ROLE "{{ .Values.postgresql.auth.username | default "tentacular_admin" | replace "\"" "\"\"" }}" CREATEROLE;
 {{- end }}

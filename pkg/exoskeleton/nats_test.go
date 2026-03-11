@@ -99,12 +99,12 @@ func TestNATSRegister(t *testing.T) {
 		t.Errorf("subscribe scope mismatch: got %s, want %s", mock.createCalls[0].Perm.Subscribe, expectedSub)
 	}
 
-	// Verify registration result
+	// Verify registration result — v1 returns the shared config token
 	if result.URL != "nats://nats.example.com:4222" {
 		t.Errorf("URL mismatch: got %s", result.URL)
 	}
-	if result.Token == "" {
-		t.Error("token should not be empty")
+	if result.Token != "admin-token" {
+		t.Errorf("token should be config token 'admin-token', got %q", result.Token)
 	}
 	if result.SubjectPrefix != id.NATSSubjectPrefix {
 		t.Errorf("subject prefix mismatch: got %s, want %s", result.SubjectPrefix, id.NATSSubjectPrefix)
@@ -168,7 +168,7 @@ func TestNATSRegisterCreateError(t *testing.T) {
 func TestNATSReRegisterUserExists(t *testing.T) {
 	mock := newMockNATSAdmin()
 	mock.getResult = true // user exists
-	reg := NewNATSRegistrar(NATSConfig{URL: "nats://localhost:4222"})
+	reg := NewNATSRegistrar(NATSConfig{URL: "nats://localhost:4222", Token: "shared-token"})
 	reg.SetAdmin(mock)
 
 	id := CompileIdentity("tent-myapp", "hello-world")
@@ -193,8 +193,8 @@ func TestNATSReRegisterUserExists(t *testing.T) {
 		t.Errorf("publish scope mismatch: got %s", mock.updateCalls[0].Perm.Publish)
 	}
 
-	if result.Token == "" {
-		t.Error("token should not be empty")
+	if result.Token != "shared-token" {
+		t.Errorf("token should be config token 'shared-token', got %q", result.Token)
 	}
 	if result.Principal != id.NATSPrincipal {
 		t.Errorf("principal mismatch: got %s, want %s", result.Principal, id.NATSPrincipal)
@@ -204,7 +204,7 @@ func TestNATSReRegisterUserExists(t *testing.T) {
 func TestNATSReRegisterUserMissing(t *testing.T) {
 	mock := newMockNATSAdmin()
 	mock.getResult = false // user does not exist
-	reg := NewNATSRegistrar(NATSConfig{URL: "nats://localhost:4222"})
+	reg := NewNATSRegistrar(NATSConfig{URL: "nats://localhost:4222", Token: "shared-token"})
 	reg.SetAdmin(mock)
 
 	id := CompileIdentity("tent-myapp", "hello-world")
@@ -224,8 +224,8 @@ func TestNATSReRegisterUserMissing(t *testing.T) {
 		t.Errorf("should NOT call UpdateUser when user is missing, got %d calls", len(mock.updateCalls))
 	}
 
-	if result.Token == "" {
-		t.Error("token should not be empty")
+	if result.Token != "shared-token" {
+		t.Errorf("token should be config token 'shared-token', got %q", result.Token)
 	}
 }
 

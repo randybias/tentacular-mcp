@@ -104,6 +104,9 @@ func (c *ExoskeletonConfig) Validate() error {
 		if c.NATS.URL == "" {
 			missing = append(missing, "TENTACULAR_NATS_URL")
 		}
+		if c.NATS.Token == "" {
+			missing = append(missing, "TENTACULAR_NATS_TOKEN")
+		}
 	}
 
 	if c.RustFSEnabled {

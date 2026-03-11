@@ -45,9 +45,11 @@ func main() {
 	}
 
 	proxyOpts := proxy.Options{
-		Namespace:   os.Getenv("PROXY_NAMESPACE"),
-		Image:       os.Getenv("PROXY_IMAGE"),
-		StorageSize: os.Getenv("PROXY_STORAGE_SIZE"),
+		Namespace:            os.Getenv("PROXY_NAMESPACE"),
+		Image:                os.Getenv("PROXY_IMAGE"),
+		StorageSize:          os.Getenv("PROXY_STORAGE_SIZE"),
+		StatusDeploymentName: os.Getenv("TENTACULAR_PROXY_DEPLOYMENT_NAME"),
+		StatusNamespace:      os.Getenv("TENTACULAR_PROXY_NAMESPACE"),
 	}
 	if proxyOpts.Namespace == "" {
 		proxyOpts.Namespace = "tentacular-support"
@@ -124,8 +126,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Start module proxy reconciliation loop as a background goroutine
-	go reconciler.Run(ctx)
+	// Start module proxy reconciliation loop as a background goroutine.
+	// When the umbrella chart manages esm-sh, the reconciler is disabled
+	// to avoid creating a duplicate deployment with conflicting labels.
+	if os.Getenv("TENTACULAR_PROXY_RECONCILER_DISABLED") == "true" {
+		slog.Info("proxy reconciler disabled (chart-managed esm-sh)")
+	} else {
+		go reconciler.Run(ctx)
+	}
 
 	// Start cron scheduler and scan for existing workflow schedules
 	sched.Start()

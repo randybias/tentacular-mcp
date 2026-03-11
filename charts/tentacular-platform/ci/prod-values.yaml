@@ -63,9 +63,11 @@ tentacular-mcp:
     limits:
       cpu: "1"
       memory: 512Mi
+  exoskeletonSecretName: tentacular-exoskeleton-config
   extraEnvFrom:
-    - secretRef:
-        name: tentacular-exoskeleton-config
+    - configMapRef:
+        name: tentacular-proxy-config
+        optional: true
 
 exoskeleton:
   enabled: true

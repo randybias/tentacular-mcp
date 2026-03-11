@@ -85,8 +85,8 @@ spec:
   http:
     - route:
         - destination:
-            host: {{ .Release.Name }}-tentacular-mcp-auth.{{ include "tentacular-platform.namespace.system" . }}.svc.cluster.local
+            host: {{ .Release.Name }}-tentacular-mcp.{{ include "tentacular-platform.namespace.system" . }}.svc.cluster.local
             port:
-              number: 8081
+              number: 8080
 {{- end }}
 {{- end }}

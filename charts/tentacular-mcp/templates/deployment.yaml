@@ -48,9 +48,16 @@ spec:
           env:
             - name: TOKEN_PATH
               value: /etc/tentacular-mcp/token
-          {{- with .Values.extraEnvFrom }}
+          {{- if or .Values.exoskeletonSecretName .Values.extraEnvFrom }}
           envFrom:
+            {{- if .Values.exoskeletonSecretName }}
+            - secretRef:
+                name: {{ .Values.exoskeletonSecretName }}
+                optional: false
+            {{- end }}
+            {{- with .Values.extraEnvFrom }}
             {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
           volumeMounts:
             - name: auth-secret

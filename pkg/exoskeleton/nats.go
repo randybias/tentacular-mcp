@@ -69,14 +69,18 @@ func (r *NATSRegistrar) Register(ctx context.Context, id Identity) (*NATSRegistr
 		Subscribe: id.NATSSubjectPrefix + ".>",
 	}
 
-	token, err := r.admin.CreateUser(ctx, id.NATSPrincipal, perm)
+	// Track the user and permissions in the admin backend.
+	// The admin may generate its own internal token, but for v1 token auth
+	// we return the shared config token since NATS only accepts that token.
+	// JWT-scoped per-workflow tokens are planned for production.
+	_, err := r.admin.CreateUser(ctx, id.NATSPrincipal, perm)
 	if err != nil {
 		return nil, fmt.Errorf("nats registrar: create user: %w", err)
 	}
 
 	return &NATSRegistration{
 		URL:           r.config.URL,
-		Token:         token,
+		Token:         r.config.Token,
 		SubjectPrefix: id.NATSSubjectPrefix,
 		Principal:     id.NATSPrincipal,
 	}, nil
@@ -99,23 +103,24 @@ func (r *NATSRegistrar) ReRegister(ctx context.Context, id Identity) (*NATSRegis
 		return nil, fmt.Errorf("nats registrar: check user: %w", err)
 	}
 
-	var token string
 	if exists {
-		token, err = r.admin.UpdateUser(ctx, id.NATSPrincipal, perm)
+		_, err = r.admin.UpdateUser(ctx, id.NATSPrincipal, perm)
 		if err != nil {
 			return nil, fmt.Errorf("nats registrar: update user: %w", err)
 		}
 	} else {
 		// User doesn't exist — create it (handles drift)
-		token, err = r.admin.CreateUser(ctx, id.NATSPrincipal, perm)
+		_, err = r.admin.CreateUser(ctx, id.NATSPrincipal, perm)
 		if err != nil {
 			return nil, fmt.Errorf("nats registrar: create user (drift repair): %w", err)
 		}
 	}
 
+	// Return the shared config token for v1 token auth.
+	// The admin tracks permissions internally; JWT-scoped tokens are planned.
 	return &NATSRegistration{
 		URL:           r.config.URL,
-		Token:         token,
+		Token:         r.config.Token,
 		SubjectPrefix: id.NATSSubjectPrefix,
 		Principal:     id.NATSPrincipal,
 	}, nil

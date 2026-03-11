@@ -125,14 +125,17 @@ type Status struct {
 	Storage   string
 }
 
-// Namespace returns the namespace the reconciler is managing.
+// Namespace returns the namespace used for status checks.
+// When the umbrella chart sets StatusNamespace, that is returned instead.
 func (r *Reconciler) Namespace() string {
-	return r.opts.Namespace
+	return r.opts.statusNamespace()
 }
 
 // GetStatus returns the current proxy status from the K8s API.
+// In chart-managed mode, StatusDeploymentName and StatusNamespace override
+// the default deployment name and namespace so the correct deployment is found.
 func (r *Reconciler) GetStatus(ctx context.Context) Status {
-	dep, err := r.client.Clientset.AppsV1().Deployments(r.opts.Namespace).Get(ctx, DeploymentName, metav1.GetOptions{})
+	dep, err := r.client.Clientset.AppsV1().Deployments(r.opts.statusNamespace()).Get(ctx, r.opts.statusDeploymentName(), metav1.GetOptions{})
 	if err != nil {
 		return Status{Installed: false}
 	}

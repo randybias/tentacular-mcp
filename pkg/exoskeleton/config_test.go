@@ -212,11 +212,27 @@ func TestValidate_AllServicesValid(t *testing.T) {
 			Password: "secret",
 		},
 		NATS: NATSConfig{
-			URL: "nats://localhost:4222",
+			URL:   "nats://localhost:4222",
+			Token: "nats-token",
 		},
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("Validate() should pass for valid config, got: %v", err)
+	}
+}
+
+func TestValidate_NATSEnabled_MissingToken(t *testing.T) {
+	cfg := &ExoskeletonConfig{
+		Enabled:     true,
+		NATSEnabled: true,
+		NATS:        NATSConfig{URL: "nats://localhost:4222"},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() should fail when NATS enabled but token missing")
+	}
+	if got := err.Error(); !strings.Contains(got, "TENTACULAR_NATS_TOKEN") {
+		t.Errorf("error should mention missing NATS token env var, got: %s", got)
 	}
 }
 
@@ -240,6 +256,9 @@ func TestValidate_MultipleFieldsMissing(t *testing.T) {
 	}
 	if !strings.Contains(got, "TENTACULAR_NATS_URL") {
 		t.Errorf("error should mention missing NATS URL, got: %s", got)
+	}
+	if !strings.Contains(got, "TENTACULAR_NATS_TOKEN") {
+		t.Errorf("error should mention missing NATS token, got: %s", got)
 	}
 }
 

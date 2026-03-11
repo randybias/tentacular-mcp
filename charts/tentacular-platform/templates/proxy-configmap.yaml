@@ -1,0 +1,22 @@
+{{/*
+Proxy ConfigMap: disables the built-in proxy reconciler when the umbrella chart
+manages the esm-sh lifecycle. Without this, the reconciler would create a
+duplicate deployment with conflicting labels and network policies.
+When esm-sh is disabled, the reconciler is still disabled to respect the toggle.
+*/}}
+{{- if (index .Values "tentacular-mcp" "enabled") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tentacular-proxy-config
+  namespace: {{ include "tentacular-platform.namespace.system" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+data:
+  TENTACULAR_PROXY_RECONCILER_DISABLED: "true"
+  {{- if (index .Values "esm-sh" "enabled") }}
+  TENTACULAR_PROXY_SERVICE_NAME: {{ include "tentacular-platform.fullname" . }}-esm-sh
+  TENTACULAR_PROXY_DEPLOYMENT_NAME: {{ include "tentacular-platform.fullname" . }}-esm-sh
+  TENTACULAR_PROXY_NAMESPACE: {{ include "tentacular-platform.namespace.support" . }}
+  {{- end }}
+{{- end }}

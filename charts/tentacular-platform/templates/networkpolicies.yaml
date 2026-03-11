@@ -181,6 +181,6 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              tentacular.io/managed-by: tentacular
+              app.kubernetes.io/managed-by: tentacular
 {{- end }}
 {{- end }}

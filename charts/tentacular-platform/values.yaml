@@ -144,12 +144,16 @@ tentacular-mcp:
     limits:
       cpu: 500m
       memory: 256Mi
-  # -- Extra environment variable sources (e.g., Secrets, ConfigMaps)
-  # The exoskeleton Secret is included by default (optional: true means the pod
-  # still starts if the Secret doesn't exist, e.g., when exoskeleton is disabled).
+  # -- Name of the Secret containing exoskeleton env vars.
+  # Auto-set to the generated secret name; override when using exoskeleton.existingSecret.
+  exoskeletonSecretName: tentacular-exoskeleton-config
+  # -- Extra environment variable sources (e.g., ConfigMaps)
+  # The proxy ConfigMap is included by default.
+  # optional: true means the pod still starts if the resource doesn't exist
+  # (e.g., when esm-sh is disabled).
   extraEnvFrom:
-    - secretRef:
-        name: tentacular-exoskeleton-config
+    - configMapRef:
+        name: tentacular-proxy-config
         optional: true
 
 # -- Exoskeleton configuration for MCP server
@@ -157,7 +161,9 @@ tentacular-mcp:
 exoskeleton:
   # -- Enable exoskeleton subsystem
   enabled: true
-  # -- Use an existing Secret instead of the auto-generated one
+  # -- Use an existing Secret instead of the auto-generated one.
+  # When set, the chart will not create the tentacular-exoskeleton-config Secret.
+  # You must also set tentacular-mcp.exoskeletonSecretName to your secret name.
   existingSecret: ""
   # -- PostgreSQL SSL mode for tentacle connections
   postgresSSLMode: "prefer"

@@ -36,6 +36,15 @@ type Options struct {
 
 	// StorageSize is the size of the PVC for the cache. Empty means emptyDir.
 	StorageSize string
+
+	// StatusDeploymentName overrides the deployment name used by GetStatus.
+	// When set (e.g., by the umbrella chart), GetStatus looks up this name
+	// instead of the default "esm-sh".
+	StatusDeploymentName string
+
+	// StatusNamespace overrides the namespace used by GetStatus.
+	// When set, GetStatus and Namespace() use this instead of Namespace.
+	StatusNamespace string
 }
 
 func (o Options) image() string {
@@ -43,6 +52,20 @@ func (o Options) image() string {
 		return o.Image
 	}
 	return DefaultImage
+}
+
+func (o Options) statusDeploymentName() string {
+	if o.StatusDeploymentName != "" {
+		return o.StatusDeploymentName
+	}
+	return DeploymentName
+}
+
+func (o Options) statusNamespace() string {
+	if o.StatusNamespace != "" {
+		return o.StatusNamespace
+	}
+	return o.Namespace
 }
 
 func (o Options) storageType() string {

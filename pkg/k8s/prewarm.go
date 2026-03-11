@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -98,8 +99,14 @@ func PrewarmModules(ctx context.Context, client *Client, proxyNamespace string, 
 }
 
 // buildModuleURL constructs the direct HTTP URL for a module dependency.
+// The service name defaults to "esm-sh" (reconciler-managed) but can be
+// overridden via TENTACULAR_PROXY_SERVICE_NAME for chart-managed deployments.
 func buildModuleURL(proxyNamespace string, dep ModuleDep) string {
-	base := fmt.Sprintf("http://esm-sh.%s.svc.cluster.local:8080", proxyNamespace)
+	serviceName := os.Getenv("TENTACULAR_PROXY_SERVICE_NAME")
+	if serviceName == "" {
+		serviceName = "esm-sh"
+	}
+	base := fmt.Sprintf("http://%s.%s.svc.cluster.local:8080", serviceName, proxyNamespace)
 	var pkg string
 	switch dep.Protocol {
 	case "jsr":
