@@ -170,7 +170,7 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 						slog.Warn("exoskeleton: failed to parse workflow YAML for deps", "error", parseErr)
 					} else if len(exoDeps) > 0 {
 						if regErr := exoCtrl.Register(ctx, params.Namespace, params.Name, exoDeps); regErr != nil {
-							return nil, WorkflowApplyResult{}, fmt.Errorf("exoskeleton registration failed: %w", regErr)
+							return nil, result, fmt.Errorf("exoskeleton registration failed (manifests were applied): %w", regErr)
 						}
 						slog.Info("exoskeleton: registered backing services",
 							"namespace", params.Namespace,

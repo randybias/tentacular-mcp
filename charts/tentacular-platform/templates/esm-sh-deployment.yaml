@@ -44,6 +44,9 @@ spec:
                 - ALL
           resources:
             {{- toYaml (index .Values "esm-sh" "resources") | nindent 12 }}
+          volumeMounts:
+            - name: cache
+              mountPath: /app/cache
           readinessProbe:
             httpGet:
               path: /
@@ -56,4 +59,13 @@ spec:
               port: http
             initialDelaySeconds: 10
             periodSeconds: 30
+      volumes:
+        {{- if (index .Values "esm-sh" "persistence" "enabled") }}
+        - name: cache
+          persistentVolumeClaim:
+            claimName: {{ include "tentacular-platform.fullname" . }}-esm-sh-cache
+        {{- else }}
+        - name: cache
+          emptyDir: {}
+        {{- end }}
 {{- end }}

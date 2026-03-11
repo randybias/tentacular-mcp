@@ -1,0 +1,19 @@
+{{- if and (index .Values "esm-sh" "enabled") (index .Values "esm-sh" "persistence" "enabled") }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "tentacular-platform.fullname" . }}-esm-sh-cache
+  namespace: {{ include "tentacular-platform.namespace.support" . }}
+  labels:
+    {{- include "tentacular-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: esm-sh
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ index .Values "esm-sh" "persistence" "size" }}
+  {{- if index .Values "esm-sh" "persistence" "storageClass" }}
+  storageClassName: {{ index .Values "esm-sh" "persistence" "storageClass" }}
+  {{- end }}
+{{- end }}
