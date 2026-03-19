@@ -50,6 +50,13 @@ func registerCredentialTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "cred_issue_token",
 		Description: "Issue a short-lived token for the tentacular-workflow service account in a namespace.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Issue Service Account Token",
+			ReadOnlyHint:    false,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  false,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params CredIssueTokenParams) (*mcp.CallToolResult, CredIssueTokenResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, CredIssueTokenResult{}, err
@@ -61,6 +68,13 @@ func registerCredentialTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "cred_kubeconfig",
 		Description: "Generate a kubeconfig for the tentacular-workflow service account in a namespace.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Generate Scoped Kubeconfig",
+			ReadOnlyHint:    false,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  false,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params CredKubeconfigParams) (*mcp.CallToolResult, CredKubeconfigResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, CredKubeconfigResult{}, err
@@ -71,7 +85,14 @@ func registerCredentialTools(srv *mcp.Server, client *k8s.Client) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "cred_rotate",
-		Description: "Rotate the workflow service account in a namespace, invalidating all existing tokens.",
+		Description: "Rotate the workflow service account in a namespace by recreating it. Invalidates all existing tokens for the service account.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Rotate Service Account",
+			ReadOnlyHint:    false,
+			DestructiveHint: boolPtr(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params CredRotateParams) (*mcp.CallToolResult, CredRotateResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, CredRotateResult{}, err

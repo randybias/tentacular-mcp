@@ -136,7 +136,14 @@ type WorkflowStatusResult struct {
 func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.Scheduler, exoCtrl *exoskeleton.Controller) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_apply",
-		Description: "Apply a set of Kubernetes manifests as a named deployment in a namespace. Uses release labels for tracking and garbage collection.",
+		Description: "Apply a set of Kubernetes manifests as a named deployment in a namespace. Uses release labels for tracking and garbage collection. Includes garbage collection of stale resources.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Apply Workflow Manifests",
+			ReadOnlyHint:    false,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WorkflowApplyParams) (*mcp.CallToolResult, WorkflowApplyResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WorkflowApplyResult{}, err
@@ -196,7 +203,14 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_remove",
-		Description: "Remove all resources belonging to a named deployment in a namespace.",
+		Description: "Remove all resources belonging to a named deployment in a namespace. When exoskeleton cleanup is enabled, also drops backing-service data.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Remove Workflow Deployment",
+			ReadOnlyHint:    false,
+			DestructiveHint: boolPtr(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WorkflowRemoveParams) (*mcp.CallToolResult, WorkflowRemoveResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WorkflowRemoveResult{}, err
@@ -225,6 +239,13 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_status",
 		Description: "Get status of all resources belonging to a named deployment in a namespace.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Get Workflow Status",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WorkflowStatusParams) (*mcp.CallToolResult, WorkflowStatusResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WorkflowStatusResult{}, err

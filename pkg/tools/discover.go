@@ -92,6 +92,13 @@ func registerDiscoverTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_list",
 		Description: "List all tentacular-managed workflow deployments across namespaces, with ownership and status.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "List Deployed Workflows",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfListParams) (*mcp.CallToolResult, WfListResult, error) {
 		if params.Namespace != "" {
 			if err := guard.CheckNamespace(params.Namespace); err != nil {
@@ -105,6 +112,13 @@ func registerDiscoverTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_describe",
 		Description: "Get detailed information about a single tentacular workflow deployment, including metadata annotations, replica status, nodes, and triggers.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Describe Workflow Deployment",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfDescribeParams) (*mcp.CallToolResult, WfDescribeResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WfDescribeResult{}, err

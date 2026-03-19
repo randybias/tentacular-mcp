@@ -29,6 +29,13 @@ func registerClusterOpsTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "cluster_preflight",
 		Description: "Run preflight checks for a namespace: API reachability, namespace existence, RBAC, and gVisor availability.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Run Cluster Preflight Checks",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params ClusterPreflightParams) (*mcp.CallToolResult, ClusterPreflightResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, ClusterPreflightResult{}, err
@@ -40,6 +47,13 @@ func registerClusterOpsTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "cluster_profile",
 		Description: "Profile the cluster: K8s version, distribution, nodes, runtime classes, CNI, storage, and extensions.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Profile Cluster Capabilities",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params ClusterProfileParams) (*mcp.CallToolResult, *k8s.ClusterProfile, error) {
 		if params.Namespace != "" {
 			if err := guard.CheckNamespace(params.Namespace); err != nil {

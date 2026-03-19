@@ -9,6 +9,10 @@ import (
 	"github.com/randybias/tentacular-mcp/pkg/scheduler"
 )
 
+// boolPtr returns a pointer to the given bool value.
+// Used for ToolAnnotations fields that require *bool (DestructiveHint, OpenWorldHint).
+func boolPtr(b bool) *bool { return &b }
+
 // RegisterAll registers all MCP tools with the given server.
 func RegisterAll(srv *mcp.Server, client *k8s.Client, reconciler *proxy.Reconciler, sched *scheduler.Scheduler, exoCtrl *exoskeleton.Controller) {
 	registerNamespaceTools(srv, client)

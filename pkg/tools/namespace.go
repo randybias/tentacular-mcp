@@ -91,6 +91,13 @@ func registerNamespaceTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "ns_create",
 		Description: "Create a new managed namespace with network policies, resource quotas, and workflow RBAC.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Create Managed Namespace",
+			ReadOnlyHint:    false,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  false,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params NsCreateParams) (*mcp.CallToolResult, NsCreateResult, error) {
 		if err := guard.CheckNamespace(params.Name); err != nil {
 			return nil, NsCreateResult{}, err
@@ -102,6 +109,13 @@ func registerNamespaceTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "ns_delete",
 		Description: "Delete a managed namespace. Only namespaces with the tentacular managed-by label can be deleted.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Delete Managed Namespace",
+			ReadOnlyHint:    false,
+			DestructiveHint: boolPtr(true),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params NsDeleteParams) (*mcp.CallToolResult, NsDeleteResult, error) {
 		if err := guard.CheckNamespace(params.Name); err != nil {
 			return nil, NsDeleteResult{}, err
@@ -113,6 +127,13 @@ func registerNamespaceTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "ns_get",
 		Description: "Get details for a namespace including labels, status, quota summary, and limit range summary.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Get Namespace Details",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params NsGetParams) (*mcp.CallToolResult, NsGetResult, error) {
 		if err := guard.CheckNamespace(params.Name); err != nil {
 			return nil, NsGetResult{}, err
@@ -124,6 +145,13 @@ func registerNamespaceTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "ns_list",
 		Description: "List all namespaces managed by tentacular.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "List Managed Namespaces",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params NsListParams) (*mcp.CallToolResult, NsListResult, error) {
 		result, err := handleNsList(ctx, client)
 		return nil, result, err
@@ -132,6 +160,13 @@ func registerNamespaceTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "ns_update",
 		Description: "Update labels, annotations, or resource quota preset on a managed namespace.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Update Namespace Metadata",
+			ReadOnlyHint:    false,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params NsUpdateParams) (*mcp.CallToolResult, NsUpdateResult, error) {
 		if err := guard.CheckNamespace(params.Name); err != nil {
 			return nil, NsUpdateResult{}, err

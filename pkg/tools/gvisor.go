@@ -56,6 +56,13 @@ func registerGVisorTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "gvisor_check",
 		Description: "Check whether a gVisor RuntimeClass is available in the cluster.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Check gVisor Availability",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params GVisorCheckParams) (*mcp.CallToolResult, GVisorCheckResult, error) {
 		result, err := handleGVisorCheck(ctx, client)
 		return nil, result, err
@@ -64,6 +71,13 @@ func registerGVisorTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "gvisor_annotate_ns",
 		Description: "Annotate a managed namespace with the gVisor runtime class so new pods use gVisor sandboxing.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Annotate Namespace for gVisor",
+			ReadOnlyHint:    false,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params GVisorAnnotateNsParams) (*mcp.CallToolResult, GVisorAnnotateNsResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, GVisorAnnotateNsResult{}, err
@@ -74,7 +88,14 @@ func registerGVisorTools(srv *mcp.Server, client *k8s.Client) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "gvisor_verify",
-		Description: "Verify gVisor sandboxing by creating an ephemeral pod with the gVisor runtime class and checking kernel identity.",
+		Description: "Verify gVisor sandboxing by creating an ephemeral pod with the gVisor runtime class and checking kernel identity. Creates and deletes an ephemeral verification pod.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Verify gVisor Sandboxing",
+			ReadOnlyHint:    false,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params GVisorVerifyParams) (*mcp.CallToolResult, GVisorVerifyResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, GVisorVerifyResult{}, err

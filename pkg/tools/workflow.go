@@ -121,6 +121,13 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_pods",
 		Description: "List pods in a namespace with phase, readiness, restart count, images, and age.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "List Workflow Pods",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfPodsParams) (*mcp.CallToolResult, WfPodsResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WfPodsResult{}, err
@@ -132,6 +139,13 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_logs",
 		Description: "Get pod logs from a namespace. Returns tail lines (default 100).",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Get Pod Logs",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfLogsParams) (*mcp.CallToolResult, WfLogsResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WfLogsResult{}, err
@@ -146,6 +160,13 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_events",
 		Description: "List events in a namespace sorted by most recent first.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "List Namespace Events",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfEventsParams) (*mcp.CallToolResult, WfEventsResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WfEventsResult{}, err
@@ -157,6 +178,13 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_jobs",
 		Description: "List Jobs and CronJobs in a namespace.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "List Jobs and CronJobs",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfJobsParams) (*mcp.CallToolResult, WfJobsResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WfJobsResult{}, err
@@ -168,6 +196,13 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_restart",
 		Description: "Rollout restart a deployment in a managed namespace by patching the pod template with a restart timestamp. Useful after ConfigMap/Secret changes, credential rotation, or gVisor enablement.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Restart Workflow Deployment",
+			ReadOnlyHint:    false,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfRestartParams) (*mcp.CallToolResult, WfRestartResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WfRestartResult{}, err

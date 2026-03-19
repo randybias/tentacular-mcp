@@ -84,6 +84,13 @@ func registerAuditTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "audit_rbac",
 		Description: "Audit RBAC in a namespace: scan for wildcard verbs/resources, sensitive access, escalation paths (bind/escalate/impersonate verbs), and ClusterRoleBindings targeting namespace service accounts. Returns findings with remediation suggestions.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Audit RBAC Configuration",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params AuditRbacParams) (*mcp.CallToolResult, AuditRbacResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, AuditRbacResult{}, err
@@ -95,6 +102,13 @@ func registerAuditTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "audit_netpol",
 		Description: "Audit network policies in a namespace: check for default-deny policy, missing egress restrictions, overly broad allow rules, cross-namespace ingress via empty namespaceSelector, and list all policies. Returns findings with remediation suggestions.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Audit Network Policies",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params AuditNetpolParams) (*mcp.CallToolResult, AuditNetpolResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, AuditNetpolResult{}, err
@@ -106,6 +120,13 @@ func registerAuditTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "audit_psa",
 		Description: "Audit Pod Security Admission labels on a namespace: check enforce/audit/warn levels, flag privileged or missing enforcement, detect audit/warn level mismatches, and return remediation suggestions.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Audit Pod Security Admission",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params AuditPsaParams) (*mcp.CallToolResult, AuditPsaResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, AuditPsaResult{}, err

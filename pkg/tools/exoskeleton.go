@@ -72,6 +72,13 @@ func registerExoskeletonTools(srv *mcp.Server, client *k8s.Client, ctrl *exoskel
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "exo_status",
 		Description: "Return exoskeleton feature status including which backing services are available.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Exoskeleton Service Status",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params ExoStatusParams) (*mcp.CallToolResult, ExoStatusResult, error) {
 		if ctrl == nil {
 			return nil, ExoStatusResult{Enabled: false, Services: []ExoStatusServiceInfo{}}, nil
@@ -94,6 +101,13 @@ func registerExoskeletonTools(srv *mcp.Server, client *k8s.Client, ctrl *exoskel
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "exo_registration",
 		Description: "Return exoskeleton registration details (Secret contents) for a workflow deployment.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Workflow Exo Registration",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params ExoRegistrationParams) (*mcp.CallToolResult, ExoRegistrationResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, ExoRegistrationResult{}, err
@@ -136,6 +150,13 @@ func registerExoskeletonTools(srv *mcp.Server, client *k8s.Client, ctrl *exoskel
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "exo_list",
 		Description: "List all workflows with exoskeleton registrations by scanning Secrets with the exoskeleton label across all namespaces.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "List Exo Registrations",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params ExoListParams) (*mcp.CallToolResult, ExoListResult, error) {
 		result, err := handleExoList(ctx, client)
 		return nil, result, err

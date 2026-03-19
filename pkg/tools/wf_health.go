@@ -77,6 +77,13 @@ func registerWfHealthTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_health",
 		Description: "Get G/A/R health status of a single workflow runtime deployment, with optional execution telemetry.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Workflow Health Status",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfHealthParams) (*mcp.CallToolResult, WfHealthResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WfHealthResult{}, err
@@ -88,6 +95,13 @@ func registerWfHealthTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_health_ns",
 		Description: "Aggregate G/A/R health status for all tentacular workflow deployments in a namespace.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Namespace Workflow Health",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfHealthNsParams) (*mcp.CallToolResult, WfHealthNsResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WfHealthNsResult{}, err

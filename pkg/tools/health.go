@@ -78,6 +78,13 @@ func registerHealthTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "health_nodes",
 		Description: "List nodes with readiness, capacity, allocatable resources, kubelet version, and unhealthy conditions.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "List Node Health",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params HealthNodesParams) (*mcp.CallToolResult, HealthNodesResult, error) {
 		result, err := handleHealthNodes(ctx, client)
 		return nil, result, err
@@ -86,6 +93,13 @@ func registerHealthTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "health_ns_usage",
 		Description: "Compare namespace resource usage against ResourceQuota limits and return utilization percentages.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Namespace Resource Usage",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params HealthNsUsageParams) (*mcp.CallToolResult, HealthNsUsageResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, HealthNsUsageResult{}, err
@@ -97,6 +111,13 @@ func registerHealthTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "health_cluster_summary",
 		Description: "Aggregate cluster-wide CPU, memory, and pod counts across all nodes.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Cluster Resource Summary",
+			ReadOnlyHint:    true,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  true,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params HealthClusterSummaryParams) (*mcp.CallToolResult, HealthClusterSummaryResult, error) {
 		result, err := handleHealthClusterSummary(ctx, client)
 		return nil, result, err

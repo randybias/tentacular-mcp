@@ -31,6 +31,13 @@ func registerRunTools(srv *mcp.Server, client *k8s.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_run",
 		Description: "Trigger a deployed workflow by POSTing directly to its /run endpoint via HTTP. The MCP server connects to the workflow's ClusterIP service; NetworkPolicy allows ingress from tentacular-system via namespaceSelector. Returns the JSON output from the workflow.",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Trigger Workflow Execution",
+			ReadOnlyHint:    false,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  false,
+			OpenWorldHint:   boolPtr(true),
+		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfRunParams) (*mcp.CallToolResult, WfRunResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WfRunResult{}, err
