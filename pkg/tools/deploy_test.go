@@ -23,6 +23,7 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 
+	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
 
@@ -184,7 +185,7 @@ func TestDeployToolNamesRegistered(t *testing.T) {
 		&mcp.ServerOptions{Logger: slog.New(slog.NewTextHandler(os.Stderr, nil))},
 	)
 	client := newDeployTestClient()
-	registerDeployTools(mcpSrv, client, nil, nil)
+	registerDeployTools(mcpSrv, client, nil, nil, authz.NewEvaluator(authz.DefaultMode))
 
 	handler := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server { return mcpSrv },

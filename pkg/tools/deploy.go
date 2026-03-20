@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/randybias/tentacular-mcp/pkg/auth"
+	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
@@ -62,6 +63,8 @@ var knownGVRs = []schema.GroupVersionResource{
 type WorkflowApplyParams struct {
 	Namespace string           `json:"namespace" jsonschema:"Target namespace for the workflow"`
 	Name      string           `json:"name" jsonschema:"Deployment name for tracking resources"`
+	Group     string           `json:"group,omitempty" jsonschema:"IdP group assigned to this workflow (overrides server default)"`
+	Share     string           `json:"share,omitempty" jsonschema:"Permission preset name: private, group-read, group-run, group-edit, public-read"`
 	Manifests []map[string]any `json:"manifests" jsonschema:"List of Kubernetes manifest objects to apply"`
 }
 
@@ -133,7 +136,7 @@ type WorkflowStatusResult struct {
 	Ready     bool                     `json:"ready"`
 }
 
-func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.Scheduler, exoCtrl *exoskeleton.Controller) {
+func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.Scheduler, exoCtrl *exoskeleton.Controller, eval *authz.Evaluator) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_apply",
 		Description: "Apply a set of Kubernetes manifests as a named deployment in a namespace. Uses release labels for tracking and garbage collection. Includes garbage collection of stale resources.",
@@ -152,13 +155,50 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 			return nil, WorkflowApplyResult{}, err
 		}
 
+		// Resolve Share preset to a mode string before touching manifests.
+		var mode string
+		if params.Share != "" {
+			m, ok := authz.PresetFromName(params.Share)
+			if !ok {
+				return nil, WorkflowApplyResult{}, fmt.Errorf("unknown share preset %q; valid presets: %s", params.Share, authz.ValidPresetNames())
+			}
+			mode = m.String()
+		} else if eval != nil {
+			mode = eval.DefaultMode.String()
+		} else {
+			mode = authz.DefaultMode.String()
+		}
+
 		// Extract deployer identity from request context (set by auth middleware).
 		deployer := auth.DeployerFromContext(ctx)
 		if deployer != nil {
 			slog.Info("wf_apply deployer", "email", deployer.Email, "subject", deployer.Subject, "provider", deployer.Provider)
 		}
 
-		// Exoskeleton: detect tentacular-* dependencies, register, and inject Secret.
+		// Authz check for UPDATE path: fetch existing Deployment annotations.
+		// CREATE path checks namespace Write permission (creating a tentacle requires namespace Write).
+		// isUpdate is used downstream to prevent ownership annotation overwrite.
+		isUpdate := false
+		var existingAnnotations map[string]string
+		existing, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
+		if getErr == nil {
+			// Deployment exists — this is an update.
+			isUpdate = true
+			existingAnnotations = existing.Annotations
+			if deployer != nil {
+				if d := eval.Check(deployer, existing.Annotations, authz.Write); !d.Allowed {
+					return nil, WorkflowApplyResult{}, fmt.Errorf("permission denied: %s", d.Reason)
+				}
+			}
+		} else if apierrors.IsNotFound(getErr) {
+			// CREATE path: check namespace Write permission.
+			if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Write); err != nil {
+				return nil, WorkflowApplyResult{}, err
+			}
+		} else {
+			// Other error (e.g., permission denied on Deployment get) — fail fast.
+			return nil, WorkflowApplyResult{}, fmt.Errorf("check deployment %q: %w", params.Name, getErr)
+		}
 		if exoCtrl != nil {
 			processed, exoErr := exoCtrl.ProcessManifests(ctx, params.Namespace, params.Name, params.Manifests)
 			if exoErr != nil {
@@ -166,15 +206,20 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 			}
 			params.Manifests = processed
 
-			// Annotate Deployment manifests with deployer provenance.
+			// Annotate Deployment manifests with deployer provenance and ownership.
+			// IsUpdate=true prevents overwriting ownership on existing deployments.
+			// ExistingAnnotations carries forward ownership keys on update.
+			annotateDeployer := exoskeleton.DeployerInfo{Provider: "bearer-token"}
 			if deployer != nil {
-				params.Manifests = exoCtrl.AnnotateDeployer(params.Manifests, *deployer)
-			} else {
-				// No SSO deployer — annotate with bearer-token provenance.
-				params.Manifests = exoCtrl.AnnotateDeployer(params.Manifests, exoskeleton.DeployerInfo{
-					Provider: "bearer-token",
-				})
+				annotateDeployer = *deployer
 			}
+			params.Manifests = exoCtrl.AnnotateDeployer(params.Manifests, exoskeleton.AnnotateDeployerParams{
+				Deployer:            annotateDeployer,
+				Group:               params.Group,
+				Mode:                mode,
+				IsUpdate:            isUpdate,
+				ExistingAnnotations: existingAnnotations,
+			})
 		}
 		result, err := handleWorkflowApply(ctx, client, params)
 		if err == nil {
@@ -218,6 +263,17 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 		if err := guard.CheckName(params.Name); err != nil {
 			return nil, WorkflowRemoveResult{}, err
 		}
+		deployer := auth.DeployerFromContext(ctx)
+		if deployer != nil {
+			dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
+			if getErr == nil {
+				if d := eval.Check(deployer, dep.Annotations, authz.Write); !d.Allowed {
+					return nil, WorkflowRemoveResult{}, fmt.Errorf("permission denied: %s", d.Reason)
+				}
+			} else if !apierrors.IsNotFound(getErr) {
+				return nil, WorkflowRemoveResult{}, fmt.Errorf("check deployment %q: %w", params.Name, getErr)
+			}
+		}
 		if sched != nil {
 			sched.Deregister(params.Namespace, params.Name)
 		}
@@ -252,6 +308,17 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 		}
 		if err := guard.CheckName(params.Name); err != nil {
 			return nil, WorkflowStatusResult{}, err
+		}
+		deployer := auth.DeployerFromContext(ctx)
+		if deployer != nil {
+			dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
+			if getErr == nil {
+				if d := eval.Check(deployer, dep.Annotations, authz.Read); !d.Allowed {
+					return nil, WorkflowStatusResult{}, fmt.Errorf("permission denied: %s", d.Reason)
+				}
+			} else if !apierrors.IsNotFound(getErr) {
+				return nil, WorkflowStatusResult{}, fmt.Errorf("check deployment %q: %w", params.Name, getErr)
+			}
 		}
 		result, err := handleWorkflowStatus(ctx, client, params)
 		return nil, result, err
@@ -730,8 +797,8 @@ func syncCronSchedule(ctx context.Context, client *k8s.Client, sched *scheduler.
 		return // deployment may not exist yet (e.g., only ConfigMap applied so far)
 	}
 
-	schedule, ok := deploy.Annotations[scheduler.CronAnnotation]
-	if !ok || schedule == "" {
+	schedule := authz.GetAnnotation(deploy.Annotations, scheduler.CronAnnotation)
+	if schedule == "" {
 		sched.Deregister(namespace, name)
 		return
 	}
