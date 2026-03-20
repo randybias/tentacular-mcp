@@ -23,10 +23,10 @@ func TestNsCreateOrchestration(t *testing.T) {
 	client := newNsTestClient()
 	ctx := context.Background()
 
-	result, err := handleNsCreate(ctx, client, NsCreateParams{
+	result, err := handleNsCreate(ctx, client, bearerEval(), NsCreateParams{
 		Name:        "dev-alice",
 		QuotaPreset: "small",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestNsDeleteManagedCheck(t *testing.T) {
 		t.Fatalf("setup: create ns: %v", err)
 	}
 
-	result, err := handleNsDelete(ctx, client, NsDeleteParams{Name: "dev-bob"})
+	result, err := handleNsDelete(ctx, client, bearerEval(), NsDeleteParams{Name: "dev-bob"}, nil)
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestNsDeleteUnmanagedRejects(t *testing.T) {
 		t.Fatalf("setup: create ns: %v", err)
 	}
 
-	_, err = handleNsDelete(ctx, client, NsDeleteParams{Name: "unmanaged-ns"})
+	_, err = handleNsDelete(ctx, client, bearerEval(), NsDeleteParams{Name: "unmanaged-ns"}, nil)
 	if err == nil {
 		t.Fatal("expected error for unmanaged namespace, got nil")
 	}
@@ -119,7 +119,7 @@ func TestNsList(t *testing.T) {
 		t.Fatalf("setup: create unmanaged ns: %v", err)
 	}
 
-	result, err := handleNsList(ctx, client)
+	result, err := handleNsList(ctx, client, bearerEval(), nil)
 	if err != nil {
 		t.Fatalf("handleNsList: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestNsList(t *testing.T) {
 func createManagedNsWithQuota(t *testing.T, client *k8s.Client, name string) {
 	t.Helper()
 	ctx := context.Background()
-	_, err := handleNsCreate(ctx, client, NsCreateParams{Name: name, QuotaPreset: "small"})
+	_, err := handleNsCreate(ctx, client, bearerEval(), NsCreateParams{Name: name, QuotaPreset: "small"}, nil)
 	if err != nil {
 		t.Fatalf("setup: create managed ns %q: %v", name, err)
 	}
@@ -145,10 +145,10 @@ func TestNsUpdateLabels(t *testing.T) {
 	ctx := context.Background()
 	createManagedNsWithQuota(t, client, "upd-labels")
 
-	result, err := handleNsUpdate(ctx, client, NsUpdateParams{
+	result, err := handleNsUpdate(ctx, client, bearerEval(), NsUpdateParams{
 		Name:   "upd-labels",
 		Labels: map[string]string{"env": "staging"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("handleNsUpdate: %v", err)
 	}
@@ -172,10 +172,10 @@ func TestNsUpdateAnnotations(t *testing.T) {
 	ctx := context.Background()
 	createManagedNsWithQuota(t, client, "upd-annot")
 
-	result, err := handleNsUpdate(ctx, client, NsUpdateParams{
+	result, err := handleNsUpdate(ctx, client, bearerEval(), NsUpdateParams{
 		Name:        "upd-annot",
 		Annotations: map[string]string{"team": "platform"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("handleNsUpdate: %v", err)
 	}
@@ -194,10 +194,10 @@ func TestNsUpdateQuota(t *testing.T) {
 	ctx := context.Background()
 	createManagedNsWithQuota(t, client, "upd-quota")
 
-	result, err := handleNsUpdate(ctx, client, NsUpdateParams{
+	result, err := handleNsUpdate(ctx, client, bearerEval(), NsUpdateParams{
 		Name:        "upd-quota",
 		QuotaPreset: "large",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("handleNsUpdate: %v", err)
 	}
@@ -221,12 +221,12 @@ func TestNsUpdateAllFields(t *testing.T) {
 	ctx := context.Background()
 	createManagedNsWithQuota(t, client, "upd-all")
 
-	result, err := handleNsUpdate(ctx, client, NsUpdateParams{
+	result, err := handleNsUpdate(ctx, client, bearerEval(), NsUpdateParams{
 		Name:        "upd-all",
 		Labels:      map[string]string{"env": "prod"},
 		Annotations: map[string]string{"owner": "alice"},
 		QuotaPreset: "medium",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("handleNsUpdate: %v", err)
 	}
@@ -244,10 +244,10 @@ func TestNsUpdateRejectsUnmanaged(t *testing.T) {
 	}
 	_, _ = client.Clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
 
-	_, err := handleNsUpdate(ctx, client, NsUpdateParams{
+	_, err := handleNsUpdate(ctx, client, bearerEval(), NsUpdateParams{
 		Name:   "foreign-ns",
 		Labels: map[string]string{"env": "test"},
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("expected error for unmanaged namespace, got nil")
 	}
@@ -258,7 +258,7 @@ func TestNsUpdateRejectsEmptyParams(t *testing.T) {
 	ctx := context.Background()
 	createManagedNsWithQuota(t, client, "upd-empty")
 
-	_, err := handleNsUpdate(ctx, client, NsUpdateParams{Name: "upd-empty"})
+	_, err := handleNsUpdate(ctx, client, bearerEval(), NsUpdateParams{Name: "upd-empty"}, nil)
 	if err == nil {
 		t.Fatal("expected error when no update fields provided, got nil")
 	}
@@ -269,10 +269,10 @@ func TestNsUpdateRejectsManagedByLabelChange(t *testing.T) {
 	ctx := context.Background()
 	createManagedNsWithQuota(t, client, "upd-protect")
 
-	_, err := handleNsUpdate(ctx, client, NsUpdateParams{
+	_, err := handleNsUpdate(ctx, client, bearerEval(), NsUpdateParams{
 		Name:   "upd-protect",
 		Labels: map[string]string{k8s.ManagedByLabel: "someone-else"},
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("expected error when trying to change managed-by label, got nil")
 	}

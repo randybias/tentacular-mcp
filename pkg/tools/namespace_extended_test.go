@@ -33,7 +33,7 @@ func TestHandleNsGet_Basic(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	result, err := handleNsGet(ctx, client, NsGetParams{Name: "test-ns"})
+	result, err := handleNsGet(ctx, client, bearerEval(), NsGetParams{Name: "test-ns"}, nil)
 	if err != nil {
 		t.Fatalf("handleNsGet: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestHandleNsGet_NotFound(t *testing.T) {
 	client := newWfTestClient()
 	ctx := context.Background()
 
-	_, err := handleNsGet(ctx, client, NsGetParams{Name: "nonexistent"})
+	_, err := handleNsGet(ctx, client, bearerEval(), NsGetParams{Name: "nonexistent"}, nil)
 	if err == nil {
 		t.Error("expected error for nonexistent namespace")
 	}
@@ -74,7 +74,7 @@ func TestHandleNsGet_NoLabelsOrAnnotations(t *testing.T) {
 	}
 	_, _ = client.Clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
 
-	result, err := handleNsGet(ctx, client, NsGetParams{Name: "bare-ns"})
+	result, err := handleNsGet(ctx, client, bearerEval(), NsGetParams{Name: "bare-ns"}, nil)
 	if err != nil {
 		t.Fatalf("handleNsGet: %v", err)
 	}

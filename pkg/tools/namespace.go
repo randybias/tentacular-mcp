@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -12,6 +14,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/randybias/tentacular-mcp/pkg/auth"
+	"github.com/randybias/tentacular-mcp/pkg/authz"
+	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
@@ -20,6 +25,16 @@ import (
 type NsCreateParams struct {
 	Name        string `json:"name" jsonschema:"Name of the namespace to create"`
 	QuotaPreset string `json:"quota_preset" jsonschema:"Resource quota preset: small, medium, or large"`
+	// Group is the IdP group assigned to this namespace.
+	Group string `json:"group,omitempty" jsonschema:"IdP group to assign to this namespace"`
+	// Share accepts a named preset: private, group-read, group-run, group-edit, public-read.
+	Share string `json:"share,omitempty" jsonschema:"Permission preset for this namespace: private, group-read, group-run, group-edit, public-read"`
+	// Mode accepts a raw 9-character permission string (e.g. "rwxr-x---"). Mutually exclusive with share.
+	Mode string `json:"mode,omitempty" jsonschema:"Raw permission mode string (e.g. rwxr-x---). Mutually exclusive with share."`
+	// DefaultGroup is the default IdP group for new tentacles (workflows) created in this namespace.
+	DefaultGroup string `json:"default_group,omitempty" jsonschema:"Default group for new workflows in this namespace"`
+	// DefaultShare is the default permission preset for new workflows in this namespace.
+	DefaultShare string `json:"default_share,omitempty" jsonschema:"Default permission preset for new workflows in this namespace"`
 }
 
 // NsCreateResult is the result of ns_create.
@@ -63,6 +78,12 @@ type NsUpdateParams struct {
 	Labels      map[string]string `json:"labels,omitempty" jsonschema:"Labels to add or update (existing labels not listed are preserved)"`
 	Annotations map[string]string `json:"annotations,omitempty" jsonschema:"Annotations to add or update (existing annotations not listed are preserved)"`
 	QuotaPreset string            `json:"quota_preset,omitempty" jsonschema:"New resource quota preset: small, medium, or large"`
+	// Group updates the IdP group assigned to this namespace.
+	Group string `json:"group,omitempty" jsonschema:"New IdP group to assign to this namespace"`
+	// Share accepts a named preset: private, group-read, group-run, group-edit, public-read.
+	Share string `json:"share,omitempty" jsonschema:"New permission preset: private, group-read, group-run, group-edit, public-read"`
+	// Mode accepts a raw 9-character permission string. Mutually exclusive with share.
+	Mode string `json:"mode,omitempty" jsonschema:"Raw permission mode string (e.g. rwxr-x---). Mutually exclusive with share."`
 }
 
 // NsUpdateResult is the result of ns_update.
@@ -87,7 +108,7 @@ type NsListResult struct {
 	Namespaces []NsListItem `json:"namespaces"`
 }
 
-func registerNamespaceTools(srv *mcp.Server, client *k8s.Client) {
+func registerNamespaceTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "ns_create",
 		Description: "Create a new managed namespace with network policies, resource quotas, and workflow RBAC.",
@@ -102,7 +123,11 @@ func registerNamespaceTools(srv *mcp.Server, client *k8s.Client) {
 		if err := guard.CheckNamespace(params.Name); err != nil {
 			return nil, NsCreateResult{}, err
 		}
-		result, err := handleNsCreate(ctx, client, params)
+		if params.Mode != "" && params.Share != "" {
+			return nil, NsCreateResult{}, errors.New("mode and share are mutually exclusive; provide one or the other")
+		}
+		deployer := auth.DeployerFromContext(ctx)
+		result, err := handleNsCreate(ctx, client, eval, params, deployer)
 		return nil, result, err
 	})
 
@@ -120,7 +145,8 @@ func registerNamespaceTools(srv *mcp.Server, client *k8s.Client) {
 		if err := guard.CheckNamespace(params.Name); err != nil {
 			return nil, NsDeleteResult{}, err
 		}
-		result, err := handleNsDelete(ctx, client, params)
+		deployer := auth.DeployerFromContext(ctx)
+		result, err := handleNsDelete(ctx, client, eval, params, deployer)
 		return nil, result, err
 	})
 
@@ -138,7 +164,8 @@ func registerNamespaceTools(srv *mcp.Server, client *k8s.Client) {
 		if err := guard.CheckNamespace(params.Name); err != nil {
 			return nil, NsGetResult{}, err
 		}
-		result, err := handleNsGet(ctx, client, params)
+		deployer := auth.DeployerFromContext(ctx)
+		result, err := handleNsGet(ctx, client, eval, params, deployer)
 		return nil, result, err
 	})
 
@@ -153,13 +180,14 @@ func registerNamespaceTools(srv *mcp.Server, client *k8s.Client) {
 			OpenWorldHint:   boolPtr(true),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params NsListParams) (*mcp.CallToolResult, NsListResult, error) {
-		result, err := handleNsList(ctx, client)
+		deployer := auth.DeployerFromContext(ctx)
+		result, err := handleNsList(ctx, client, eval, deployer)
 		return nil, result, err
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "ns_update",
-		Description: "Update labels, annotations, or resource quota preset on a managed namespace.",
+		Description: "Update labels, annotations, resource quota preset, or permissions on a managed namespace.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Update Namespace Metadata",
 			ReadOnlyHint:    false,
@@ -171,18 +199,79 @@ func registerNamespaceTools(srv *mcp.Server, client *k8s.Client) {
 		if err := guard.CheckNamespace(params.Name); err != nil {
 			return nil, NsUpdateResult{}, err
 		}
-		result, err := handleNsUpdate(ctx, client, params)
+		if params.Mode != "" && params.Share != "" {
+			return nil, NsUpdateResult{}, errors.New("mode and share are mutually exclusive; provide one or the other")
+		}
+		deployer := auth.DeployerFromContext(ctx)
+		result, err := handleNsUpdate(ctx, client, eval, params, deployer)
 		return nil, result, err
 	})
 }
 
-func handleNsCreate(ctx context.Context, client *k8s.Client, params NsCreateParams) (NsCreateResult, error) {
+func handleNsCreate(ctx context.Context, client *k8s.Client, eval *authz.Evaluator, params NsCreateParams, deployer *exoskeleton.DeployerInfo) (NsCreateResult, error) {
 	created := []string{}
 
 	if err := k8s.CreateNamespace(ctx, client, params.Name); err != nil {
 		return NsCreateResult{}, err
 	}
 	created = append(created, "namespace/"+params.Name)
+
+	// Stamp authz annotations on the namespace.
+	if deployer != nil {
+		// Resolve namespace mode from share preset or raw mode string.
+		nsMode := authz.DefaultMode
+		switch {
+		case params.Mode != "":
+			if m, err := authz.ParseMode(params.Mode); err == nil {
+				nsMode = m
+			}
+		case params.Share != "":
+			if m, ok := authz.PresetFromName(params.Share); ok {
+				nsMode = m
+			}
+		case eval != nil:
+			nsMode = eval.DefaultMode
+		}
+
+		// Resolve default mode for new workflows in this namespace.
+		var defaultMode authz.Mode
+		if params.DefaultShare != "" {
+			if m, ok := authz.PresetFromName(params.DefaultShare); ok {
+				defaultMode = m
+			}
+		}
+
+		ownerAnnotations := authz.WriteNamespaceAnnotations(
+			deployer.Subject,
+			deployer.Email,
+			deployer.DisplayName,
+			params.Group,
+			nsMode,
+			params.DefaultGroup,
+			defaultMode,
+		)
+
+		ns, getErr := client.Clientset.CoreV1().Namespaces().Get(ctx, params.Name, metav1.GetOptions{})
+		if getErr == nil {
+			if ns.Annotations == nil {
+				ns.Annotations = map[string]string{}
+			}
+			for k, v := range ownerAnnotations {
+				ns.Annotations[k] = v
+			}
+			_, patchErr := client.Clientset.CoreV1().Namespaces().Update(ctx, ns, metav1.UpdateOptions{})
+			if patchErr != nil {
+				return NsCreateResult{}, fmt.Errorf("namespace created but failed to annotate with authz: %w", patchErr)
+			}
+		}
+
+		slog.Info("ns_create authz stamped",
+			"namespace", params.Name,
+			"owner", deployer.Subject,
+			"group", params.Group,
+			"mode", nsMode.String(),
+		)
+	}
 
 	if err := k8s.CreateDefaultDenyPolicy(ctx, client, params.Name); err != nil {
 		return NsCreateResult{}, fmt.Errorf("namespace created but failed to create default-deny network policy: %w", err)
@@ -227,7 +316,7 @@ func handleNsCreate(ctx context.Context, client *k8s.Client, params NsCreatePara
 	}, nil
 }
 
-func handleNsDelete(ctx context.Context, client *k8s.Client, params NsDeleteParams) (NsDeleteResult, error) {
+func handleNsDelete(ctx context.Context, client *k8s.Client, eval *authz.Evaluator, params NsDeleteParams, deployer *exoskeleton.DeployerInfo) (NsDeleteResult, error) {
 	ns, err := k8s.GetNamespace(ctx, client, params.Name)
 	if err != nil {
 		return NsDeleteResult{}, err
@@ -237,6 +326,19 @@ func handleNsDelete(ctx context.Context, client *k8s.Client, params NsDeletePara
 		return NsDeleteResult{}, fmt.Errorf("namespace %q is not managed by tentacular and cannot be deleted", params.Name)
 	}
 
+	// Authz check: caller must have Write permission on the namespace.
+	if deployer != nil {
+		ann := ns.Annotations
+		if ann == nil {
+			ann = map[string]string{}
+		}
+		if d := eval.Check(deployer, ann, authz.Write); !d.Allowed {
+			slog.Info("ns_delete authz denied", "namespace", params.Name, "subject", deployer.Subject, "reason", d.Reason)
+			return NsDeleteResult{}, fmt.Errorf("permission denied: %s", d.Reason)
+		}
+		slog.Info("ns_delete authz allowed", "namespace", params.Name, "subject", deployer.Subject)
+	}
+
 	if err := k8s.DeleteNamespace(ctx, client, params.Name); err != nil {
 		return NsDeleteResult{}, err
 	}
@@ -244,10 +346,22 @@ func handleNsDelete(ctx context.Context, client *k8s.Client, params NsDeletePara
 	return NsDeleteResult{Name: params.Name, Deleted: true}, nil
 }
 
-func handleNsGet(ctx context.Context, client *k8s.Client, params NsGetParams) (NsGetResult, error) {
+func handleNsGet(ctx context.Context, client *k8s.Client, eval *authz.Evaluator, params NsGetParams, deployer *exoskeleton.DeployerInfo) (NsGetResult, error) {
 	ns, err := k8s.GetNamespace(ctx, client, params.Name)
 	if err != nil {
 		return NsGetResult{}, err
+	}
+
+	// Authz check: caller must have Read permission on the namespace.
+	if deployer != nil {
+		ann := ns.Annotations
+		if ann == nil {
+			ann = map[string]string{}
+		}
+		if d := eval.Check(deployer, ann, authz.Read); !d.Allowed {
+			slog.Info("ns_get authz denied", "namespace", params.Name, "subject", deployer.Subject, "reason", d.Reason)
+			return NsGetResult{}, fmt.Errorf("permission denied: %s", d.Reason)
+		}
 	}
 
 	labels := ns.Labels
@@ -311,13 +425,21 @@ func handleNsGet(ctx context.Context, client *k8s.Client, params NsGetParams) (N
 	return result, nil
 }
 
-func handleNsUpdate(ctx context.Context, client *k8s.Client, params NsUpdateParams) (NsUpdateResult, error) {
+func handleNsUpdate(ctx context.Context, client *k8s.Client, eval *authz.Evaluator, params NsUpdateParams, deployer *exoskeleton.DeployerInfo) (NsUpdateResult, error) {
 	if err := k8s.CheckManagedNamespace(ctx, client, params.Name); err != nil {
 		return NsUpdateResult{}, err
 	}
 
-	if len(params.Labels) == 0 && len(params.Annotations) == 0 && params.QuotaPreset == "" {
-		return NsUpdateResult{}, errors.New("at least one of labels, annotations, or quota_preset must be provided")
+	if len(params.Labels) == 0 && len(params.Annotations) == 0 && params.QuotaPreset == "" && params.Group == "" && params.Share == "" && params.Mode == "" {
+		return NsUpdateResult{}, errors.New("at least one of labels, annotations, quota_preset, group, share, or mode must be provided")
+	}
+
+	// Authz check: caller must have Write permission on the namespace.
+	if deployer != nil {
+		if err := checkNamespaceAuthz(ctx, client, params.Name, deployer, eval, authz.Write); err != nil {
+			slog.Info("ns_update authz denied", "namespace", params.Name, "subject", deployer.Subject)
+			return NsUpdateResult{}, err
+		}
 	}
 
 	updated := []string{}
@@ -327,6 +449,19 @@ func handleNsUpdate(ctx context.Context, client *k8s.Client, params NsUpdatePara
 		// Prevent overwriting the managed-by label.
 		if v, ok := params.Labels[k8s.ManagedByLabel]; ok && v != k8s.ManagedByValue {
 			return NsUpdateResult{}, fmt.Errorf("cannot change the %s label", k8s.ManagedByLabel)
+		}
+
+		// Prevent overwriting authz annotations via the generic annotations field.
+		// These are only modifiable through ns_permissions_set (owner-only).
+		for k := range params.Annotations {
+			if strings.HasPrefix(k, "tentacular.io/owner-") ||
+				k == "tentacular.io/mode" ||
+				k == "tentacular.io/group" ||
+				k == "tentacular.io/created-at" ||
+				k == "tentacular.io/default-mode" ||
+				k == "tentacular.io/default-group" {
+				return NsUpdateResult{}, fmt.Errorf("annotation %q is protected; use ns_permissions_set to change ownership/permissions", k)
+			}
 		}
 
 		patchMeta := map[string]any{}
@@ -356,6 +491,56 @@ func handleNsUpdate(ctx context.Context, client *k8s.Client, params NsUpdatePara
 		}
 	}
 
+	// Update group and/or mode (permissions) if requested.
+	if params.Group != "" || params.Share != "" || params.Mode != "" {
+		// owner-only: only the namespace owner (or bearer-token) may change group/mode.
+		if eval != nil && eval.Enabled && deployer != nil && deployer.Provider != "bearer-token" {
+			ns, getErr := client.Clientset.CoreV1().Namespaces().Get(ctx, params.Name, metav1.GetOptions{})
+			if getErr == nil {
+				ownerSub := ns.Annotations[authz.AnnotationOwnerSub]
+				if ownerSub != "" && deployer.Subject != ownerSub {
+					return NsUpdateResult{}, errors.New("permission denied: only the namespace owner may change group or mode")
+				}
+			}
+		}
+
+		permPatch := map[string]any{}
+		if params.Group != "" {
+			permPatch[authz.AnnotationGroup] = params.Group
+		}
+
+		if params.Mode != "" {
+			m, err := authz.ParseMode(params.Mode)
+			if err != nil {
+				return NsUpdateResult{}, fmt.Errorf("invalid mode %q: %w", params.Mode, err)
+			}
+			permPatch[authz.AnnotationMode] = m.String()
+		} else if params.Share != "" {
+			m, ok := authz.PresetFromName(params.Share)
+			if !ok {
+				return NsUpdateResult{}, fmt.Errorf("unknown share preset %q; valid presets: %s", params.Share, authz.ValidPresetNames())
+			}
+			permPatch[authz.AnnotationMode] = m.String()
+		}
+
+		patchBody, err := json.Marshal(map[string]any{
+			"metadata": map[string]any{"annotations": permPatch},
+		})
+		if err != nil {
+			return NsUpdateResult{}, fmt.Errorf("marshal permissions patch: %w", err)
+		}
+
+		_, err = client.Clientset.CoreV1().Namespaces().Patch(
+			ctx, params.Name, types.MergePatchType, patchBody, metav1.PatchOptions{},
+		)
+		if err != nil {
+			return NsUpdateResult{}, fmt.Errorf("patch namespace %q permissions: %w", params.Name, err)
+		}
+
+		updated = append(updated, "permissions")
+		slog.Info("ns_update permissions changed", "namespace", params.Name, "subject", deployer.Subject)
+	}
+
 	// Update resource quota if requested.
 	if params.QuotaPreset != "" {
 		if err := k8s.UpdateResourceQuota(ctx, client, params.Name, params.QuotaPreset); err != nil {
@@ -370,7 +555,7 @@ func handleNsUpdate(ctx context.Context, client *k8s.Client, params NsUpdatePara
 	}, nil
 }
 
-func handleNsList(ctx context.Context, client *k8s.Client) (NsListResult, error) {
+func handleNsList(ctx context.Context, client *k8s.Client, eval *authz.Evaluator, deployer *exoskeleton.DeployerInfo) (NsListResult, error) {
 	namespaces, err := k8s.ListManagedNamespaces(ctx, client)
 	if err != nil {
 		return NsListResult{}, err
@@ -378,6 +563,17 @@ func handleNsList(ctx context.Context, client *k8s.Client) (NsListResult, error)
 
 	items := make([]NsListItem, 0, len(namespaces))
 	for _, ns := range namespaces {
+		// Authz filter: skip namespaces the caller cannot read.
+		ann := ns.Annotations
+		if ann == nil {
+			ann = map[string]string{}
+		}
+		if deployer != nil {
+			if d := eval.Check(deployer, ann, authz.Read); !d.Allowed {
+				continue
+			}
+		}
+
 		item := NsListItem{
 			Name:      ns.Name,
 			Status:    string(ns.Status.Phase),
