@@ -36,7 +36,7 @@ func e2eEnv(t *testing.T) (session *mcp.ClientSession, k8sClient *k8s.Client, cl
 	k8sClient = integrationClient(t)
 	token := "e2e-test-token"
 
-	srv, err := server.New(k8sClient, nil, nil, nil, nil, token, slog.Default())
+	srv, err := server.New(k8sClient, nil, nil, nil, nil, nil, token, slog.Default())
 	if err != nil {
 		t.Fatalf("server.New: %v", err)
 	}
