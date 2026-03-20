@@ -3,10 +3,14 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/randybias/tentacular-mcp/pkg/auth"
+	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
@@ -27,7 +31,7 @@ type WfRunResult struct {
 	DurationMs int64          `json:"duration_ms"`
 }
 
-func registerRunTools(srv *mcp.Server, client *k8s.Client) {
+func registerRunTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_run",
 		Description: "Trigger a deployed workflow by POSTing directly to its /run endpoint via HTTP. The MCP server connects to the workflow's ClusterIP service; NetworkPolicy allows ingress from tentacular-system via namespaceSelector. Returns the JSON output from the workflow.",
@@ -44,6 +48,15 @@ func registerRunTools(srv *mcp.Server, client *k8s.Client) {
 		}
 		if err := guard.CheckName(params.Name); err != nil {
 			return nil, WfRunResult{}, err
+		}
+		deployer := auth.DeployerFromContext(ctx)
+		if deployer != nil {
+			dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
+			if getErr == nil {
+				if d := eval.Check(deployer, dep.Annotations, authz.Execute); !d.Allowed {
+					return nil, WfRunResult{}, fmt.Errorf("permission denied: %s", d.Reason)
+				}
+			}
 		}
 		result, err := handleWfRun(ctx, client, params)
 		return nil, result, err
