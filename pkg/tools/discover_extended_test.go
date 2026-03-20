@@ -8,6 +8,9 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/randybias/tentacular-mcp/pkg/authz"
+	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 )
 
 // ---------- wf_describe deployer annotations tests ----------
@@ -20,7 +23,7 @@ func TestWfDescribe_DeployerAnnotations(t *testing.T) {
 		"tentacular.io/deployed-by":  "user@example.com",
 		"tentacular.io/deployed-via": "claude-code",
 		"tentacular.io/deployed-at":  "2026-03-10T12:00:00Z",
-		"tentacular.dev/owner":       "platform-team",
+		"tentacular.io/owner-email":  "platform-team@example.com",
 	})
 	_, err := client.Clientset.AppsV1().Deployments("dep-ns").Create(ctx, dep, metav1.CreateOptions{})
 	if err != nil {
@@ -30,7 +33,7 @@ func TestWfDescribe_DeployerAnnotations(t *testing.T) {
 	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
 		Namespace: "dep-ns",
 		Name:      "deployed-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
@@ -44,8 +47,8 @@ func TestWfDescribe_DeployerAnnotations(t *testing.T) {
 	if result.DeployedAt != "2026-03-10T12:00:00Z" {
 		t.Errorf("DeployedAt = %q, want '2026-03-10T12:00:00Z'", result.DeployedAt)
 	}
-	if result.Owner != "platform-team" {
-		t.Errorf("Owner = %q, want 'platform-team'", result.Owner)
+	if result.Owner != "platform-team@example.com" {
+		t.Errorf("Owner = %q, want 'platform-team@example.com'", result.Owner)
 	}
 
 	// Verify deployer annotations appear in the annotations map.
@@ -73,7 +76,7 @@ func TestWfDescribe_NoDeployerAnnotations(t *testing.T) {
 	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
 		Namespace: "nd-ns",
 		Name:      "no-deployer-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
@@ -130,7 +133,7 @@ nodes:
 	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
 		Namespace: "enr-ns",
 		Name:      "enriched-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
@@ -193,18 +196,18 @@ func TestWfList_FilterByOwner(t *testing.T) {
 	ctx := context.Background()
 
 	dep1 := makeTestDeployment("owner-wf", "filter-ns", map[string]string{
-		"tentacular.dev/owner": "team-a",
+		"tentacular.io/owner-email": "team-a@example.com",
 	})
 	dep2 := makeTestDeployment("other-wf", "filter-ns", map[string]string{
-		"tentacular.dev/owner": "team-b",
+		"tentacular.io/owner-email": "team-b@example.com",
 	})
 	_, _ = client.Clientset.AppsV1().Deployments("filter-ns").Create(ctx, dep1, metav1.CreateOptions{})
 	_, _ = client.Clientset.AppsV1().Deployments("filter-ns").Create(ctx, dep2, metav1.CreateOptions{})
 
 	result, err := handleWfList(ctx, client, WfListParams{
 		Namespace: "filter-ns",
-		Owner:     "team-a",
-	})
+		Owner:     "team-a@example.com",
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -221,7 +224,7 @@ func TestWfList_FilterByTag(t *testing.T) {
 	ctx := context.Background()
 
 	dep1 := makeTestDeployment("tagged-wf", "tag-ns", map[string]string{
-		"tentacular.dev/tags": "etl,daily",
+		"tentacular.io/tags": "etl,daily",
 	})
 	dep2 := makeTestDeployment("untagged-wf", "tag-ns", nil)
 	_, _ = client.Clientset.AppsV1().Deployments("tag-ns").Create(ctx, dep1, metav1.CreateOptions{})
@@ -230,7 +233,7 @@ func TestWfList_FilterByTag(t *testing.T) {
 	result, err := handleWfList(ctx, client, WfListParams{
 		Namespace: "tag-ns",
 		Tag:       "etl",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -254,7 +257,7 @@ func TestWfList_DeployerAnnotations(t *testing.T) {
 	})
 	_, _ = client.Clientset.AppsV1().Deployments("dl-ns").Create(ctx, dep, metav1.CreateOptions{})
 
-	result, err := handleWfList(ctx, client, WfListParams{Namespace: "dl-ns"})
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "dl-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -285,7 +288,7 @@ func TestWrapListError(t *testing.T) {
 }
 
 func TestWrapGetError(t *testing.T) {
-	err := wrapGetError("deployment", "my-wf", "my-ns", errors.New("not found"))
+	err := wrapGetError("my-wf", "my-ns", errors.New("not found"))
 	if err.Error() != `get deployment "my-wf" in namespace "my-ns": not found` {
 		t.Errorf("got: %v", err)
 	}
@@ -303,9 +306,9 @@ func TestDeploymentToListEntry(t *testing.T) {
 				"app.kubernetes.io/version":    "3.0",
 			},
 			Annotations: map[string]string{
-				"tentacular.dev/owner":       "data-team",
-				"tentacular.dev/team":        "analytics",
-				"tentacular.dev/environment": "staging",
+				"tentacular.io/owner-email": "data-team@example.com",
+				"tentacular.io/group":       "analytics",
+				"tentacular.io/environment": "staging",
 			},
 		},
 		Status: appsv1.DeploymentStatus{
@@ -320,16 +323,110 @@ func TestDeploymentToListEntry(t *testing.T) {
 	if entry.Version != "3.0" {
 		t.Errorf("Version = %q", entry.Version)
 	}
-	if entry.Owner != "data-team" {
+	if entry.Owner != "data-team@example.com" {
 		t.Errorf("Owner = %q", entry.Owner)
 	}
-	if entry.Team != "analytics" {
-		t.Errorf("Team = %q", entry.Team)
+	if entry.Group != "analytics" {
+		t.Errorf("Group = %q", entry.Group)
 	}
 	if entry.Environment != "staging" {
 		t.Errorf("Environment = %q", entry.Environment)
 	}
 	if !entry.Ready {
 		t.Error("expected Ready=true with ReadyReplicas=1")
+	}
+}
+
+// ---------- authz integration tests for wf_list and wf_describe ----------
+
+func TestWfList_AuthzDeny_SkipsResource(t *testing.T) {
+	// An OIDC caller who is not the owner (mode rwx------) should get 0 results.
+	// Namespace is owned by "sub-owner" with public-read (rwxr--r--) so stranger can
+	// read the namespace but not the private workflow inside it.
+	client := newWfTestClient()
+	ctx := context.Background()
+
+	createOwnedNamespaceWithMode(ctx, client, "authz-ns", "sub-owner", "rwxr--r--")
+	dep := makeTestDeployment("private-wf", "authz-ns", map[string]string{
+		"tentacular.io/owner-sub": "sub-owner",
+		"tentacular.io/mode":      "rwx------",
+	})
+	_, _ = client.Clientset.AppsV1().Deployments("authz-ns").Create(ctx, dep, metav1.CreateOptions{})
+
+	stranger := &exoskeleton.DeployerInfo{Subject: "sub-stranger", Email: "s@example.com", Provider: "keycloak"}
+	eval := authz.NewEvaluator(authz.DefaultMode)
+
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "authz-ns"}, stranger, eval)
+	if err != nil {
+		t.Fatalf("handleWfList: %v", err)
+	}
+	if len(result.Workflows) != 0 {
+		t.Errorf("expected 0 workflows for unauthorized caller, got %d", len(result.Workflows))
+	}
+}
+
+func TestWfList_AuthzAllow_Owner(t *testing.T) {
+	client := newWfTestClient()
+	ctx := context.Background()
+
+	createOwnedNamespace(ctx, client, "authz-ns2", "sub-owner")
+	dep := makeTestDeployment("my-wf", "authz-ns2", map[string]string{
+		"tentacular.io/owner-sub": "sub-owner",
+		"tentacular.io/mode":      "rwx------",
+	})
+	_, _ = client.Clientset.AppsV1().Deployments("authz-ns2").Create(ctx, dep, metav1.CreateOptions{})
+
+	owner := &exoskeleton.DeployerInfo{Subject: "sub-owner", Email: "o@example.com", Provider: "keycloak"}
+	eval := authz.NewEvaluator(authz.DefaultMode)
+
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "authz-ns2"}, owner, eval)
+	if err != nil {
+		t.Fatalf("handleWfList: %v", err)
+	}
+	if len(result.Workflows) != 1 {
+		t.Errorf("expected 1 workflow for owner, got %d", len(result.Workflows))
+	}
+}
+
+func TestWfDescribe_AuthzDeny(t *testing.T) {
+	client := newWfTestClient()
+	ctx := context.Background()
+
+	dep := makeTestDeployment("locked-wf", "authz-ns3", map[string]string{
+		"tentacular.io/owner-sub": "sub-owner",
+		"tentacular.io/mode":      "rwx------",
+	})
+	_, _ = client.Clientset.AppsV1().Deployments("authz-ns3").Create(ctx, dep, metav1.CreateOptions{})
+
+	stranger := &exoskeleton.DeployerInfo{Subject: "sub-stranger", Email: "s@example.com", Provider: "keycloak"}
+	eval := authz.NewEvaluator(authz.DefaultMode)
+
+	_, err := handleWfDescribe(ctx, client, WfDescribeParams{
+		Namespace: "authz-ns3",
+		Name:      "locked-wf",
+	}, stranger, eval)
+	if err == nil {
+		t.Error("expected permission denied error for unauthorized caller")
+	}
+}
+
+func TestWfDescribe_BearerToken_Bypasses_Authz(t *testing.T) {
+	client := newWfTestClient()
+	ctx := context.Background()
+
+	dep := makeTestDeployment("locked-wf2", "authz-ns4", map[string]string{
+		"tentacular.io/owner-sub": "sub-owner",
+		"tentacular.io/mode":      "rwx------",
+	})
+	_, _ = client.Clientset.AppsV1().Deployments("authz-ns4").Create(ctx, dep, metav1.CreateOptions{})
+
+	eval := authz.NewEvaluator(authz.DefaultMode)
+
+	_, err := handleWfDescribe(ctx, client, WfDescribeParams{
+		Namespace: "authz-ns4",
+		Name:      "locked-wf2",
+	}, bearerInfo(), eval)
+	if err != nil {
+		t.Errorf("bearer token should bypass authz, got error: %v", err)
 	}
 }

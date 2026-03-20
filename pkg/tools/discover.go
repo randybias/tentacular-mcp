@@ -12,6 +12,9 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/randybias/tentacular-mcp/pkg/auth"
+	"github.com/randybias/tentacular-mcp/pkg/authz"
+	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
@@ -47,7 +50,8 @@ type WfListEntry struct {
 	Namespace   string `json:"namespace"`
 	Version     string `json:"version"`
 	Owner       string `json:"owner,omitempty"`
-	Team        string `json:"team,omitempty"`
+	Group       string `json:"group,omitempty"`
+	Mode        string `json:"mode,omitempty"`
 	Environment string `json:"environment,omitempty"`
 	DeployedBy  string `json:"deployed_by,omitempty"`
 	DeployedVia string `json:"deployed_via,omitempty"`
@@ -72,7 +76,10 @@ type WfDescribeResult struct {
 	DeployedVia   string            `json:"deployed_via,omitempty"`
 	Age           string            `json:"age"`
 	Owner         string            `json:"owner,omitempty"`
-	Team          string            `json:"team,omitempty"`
+	OwnerName     string            `json:"owner_name,omitempty"`
+	Group         string            `json:"group,omitempty"`
+	Mode          string            `json:"mode,omitempty"`
+	Preset        string            `json:"preset,omitempty"`
 	Namespace     string            `json:"namespace"`
 	Environment   string            `json:"environment,omitempty"`
 	DeployedBy    string            `json:"deployed_by,omitempty"`
@@ -88,7 +95,7 @@ type WfDescribeResult struct {
 	Ready         bool              `json:"ready"`
 }
 
-func registerDiscoverTools(srv *mcp.Server, client *k8s.Client) {
+func registerDiscoverTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_list",
 		Description: "List all tentacular-managed workflow deployments across namespaces, with ownership and status.",
@@ -105,7 +112,8 @@ func registerDiscoverTools(srv *mcp.Server, client *k8s.Client) {
 				return nil, WfListResult{}, err
 			}
 		}
-		result, err := handleWfList(ctx, client, params)
+		deployer := auth.DeployerFromContext(ctx)
+		result, err := handleWfList(ctx, client, params, deployer, eval)
 		return nil, result, err
 	})
 
@@ -126,7 +134,8 @@ func registerDiscoverTools(srv *mcp.Server, client *k8s.Client) {
 		if err := guard.CheckName(params.Name); err != nil {
 			return nil, WfDescribeResult{}, err
 		}
-		result, err := handleWfDescribe(ctx, client, params)
+		deployer := auth.DeployerFromContext(ctx)
+		result, err := handleWfDescribe(ctx, client, params, deployer, eval)
 		return nil, result, err
 	})
 }
@@ -144,8 +153,16 @@ func isSystemNamespace(ns string, annotations map[string]string) bool {
 	return false
 }
 
-func handleWfList(ctx context.Context, client *k8s.Client, params WfListParams) (WfListResult, error) {
+func handleWfList(ctx context.Context, client *k8s.Client, params WfListParams, deployer *exoskeleton.DeployerInfo, eval *authz.Evaluator) (WfListResult, error) {
 	ns := params.Namespace
+
+	// If listing in a specific namespace, check namespace Read permission.
+	if ns != "" {
+		if err := checkNamespaceAuthz(ctx, client, ns, deployer, eval, authz.Read); err != nil {
+			return WfListResult{}, err
+		}
+	}
+
 	depList, err := client.Clientset.AppsV1().Deployments(ns).List(ctx, metav1.ListOptions{
 		LabelSelector: "app.kubernetes.io/managed-by=tentacular",
 	})
@@ -167,14 +184,31 @@ func handleWfList(ctx context.Context, client *k8s.Client, params WfListParams) 
 
 	entries := make([]WfListEntry, 0, len(depList.Items))
 	for _, dep := range depList.Items {
-		// Filter out system namespaces when listing across all namespaces
+		// Filter out system namespaces when listing across all namespaces.
 		if ns == "" && isSystemNamespace(dep.Namespace, nsAnnotations[dep.Namespace]) {
+			continue
+		}
+
+		// Namespace-level authz filter: when listing across all namespaces, skip
+		// namespaces where the caller lacks Read permission.
+		if ns == "" {
+			nsAnn := nsAnnotations[dep.Namespace]
+			if nsAnn == nil {
+				nsAnn = map[string]string{}
+			}
+			if d := eval.Check(deployer, nsAnn, authz.Read); !d.Allowed {
+				continue
+			}
+		}
+
+		// Authz filter: skip deployments the caller cannot read.
+		if d := eval.Check(deployer, dep.Annotations, authz.Read); !d.Allowed {
 			continue
 		}
 
 		entry := deploymentToListEntry(dep)
 
-		// Apply optional client-side filters
+		// Apply optional client-side filters.
 		if params.Owner != "" && entry.Owner != params.Owner {
 			continue
 		}
@@ -183,7 +217,7 @@ func handleWfList(ctx context.Context, client *k8s.Client, params WfListParams) 
 			if ann == nil {
 				continue
 			}
-			if !containsTag(ann["tentacular.dev/tags"], params.Tag) {
+			if !containsTag(authz.GetAnnotation(ann, "tentacular.io/tags"), params.Tag) {
 				continue
 			}
 		}
@@ -194,10 +228,15 @@ func handleWfList(ctx context.Context, client *k8s.Client, params WfListParams) 
 	return WfListResult{Workflows: entries}, nil
 }
 
-func handleWfDescribe(ctx context.Context, client *k8s.Client, params WfDescribeParams) (WfDescribeResult, error) {
+func handleWfDescribe(ctx context.Context, client *k8s.Client, params WfDescribeParams, deployer *exoskeleton.DeployerInfo, eval *authz.Evaluator) (WfDescribeResult, error) {
 	dep, err := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
 	if err != nil {
-		return WfDescribeResult{}, wrapGetError("deployment", params.Name, params.Namespace, err)
+		return WfDescribeResult{}, wrapGetError(params.Name, params.Namespace, err)
+	}
+
+	// Authz check: caller must have Read permission.
+	if d := eval.Check(deployer, dep.Annotations, authz.Read); !d.Allowed {
+		return WfDescribeResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 	}
 
 	ann := dep.Annotations
@@ -206,7 +245,7 @@ func handleWfDescribe(ctx context.Context, client *k8s.Client, params WfDescribe
 	}
 
 	var tags []string
-	if raw := ann["tentacular.dev/tags"]; raw != "" {
+	if raw := authz.GetAnnotation(ann, "tentacular.io/tags"); raw != "" {
 		tags = strings.Split(raw, ",")
 	}
 
@@ -215,10 +254,10 @@ func handleWfDescribe(ctx context.Context, client *k8s.Client, params WfDescribe
 		image = dep.Spec.Template.Spec.Containers[0].Image
 	}
 
-	// Collect tentacular.dev/* and tentacular.io/* annotations for the result.
+	// Collect tentacular.io/* annotations for the result.
 	tentacularAnn := make(map[string]string)
 	for k, v := range ann {
-		if strings.HasPrefix(k, "tentacular.dev/") || strings.HasPrefix(k, "tentacular.io/") {
+		if strings.HasPrefix(k, "tentacular.io/") {
 			tentacularAnn[k] = v
 		}
 	}
@@ -226,19 +265,23 @@ func handleWfDescribe(ctx context.Context, client *k8s.Client, params WfDescribe
 		tentacularAnn = nil
 	}
 
+	ownerInfo := authz.ReadOwnerInfo(ann)
 	age := time.Since(dep.CreationTimestamp.Time).Round(time.Second).String()
 
 	result := WfDescribeResult{
 		Name:          dep.Name,
 		Namespace:     dep.Namespace,
 		Version:       dep.Labels[k8s.VersionLabel],
-		Owner:         ann["tentacular.dev/owner"],
-		Team:          ann["tentacular.dev/team"],
+		Owner:         ownerInfo.OwnerEmail,
+		OwnerName:     ownerInfo.OwnerName,
+		Group:         ownerInfo.Group,
+		Mode:          ownerInfo.Mode.String(),
+		Preset:        ownerInfo.PresetName,
 		Tags:          tags,
-		Environment:   ann["tentacular.dev/environment"],
-		DeployedBy:    ann["tentacular.io/deployed-by"],
-		DeployedVia:   ann["tentacular.io/deployed-via"],
-		DeployedAt:    ann["tentacular.io/deployed-at"],
+		Environment:   authz.GetAnnotation(ann, "tentacular.io/environment"),
+		DeployedBy:    authz.GetAnnotation(ann, "tentacular.io/deployed-by"),
+		DeployedVia:   authz.GetAnnotation(ann, "tentacular.io/deployed-via"),
+		DeployedAt:    authz.GetAnnotation(ann, "tentacular.io/deployed-at"),
 		Ready:         dep.Status.ReadyReplicas >= 1,
 		Replicas:      replicaCount(dep.Spec.Replicas),
 		ReadyReplicas: dep.Status.ReadyReplicas,
@@ -290,16 +333,18 @@ func deploymentToListEntry(dep appsv1.Deployment) WfListEntry {
 	if ann == nil {
 		ann = map[string]string{}
 	}
+	ownerInfo := authz.ReadOwnerInfo(ann)
 	age := time.Since(dep.CreationTimestamp.Time).Round(time.Second).String()
 	return WfListEntry{
 		Name:        dep.Name,
 		Namespace:   dep.Namespace,
 		Version:     dep.Labels[k8s.VersionLabel],
-		Owner:       ann["tentacular.dev/owner"],
-		Team:        ann["tentacular.dev/team"],
-		Environment: ann["tentacular.dev/environment"],
-		DeployedBy:  ann["tentacular.io/deployed-by"],
-		DeployedVia: ann["tentacular.io/deployed-via"],
+		Owner:       ownerInfo.OwnerEmail,
+		Group:       ownerInfo.Group,
+		Mode:        ownerInfo.Mode.String(),
+		Environment: authz.GetAnnotation(ann, "tentacular.io/environment"),
+		DeployedBy:  authz.GetAnnotation(ann, "tentacular.io/deployed-by"),
+		DeployedVia: authz.GetAnnotation(ann, "tentacular.io/deployed-via"),
 		Ready:       dep.Status.ReadyReplicas >= 1,
 		Age:         age,
 	}
@@ -331,6 +376,6 @@ func wrapListError(namespace string, err error) error {
 	return fmt.Errorf("list deployments in namespace %q: %w", namespace, err)
 }
 
-func wrapGetError(resource, name, namespace string, err error) error {
-	return fmt.Errorf("get %s %q in namespace %q: %w", resource, name, namespace, err)
+func wrapGetError(name, namespace string, err error) error {
+	return fmt.Errorf("get deployment %q in namespace %q: %w", name, namespace, err)
 }

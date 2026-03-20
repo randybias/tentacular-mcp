@@ -29,8 +29,8 @@ func (s *Scheduler) ScanWorkflows(ctx context.Context) error {
 		}
 
 		for _, deploy := range deploys.Items {
-			schedule, ok := deploy.Annotations[CronAnnotation]
-			if !ok || schedule == "" {
+			schedule := annotationWithFallback(deploy.Annotations, CronAnnotation)
+			if schedule == "" {
 				continue
 			}
 

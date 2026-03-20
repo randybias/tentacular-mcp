@@ -18,7 +18,20 @@ import (
 )
 
 // CronAnnotation is the Deployment annotation key that holds the cron schedule.
-const CronAnnotation = "tentacular.dev/cron-schedule"
+const CronAnnotation = "tentacular.io/cron-schedule"
+
+// annotationWithFallback returns the value of newKey from annotations,
+// falling back to the legacy tentacular.dev/* equivalent if the new key is absent.
+// Write paths must always use the new tentacular.io/* key.
+func annotationWithFallback(annotations map[string]string, newKey string) string {
+	if v := annotations[newKey]; v != "" {
+		return v
+	}
+	if len(newKey) > 14 && newKey[:14] == "tentacular.io/" {
+		return annotations["tentacular.dev/"+newKey[14:]]
+	}
+	return ""
+}
 
 // entry tracks a registered workflow schedule.
 type entry struct {

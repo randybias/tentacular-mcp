@@ -19,8 +19,21 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/randybias/tentacular-mcp/pkg/authz"
+	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
+
+// bearerEval returns a nil evaluator (all checks allow) for tests that don't
+// exercise authz logic.
+func bearerEval() *authz.Evaluator {
+	return nil
+}
+
+// bearerInfo returns a bearer-token DeployerInfo that bypasses authz.
+func bearerInfo() *exoskeleton.DeployerInfo {
+	return &exoskeleton.DeployerInfo{Provider: "bearer-token"}
+}
 
 // --- containsTag ---
 
@@ -112,9 +125,9 @@ func TestDeploymentToListEntryAllFields(t *testing.T) {
 				k8s.VersionLabel:   "1.2.0",
 			},
 			Annotations: map[string]string{
-				"tentacular.dev/owner":       "alice",
-				"tentacular.dev/team":        "platform",
-				"tentacular.dev/environment": "prod",
+				"tentacular.io/owner-email": "alice@example.com",
+				"tentacular.io/group":       "platform",
+				"tentacular.io/environment": "prod",
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -136,11 +149,11 @@ func TestDeploymentToListEntryAllFields(t *testing.T) {
 	if entry.Version != "1.2.0" {
 		t.Errorf("Version: got %q, want %q", entry.Version, "1.2.0")
 	}
-	if entry.Owner != "alice" {
-		t.Errorf("Owner: got %q, want %q", entry.Owner, "alice")
+	if entry.Owner != "alice@example.com" {
+		t.Errorf("Owner: got %q, want %q", entry.Owner, "alice@example.com")
 	}
-	if entry.Team != "platform" {
-		t.Errorf("Team: got %q, want %q", entry.Team, "platform")
+	if entry.Group != "platform" {
+		t.Errorf("Group: got %q, want %q", entry.Group, "platform")
 	}
 	if entry.Environment != "prod" {
 		t.Errorf("Environment: got %q, want %q", entry.Environment, "prod")
@@ -247,7 +260,7 @@ func TestWfListFiltersSystemNamespaces(t *testing.T) {
 	}
 
 	// List across all namespaces (empty namespace param)
-	result, err := handleWfList(ctx, client, WfListParams{})
+	result, err := handleWfList(ctx, client, WfListParams{}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -286,7 +299,7 @@ func TestWfListDoesNotFilterExplicitNamespace(t *testing.T) {
 	_, _ = client.Clientset.AppsV1().Deployments("ns-a").Create(ctx, d, metav1.CreateOptions{})
 
 	// Explicit namespace - no system filtering applies
-	result, err := handleWfList(ctx, client, WfListParams{Namespace: "ns-a"})
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "ns-a"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -314,7 +327,7 @@ func TestWfListFilterByOwner(t *testing.T) {
 				Namespace: "ns-a",
 				Labels:    map[string]string{k8s.ManagedByLabel: k8s.ManagedByValue},
 				Annotations: map[string]string{
-					"tentacular.dev/owner": dep.owner,
+					"tentacular.io/owner-email": dep.owner,
 				},
 			},
 			Spec: appsv1.DeploymentSpec{
@@ -328,7 +341,7 @@ func TestWfListFilterByOwner(t *testing.T) {
 		_, _ = client.Clientset.AppsV1().Deployments("ns-a").Create(ctx, d, metav1.CreateOptions{})
 	}
 
-	result, err := handleWfList(ctx, client, WfListParams{Namespace: "ns-a", Owner: "alice"})
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "ns-a", Owner: "alice"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -350,7 +363,7 @@ func TestWfListFilterByTag(t *testing.T) {
 			Namespace: "ns-a",
 			Labels:    map[string]string{k8s.ManagedByLabel: k8s.ManagedByValue},
 			Annotations: map[string]string{
-				"tentacular.dev/tags": "ml,gpu",
+				"tentacular.io/tags": "ml,gpu",
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -364,7 +377,7 @@ func TestWfListFilterByTag(t *testing.T) {
 	_, _ = client.Clientset.AppsV1().Deployments("ns-a").Create(ctx, dep, metav1.CreateOptions{})
 
 	// Filter by matching tag
-	result, err := handleWfList(ctx, client, WfListParams{Namespace: "ns-a", Tag: "ml"})
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "ns-a", Tag: "ml"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -373,7 +386,7 @@ func TestWfListFilterByTag(t *testing.T) {
 	}
 
 	// Filter by non-matching tag
-	result, err = handleWfList(ctx, client, WfListParams{Namespace: "ns-a", Tag: "cpu"})
+	result, err = handleWfList(ctx, client, WfListParams{Namespace: "ns-a", Tag: "cpu"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -402,7 +415,7 @@ func TestWfListFilterByTagNoAnnotations(t *testing.T) {
 	}
 	_, _ = client.Clientset.AppsV1().Deployments("ns-a").Create(ctx, dep, metav1.CreateOptions{})
 
-	result, err := handleWfList(ctx, client, WfListParams{Namespace: "ns-a", Tag: "ml"})
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "ns-a", Tag: "ml"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -458,7 +471,7 @@ nodes:
 	}
 	_, _ = client.Clientset.CoreV1().ConfigMaps("ns-a").Create(ctx, cm, metav1.CreateOptions{})
 
-	result, err := handleWfDescribe(ctx, client, WfDescribeParams{Namespace: "ns-a", Name: "enriched-wf"})
+	result, err := handleWfDescribe(ctx, client, WfDescribeParams{Namespace: "ns-a", Name: "enriched-wf"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
@@ -499,7 +512,7 @@ func TestWfDescribeImageFromContainerSpec(t *testing.T) {
 	}
 	_, _ = client.Clientset.AppsV1().Deployments("ns-a").Create(ctx, dep, metav1.CreateOptions{})
 
-	result, err := handleWfDescribe(ctx, client, WfDescribeParams{Namespace: "ns-a", Name: "img-wf"})
+	result, err := handleWfDescribe(ctx, client, WfDescribeParams{Namespace: "ns-a", Name: "img-wf"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
