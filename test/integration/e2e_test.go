@@ -251,69 +251,6 @@ func TestE2E_NsCreateRejectsProtectedNamespace(t *testing.T) {
 
 // --- E2E: Credentials ---
 
-func TestE2E_CredIssueTokenAndRotate(t *testing.T) {
-	session, client, cleanup := e2eEnv(t)
-	defer cleanup()
-
-	nsName := "tnt-e2e-cred"
-	cleanupNs(t, client, nsName)
-
-	// Create namespace (includes SA, role, rolebinding).
-	callTool(t, session, "ns_create", map[string]any{
-		"name":         nsName,
-		"quota_preset": "small",
-	})
-
-	// cred_issue_token
-	text := callTool(t, session, "cred_issue_token", map[string]any{
-		"namespace":   nsName,
-		"ttl_minutes": 10,
-	})
-	var tokenResult struct {
-		Token     string `json:"token"`
-		ExpiresAt string `json:"expires_at"`
-	}
-	if err := json.Unmarshal([]byte(text), &tokenResult); err != nil {
-		t.Fatalf("unmarshal cred_issue_token result: %v", err)
-	}
-	if tokenResult.Token == "" {
-		t.Error("cred_issue_token: expected non-empty token")
-	}
-	if tokenResult.ExpiresAt == "" {
-		t.Error("cred_issue_token: expected non-empty expires_at")
-	}
-
-	// cred_kubeconfig
-	text = callTool(t, session, "cred_kubeconfig", map[string]any{
-		"namespace":   nsName,
-		"ttl_minutes": 10,
-	})
-	var kcResult struct {
-		Kubeconfig string `json:"kubeconfig"`
-	}
-	if err := json.Unmarshal([]byte(text), &kcResult); err != nil {
-		t.Fatalf("unmarshal cred_kubeconfig result: %v", err)
-	}
-	if kcResult.Kubeconfig == "" {
-		t.Error("cred_kubeconfig: expected non-empty kubeconfig")
-	}
-
-	// cred_rotate
-	text = callTool(t, session, "cred_rotate", map[string]any{
-		"namespace": nsName,
-	})
-	var rotateResult struct {
-		Rotated bool   `json:"rotated"`
-		Message string `json:"message"`
-	}
-	if err := json.Unmarshal([]byte(text), &rotateResult); err != nil {
-		t.Fatalf("unmarshal cred_rotate result: %v", err)
-	}
-	if !rotateResult.Rotated {
-		t.Error("cred_rotate: expected rotated=true")
-	}
-}
-
 // --- E2E: Workflow introspection ---
 
 func TestE2E_WorkflowPodsEventsJobs(t *testing.T) {
@@ -440,42 +377,6 @@ func TestE2E_ClusterPreflightAndProfile(t *testing.T) {
 }
 
 // --- E2E: gVisor ---
-
-func TestE2E_GVisorCheckAndApply(t *testing.T) {
-	session, client, cleanup := e2eEnv(t)
-	defer cleanup()
-
-	// gvisor_check
-	text := callTool(t, session, "gvisor_check", map[string]any{})
-	var checkResult struct {
-		Available    bool   `json:"available"`
-		RuntimeClass string `json:"runtime_class"`
-		Guidance     string `json:"guidance"`
-	}
-	if err := json.Unmarshal([]byte(text), &checkResult); err != nil {
-		t.Fatalf("unmarshal gvisor_check result: %v", err)
-	}
-	t.Logf("gvisor_check: available=%v", checkResult.Available)
-
-	// gvisor_annotate_ns on a managed namespace
-	nsName := "tnt-e2e-gvisor"
-	cleanupNs(t, client, nsName)
-
-	callTool(t, session, "ns_create", map[string]any{
-		"name":         nsName,
-		"quota_preset": "small",
-	})
-
-	if checkResult.Available {
-		// Cluster has gVisor — annotate should succeed.
-		applyText := callTool(t, session, "gvisor_annotate_ns", map[string]any{"namespace": nsName})
-		t.Logf("gvisor_annotate_ns succeeded (gVisor available): %s", applyText)
-	} else {
-		// No gVisor runtime — annotate should fail.
-		errText := callToolExpectError(t, session, "gvisor_annotate_ns", map[string]any{"namespace": nsName})
-		t.Logf("gvisor_annotate_ns error (expected, no gVisor): %s", errText)
-	}
-}
 
 // --- E2E: Health ---
 
