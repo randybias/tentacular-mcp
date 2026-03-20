@@ -267,19 +267,11 @@ func parseHostPort(rawURL string) (host, port string) {
 
 // AnnotateDeployerParams holds the parameters for AnnotateDeployer.
 type AnnotateDeployerParams struct {
-	// Group is the IdP group assigned to this workflow resource (from wf_apply params).
-	Group string
-	// Mode is the permission string to stamp (e.g. "rwxr-x---").
-	Mode     string
-	Deployer DeployerInfo
-	// IsUpdate indicates this is an update to an existing deployment.
-	// When true, ownership annotations (owner-sub, owner-email, owner-name, group, mode)
-	// are NOT overwritten — only provenance annotations (deployed-by, deployed-via,
-	// deployed-at, auth-provider) are updated to reflect the current caller.
-	IsUpdate bool
-	// ExistingAnnotations holds the current deployment's annotations so that
-	// ownership keys can be carried forward on the update path.
 	ExistingAnnotations map[string]string
+	Group               string
+	Mode                string
+	Deployer            DeployerInfo
+	IsUpdate            bool
 }
 
 // AnnotateDeployer adds provenance and ownership annotations to each Deployment manifest.

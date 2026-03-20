@@ -183,9 +183,6 @@ func registerPermissionsTools(srv *mcp.Server, client *k8s.Client, eval *authz.E
 		if params.Mode != "" && params.Share != "" {
 			return nil, NsPermissionsSetResult{}, errors.New("mode and share are mutually exclusive; provide one or the other")
 		}
-		if params.DefaultShare != "" {
-			// No validation needed here — we validate when used at deploy time
-		}
 		deployer := auth.DeployerFromContext(ctx)
 		result, err := handleNsPermissionsSet(ctx, client, params, deployer, eval)
 		return nil, result, err
@@ -392,7 +389,7 @@ func handleNsPermissionsSet(ctx context.Context, client *k8s.Client, params NsPe
 	} else {
 		// Preserve existing default mode, or use evaluator default if none.
 		if raw, ok := ann[authz.AnnotationDefaultMode]; ok && raw != "" {
-			if m, err := authz.ParseMode(raw); err == nil {
+			if m, parseErr := authz.ParseMode(raw); parseErr == nil {
 				newDefaultMode = m
 			}
 		}

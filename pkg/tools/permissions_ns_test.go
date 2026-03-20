@@ -14,15 +14,6 @@ import (
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
 
-// createAnnotatedManagedNs creates a managed namespace with full authz annotations.
-func createAnnotatedManagedNs(t *testing.T, client interface {
-	CoreV1() interface {
-		Namespaces() interface{}
-	}
-}, name, ownerSub, ownerEmail, group, mode string) {
-	// Use the concrete k8s.Client for test setup.
-}
-
 // nsPermTestClient creates a fake k8s client for permissions tests.
 func nsPermTestClient() *k8s.Client {
 	return newNsTestClient()
@@ -148,8 +139,8 @@ func TestNsPermissionsGet_WithDefaults(t *testing.T) {
 				k8s.ManagedByLabel: k8s.ManagedByValue,
 			},
 			Annotations: map[string]string{
-				authz.AnnotationOwnerSub:    "sub-x",
-				authz.AnnotationMode:        "rwx------",
+				authz.AnnotationOwnerSub:     "sub-x",
+				authz.AnnotationMode:         "rwx------",
 				authz.AnnotationDefaultGroup: "ci-team",
 				authz.AnnotationDefaultMode:  "rwxr-x---",
 			},
