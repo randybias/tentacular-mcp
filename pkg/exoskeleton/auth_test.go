@@ -275,28 +275,28 @@ func TestNewOIDCValidator_MissingClientID(t *testing.T) {
 func TestDetermineProvider(t *testing.T) {
 	tests := []struct {
 		name     string
-		claims   keycloakClaims
 		expected string
+		claims   keycloakClaims
 	}{
 		{
 			name:     "identity_provider set",
-			claims:   keycloakClaims{IdentityProvider: "google"},
 			expected: "google",
+			claims:   keycloakClaims{IdentityProvider: "google"},
 		},
 		{
 			name:     "azp differs from our client",
-			claims:   keycloakClaims{AZP: "some-other-client"},
 			expected: "some-other-client",
+			claims:   keycloakClaims{AZP: "some-other-client"},
 		},
 		{
 			name:     "azp matches our client",
-			claims:   keycloakClaims{AZP: "tentacular-mcp"},
 			expected: "keycloak",
+			claims:   keycloakClaims{AZP: "tentacular-mcp"},
 		},
 		{
 			name:     "no identity info",
-			claims:   keycloakClaims{},
 			expected: "keycloak",
+			claims:   keycloakClaims{},
 		},
 	}
 

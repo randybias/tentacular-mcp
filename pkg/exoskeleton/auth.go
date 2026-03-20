@@ -20,12 +20,13 @@ type AuthConfig struct {
 // DeployerInfo contains identity information extracted from an OIDC token
 // or synthesized from a bearer-token auth path.
 type DeployerInfo struct {
-	Email       string `json:"email"`
-	DisplayName string `json:"display_name"`
-	Subject     string `json:"subject"`
-	Provider    string `json:"provider"`   // "google", "keycloak", "bearer-token"
-	AgentType   string `json:"agent_type"` // e.g. "claude-code", "mcp-client"
-	SessionID   string `json:"session_id"`
+	Email       string   `json:"email"`
+	DisplayName string   `json:"display_name"`
+	Subject     string   `json:"subject"`
+	Provider    string   `json:"provider"`   // "google", "keycloak", "bearer-token"
+	AgentType   string   `json:"agent_type"` // e.g. "claude-code", "mcp-client"
+	SessionID   string   `json:"session_id"`
+	Groups      []string `json:"groups,omitempty"` // IdP group memberships (live from JWT)
 }
 
 // OIDCValidator validates OIDC tokens using JWKS fetched from the issuer's
@@ -73,11 +74,12 @@ func NewOIDCValidator(cfg AuthConfig) (*OIDCValidator, error) {
 
 // keycloakClaims holds the claims we extract from a Keycloak OIDC token.
 type keycloakClaims struct {
-	Email            string `json:"email"`
-	Name             string `json:"name"`
-	PreferredUser    string `json:"preferred_username"`
-	AZP              string `json:"azp"`
-	IdentityProvider string `json:"identity_provider"`
+	Email            string   `json:"email"`
+	Name             string   `json:"name"`
+	PreferredUser    string   `json:"preferred_username"`
+	AZP              string   `json:"azp"`
+	IdentityProvider string   `json:"identity_provider"`
+	Groups           []string `json:"groups"` // Keycloak group membership claim
 }
 
 // ValidateToken verifies the token signature, expiry, audience, and issuer,
@@ -106,13 +108,19 @@ func (v *OIDCValidator) ValidateToken(ctx context.Context, tokenString string) (
 		displayName = claims.PreferredUser
 	}
 
-	slog.Info("OIDC token validated", "email", claims.Email, "subject", idToken.Subject, "provider", provider)
+	slog.Info("OIDC token validated", "email", claims.Email, "subject", idToken.Subject, "provider", provider, "groups", len(claims.Groups))
+
+	groups := claims.Groups
+	if groups == nil {
+		groups = []string{}
+	}
 
 	return &DeployerInfo{
 		Email:       claims.Email,
 		DisplayName: displayName,
 		Subject:     idToken.Subject,
 		Provider:    provider,
+		Groups:      groups,
 	}, nil
 }
 
