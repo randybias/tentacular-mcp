@@ -189,7 +189,7 @@ func TestCheckNamespaceAuthz_BearerToken_Bypass(t *testing.T) {
 	}
 }
 
-func TestCheckNamespaceAuthz_NilDeployer_Allows(t *testing.T) {
+func TestCheckNamespaceAuthz_NilDeployer_Denies(t *testing.T) {
 	client := newNsTestClient()
 	ctx := context.Background()
 
@@ -197,10 +197,10 @@ func TestCheckNamespaceAuthz_NilDeployer_Allows(t *testing.T) {
 
 	eval := nsEval()
 
-	// Nil deployer (unauthenticated) should pass — caller validation is upstream.
+	// Nil deployer (no identity) should be denied by the evaluator.
 	err := checkNamespaceAuthz(ctx, client, "strict-ns2", nil, eval, authz.Read)
-	if err != nil {
-		t.Errorf("nil deployer should allow, got error: %v", err)
+	if err == nil {
+		t.Errorf("nil deployer should be denied")
 	}
 }
 

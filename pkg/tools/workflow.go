@@ -230,15 +230,13 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 			return nil, WfRestartResult{}, err
 		}
 		deployer := auth.DeployerFromContext(ctx)
-		if deployer != nil {
-			dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Deployment, metav1.GetOptions{})
-			if getErr == nil {
-				if d := eval.Check(deployer, dep.Annotations, authz.Execute); !d.Allowed {
-					return nil, WfRestartResult{}, fmt.Errorf("permission denied: %s", d.Reason)
-				}
-			} else if !apierrors.IsNotFound(getErr) {
-				return nil, WfRestartResult{}, fmt.Errorf("check deployment %q: %w", params.Deployment, getErr)
+		dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Deployment, metav1.GetOptions{})
+		if getErr == nil {
+			if d := eval.Check(deployer, dep.Annotations, authz.Execute); !d.Allowed {
+				return nil, WfRestartResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 			}
+		} else if !apierrors.IsNotFound(getErr) {
+			return nil, WfRestartResult{}, fmt.Errorf("check deployment %q: %w", params.Deployment, getErr)
 		}
 		result, err := handleWfRestart(ctx, client, params)
 		return nil, result, err

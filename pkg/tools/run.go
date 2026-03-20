@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/randybias/tentacular-mcp/pkg/auth"
@@ -50,13 +51,13 @@ func registerRunTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator
 			return nil, WfRunResult{}, err
 		}
 		deployer := auth.DeployerFromContext(ctx)
-		if deployer != nil {
-			dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
-			if getErr == nil {
-				if d := eval.Check(deployer, dep.Annotations, authz.Execute); !d.Allowed {
-					return nil, WfRunResult{}, fmt.Errorf("permission denied: %s", d.Reason)
-				}
+		dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
+		if getErr == nil {
+			if d := eval.Check(deployer, dep.Annotations, authz.Execute); !d.Allowed {
+				return nil, WfRunResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 			}
+		} else if !apierrors.IsNotFound(getErr) {
+			return nil, WfRunResult{}, fmt.Errorf("check deployment %q: %w", params.Name, getErr)
 		}
 		result, err := handleWfRun(ctx, client, params)
 		return nil, result, err

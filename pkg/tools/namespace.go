@@ -538,7 +538,11 @@ func handleNsUpdate(ctx context.Context, client *k8s.Client, eval *authz.Evaluat
 		}
 
 		updated = append(updated, "permissions")
-		slog.Info("ns_update permissions changed", "namespace", params.Name, "subject", deployer.Subject)
+		subject := ""
+		if deployer != nil {
+			subject = deployer.Subject
+		}
+		slog.Info("ns_update permissions changed", "namespace", params.Name, "subject", subject)
 	}
 
 	// Update resource quota if requested.

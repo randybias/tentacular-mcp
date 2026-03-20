@@ -171,9 +171,6 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 
 		// Extract deployer identity from request context (set by auth middleware).
 		deployer := auth.DeployerFromContext(ctx)
-		if deployer != nil {
-			slog.Info("wf_apply deployer", "email", deployer.Email, "subject", deployer.Subject, "provider", deployer.Provider)
-		}
 
 		// Authz check for UPDATE path: fetch existing Deployment annotations.
 		// CREATE path checks namespace Write permission (creating a tentacle requires namespace Write).
@@ -185,10 +182,8 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 			// Deployment exists — this is an update.
 			isUpdate = true
 			existingAnnotations = existing.Annotations
-			if deployer != nil {
-				if d := eval.Check(deployer, existing.Annotations, authz.Write); !d.Allowed {
-					return nil, WorkflowApplyResult{}, fmt.Errorf("permission denied: %s", d.Reason)
-				}
+			if d := eval.Check(deployer, existing.Annotations, authz.Write); !d.Allowed {
+				return nil, WorkflowApplyResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 			}
 		} else if apierrors.IsNotFound(getErr) {
 			// CREATE path: check namespace Write permission.
@@ -264,15 +259,13 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 			return nil, WorkflowRemoveResult{}, err
 		}
 		deployer := auth.DeployerFromContext(ctx)
-		if deployer != nil {
-			dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
-			if getErr == nil {
-				if d := eval.Check(deployer, dep.Annotations, authz.Write); !d.Allowed {
-					return nil, WorkflowRemoveResult{}, fmt.Errorf("permission denied: %s", d.Reason)
-				}
-			} else if !apierrors.IsNotFound(getErr) {
-				return nil, WorkflowRemoveResult{}, fmt.Errorf("check deployment %q: %w", params.Name, getErr)
+		dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
+		if getErr == nil {
+			if d := eval.Check(deployer, dep.Annotations, authz.Write); !d.Allowed {
+				return nil, WorkflowRemoveResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 			}
+		} else if !apierrors.IsNotFound(getErr) {
+			return nil, WorkflowRemoveResult{}, fmt.Errorf("check deployment %q: %w", params.Name, getErr)
 		}
 		if sched != nil {
 			sched.Deregister(params.Namespace, params.Name)
@@ -310,15 +303,13 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 			return nil, WorkflowStatusResult{}, err
 		}
 		deployer := auth.DeployerFromContext(ctx)
-		if deployer != nil {
-			dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
-			if getErr == nil {
-				if d := eval.Check(deployer, dep.Annotations, authz.Read); !d.Allowed {
-					return nil, WorkflowStatusResult{}, fmt.Errorf("permission denied: %s", d.Reason)
-				}
-			} else if !apierrors.IsNotFound(getErr) {
-				return nil, WorkflowStatusResult{}, fmt.Errorf("check deployment %q: %w", params.Name, getErr)
+		dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
+		if getErr == nil {
+			if d := eval.Check(deployer, dep.Annotations, authz.Read); !d.Allowed {
+				return nil, WorkflowStatusResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 			}
+		} else if !apierrors.IsNotFound(getErr) {
+			return nil, WorkflowStatusResult{}, fmt.Errorf("check deployment %q: %w", params.Name, getErr)
 		}
 		result, err := handleWorkflowStatus(ctx, client, params)
 		return nil, result, err

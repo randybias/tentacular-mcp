@@ -16,7 +16,7 @@ import (
 // It reads the namespace's authz annotations and checks permission bits.
 // If the namespace has no owner-sub annotation, it allows the action (pre-authz namespace).
 func checkNamespaceAuthz(ctx context.Context, client *k8s.Client, namespace string, deployer *exoskeleton.DeployerInfo, eval *authz.Evaluator, action authz.Action) error {
-	if eval == nil || deployer == nil {
+	if eval == nil {
 		return nil
 	}
 

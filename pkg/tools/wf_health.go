@@ -111,9 +111,6 @@ func registerWfHealthTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 			return nil, WfHealthNsResult{}, err
 		}
 		deployer := auth.DeployerFromContext(ctx)
-		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
-			return nil, WfHealthNsResult{}, err
-		}
 		result, err := handleWfHealthNs(ctx, client, params, deployer, eval)
 		return nil, result, err
 	})
