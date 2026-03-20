@@ -10,6 +10,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 
+	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 	"github.com/randybias/tentacular-mcp/pkg/proxy"
@@ -35,7 +36,7 @@ func TestRegisterAll(t *testing.T) {
 	client := newTestClient()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	reconciler := proxy.NewReconciler(client, proxy.Options{Namespace: "tentacular-system"}, logger)
-	RegisterAll(srv, client, reconciler, nil, nil)
+	RegisterAll(srv, client, reconciler, nil, nil, authz.NewEvaluator(authz.DefaultMode))
 }
 
 // TestGuardCheckNamespace verifies the guard rejects tentacular-system.
@@ -56,10 +57,10 @@ func TestNsCreateSuccessWithFakeClient(t *testing.T) {
 	client := newTestClient()
 	ctx := context.Background()
 
-	result, err := handleNsCreate(ctx, client, NsCreateParams{
+	result, err := handleNsCreate(ctx, client, bearerEval(), NsCreateParams{
 		Name:        "test-ns",
 		QuotaPreset: "small",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("handleNsCreate failed: %v", err)
 	}
@@ -76,10 +77,10 @@ func TestNsCreateInvalidPreset(t *testing.T) {
 	client := newTestClient()
 	ctx := context.Background()
 
-	_, err := handleNsCreate(ctx, client, NsCreateParams{
+	_, err := handleNsCreate(ctx, client, bearerEval(), NsCreateParams{
 		Name:        "test-ns",
 		QuotaPreset: "xlarge",
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("expected error for invalid preset, got nil")
 	}

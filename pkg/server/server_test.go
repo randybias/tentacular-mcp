@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 
+	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 	"github.com/randybias/tentacular-mcp/pkg/proxy"
 	"github.com/randybias/tentacular-mcp/pkg/server"
@@ -25,7 +26,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	reconciler := proxy.NewReconciler(client, proxy.Options{Namespace: "tentacular-support"}, logger)
-	srv, err := server.New(client, reconciler, nil, nil, nil, testServerToken, logger)
+	srv, err := server.New(client, reconciler, nil, nil, authz.NewEvaluator(authz.DefaultMode), nil, testServerToken, logger)
 	if err != nil {
 		t.Fatalf("server.New: %v", err)
 	}

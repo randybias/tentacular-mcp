@@ -8,6 +8,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/randybias/tentacular-mcp/pkg/auth"
+	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 	"github.com/randybias/tentacular-mcp/pkg/proxy"
@@ -23,6 +24,7 @@ type Server struct {
 	reconciler    *proxy.Reconciler
 	scheduler     *scheduler.Scheduler
 	exoCtrl       *exoskeleton.Controller
+	eval          *authz.Evaluator
 	oidcValidator *exoskeleton.OIDCValidator
 	logger        *slog.Logger
 	token         string
@@ -30,7 +32,8 @@ type Server struct {
 
 // New creates a new MCP server with all tools registered.
 // The oidcValidator may be nil when OIDC auth is disabled.
-func New(client *k8s.Client, reconciler *proxy.Reconciler, sched *scheduler.Scheduler, exoCtrl *exoskeleton.Controller, oidcValidator *exoskeleton.OIDCValidator, token string, logger *slog.Logger) (*Server, error) {
+// The eval may be nil to disable authz (all checks return Allow).
+func New(client *k8s.Client, reconciler *proxy.Reconciler, sched *scheduler.Scheduler, exoCtrl *exoskeleton.Controller, eval *authz.Evaluator, oidcValidator *exoskeleton.OIDCValidator, token string, logger *slog.Logger) (*Server, error) {
 	mcpServer := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    "tentacular-mcp",
@@ -48,6 +51,7 @@ func New(client *k8s.Client, reconciler *proxy.Reconciler, sched *scheduler.Sche
 		reconciler:    reconciler,
 		scheduler:     sched,
 		exoCtrl:       exoCtrl,
+		eval:          eval,
 		oidcValidator: oidcValidator,
 		token:         token,
 		logger:        logger,
@@ -82,5 +86,5 @@ func (*Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 // registerTools registers all MCP tools by delegating to the tools package.
 func (s *Server) registerTools() {
-	tools.RegisterAll(s.mcpServer, s.client, s.reconciler, s.scheduler, s.exoCtrl)
+	tools.RegisterAll(s.mcpServer, s.client, s.reconciler, s.scheduler, s.exoCtrl, s.eval)
 }

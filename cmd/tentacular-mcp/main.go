@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/randybias/tentacular-mcp/pkg/auth"
+	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 	"github.com/randybias/tentacular-mcp/pkg/proxy"
@@ -77,7 +78,14 @@ func main() {
 		slog.Info("OIDC authentication enabled", "issuer", exoCfg.Auth.IssuerURL)
 	}
 
-	srv, err := server.New(client, reconciler, sched, exoCtrl, oidcValidator, token, logger)
+	// Initialize authz evaluator. TENTACULAR_AUTHZ_ENABLED=false disables all authz checks.
+	eval := authz.NewEvaluator(authz.DefaultMode)
+	if os.Getenv("TENTACULAR_AUTHZ_ENABLED") == "false" {
+		eval.Enabled = false
+		slog.Info("authz disabled via TENTACULAR_AUTHZ_ENABLED=false")
+	}
+
+	srv, err := server.New(client, reconciler, sched, exoCtrl, eval, oidcValidator, token, logger)
 	if err != nil {
 		slog.Error("failed to create MCP server", "error", err)
 		os.Exit(1)

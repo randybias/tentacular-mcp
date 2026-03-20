@@ -58,6 +58,10 @@ spec:
           env:
             - name: TOKEN_PATH
               value: /etc/tentacular-mcp/token
+            {{- if not .Values.authz.enabled }}
+            - name: TENTACULAR_AUTHZ_ENABLED
+              value: "false"
+            {{- end }}
             {{- if not .Values.exoskeleton.secretRef }}
             {{- if .Values.exoskeletonAuth.enabled }}
             - name: TENTACULAR_EXOSKELETON_AUTH_ENABLED

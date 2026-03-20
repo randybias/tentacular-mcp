@@ -114,6 +114,13 @@ affinity: {}
 # -- Extra environment variable sources (e.g., ConfigMaps) to add to the pod via envFrom.
 extraEnvFrom: []
 
+# -- Authorization (authz) configuration.
+authz:
+  # -- Enable per-workflow permission enforcement.
+  # When false, all authz checks are bypassed (TENTACULAR_AUTHZ_ENABLED=false).
+  # Bearer-token callers bypass authz regardless of this setting.
+  enabled: true
+
 # -- Exoskeleton SSO/OIDC authentication configuration.
 exoskeletonAuth:
   # -- Enable OIDC authentication (Keycloak SSO)
