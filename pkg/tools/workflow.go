@@ -12,9 +12,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/randybias/tentacular-mcp/pkg/auth"
+	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
@@ -117,7 +120,7 @@ type WfRestartResult struct {
 	Restarted  bool   `json:"restarted"`
 }
 
-func registerWorkflowTools(srv *mcp.Server, client *k8s.Client) {
+func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_pods",
 		Description: "List pods in a namespace with phase, readiness, restart count, images, and age.",
@@ -130,6 +133,10 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client) {
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfPodsParams) (*mcp.CallToolResult, WfPodsResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
+			return nil, WfPodsResult{}, err
+		}
+		deployer := auth.DeployerFromContext(ctx)
+		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
 			return nil, WfPodsResult{}, err
 		}
 		result, err := handleWfPods(ctx, client, params)
@@ -153,6 +160,10 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client) {
 		if err := guard.CheckName(params.Pod); err != nil {
 			return nil, WfLogsResult{}, err
 		}
+		deployer := auth.DeployerFromContext(ctx)
+		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
+			return nil, WfLogsResult{}, err
+		}
 		result, err := handleWfLogs(ctx, client, params)
 		return nil, result, err
 	})
@@ -171,6 +182,10 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WfEventsResult{}, err
 		}
+		deployer := auth.DeployerFromContext(ctx)
+		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
+			return nil, WfEventsResult{}, err
+		}
 		result, err := handleWfEvents(ctx, client, params)
 		return nil, result, err
 	})
@@ -187,6 +202,10 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client) {
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfJobsParams) (*mcp.CallToolResult, WfJobsResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
+			return nil, WfJobsResult{}, err
+		}
+		deployer := auth.DeployerFromContext(ctx)
+		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
 			return nil, WfJobsResult{}, err
 		}
 		result, err := handleWfJobs(ctx, client, params)
@@ -209,6 +228,17 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client) {
 		}
 		if err := guard.CheckName(params.Deployment); err != nil {
 			return nil, WfRestartResult{}, err
+		}
+		deployer := auth.DeployerFromContext(ctx)
+		if deployer != nil {
+			dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Deployment, metav1.GetOptions{})
+			if getErr == nil {
+				if d := eval.Check(deployer, dep.Annotations, authz.Execute); !d.Allowed {
+					return nil, WfRestartResult{}, fmt.Errorf("permission denied: %s", d.Reason)
+				}
+			} else if !apierrors.IsNotFound(getErr) {
+				return nil, WfRestartResult{}, fmt.Errorf("check deployment %q: %w", params.Deployment, getErr)
+			}
 		}
 		result, err := handleWfRestart(ctx, client, params)
 		return nil, result, err

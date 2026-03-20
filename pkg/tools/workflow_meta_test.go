@@ -56,7 +56,7 @@ func TestWfListBasic(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	result, err := handleWfList(ctx, client, WfListParams{Namespace: "test-ns"})
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "test-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestWfListEmpty(t *testing.T) {
 	client := newWfTestClient()
 	ctx := context.Background()
 
-	result, err := handleWfList(ctx, client, WfListParams{Namespace: "empty-ns"})
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "empty-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList on empty namespace: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestWfListFiltersByManagedByLabel(t *testing.T) {
 
 	// handleWfList uses label selector "app.kubernetes.io/managed-by=tentacular"
 	// The fake client supports label selector filtering
-	result, err := handleWfList(ctx, client, WfListParams{Namespace: "mixed-ns"})
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "mixed-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -128,12 +128,12 @@ func TestWfListReturnsOwnerFromAnnotations(t *testing.T) {
 	ctx := context.Background()
 
 	dep := makeTestDeployment("annotated-wf", "annot-ns", map[string]string{
-		"tentacular.dev/owner": "platform-team",
-		"tentacular.dev/team":  "infra",
+		"tentacular.io/owner-email": "platform-team@example.com",
+		"tentacular.io/group":       "infra",
 	})
 	_, _ = client.Clientset.AppsV1().Deployments("annot-ns").Create(ctx, dep, metav1.CreateOptions{})
 
-	result, err := handleWfList(ctx, client, WfListParams{Namespace: "annot-ns"})
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "annot-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -141,11 +141,11 @@ func TestWfListReturnsOwnerFromAnnotations(t *testing.T) {
 		t.Fatal("expected at least one workflow")
 	}
 	wf := result.Workflows[0]
-	if wf.Owner != "platform-team" {
-		t.Errorf("expected owner='platform-team', got %q", wf.Owner)
+	if wf.Owner != "platform-team@example.com" {
+		t.Errorf("expected owner='platform-team@example.com', got %q", wf.Owner)
 	}
-	if wf.Team != "infra" {
-		t.Errorf("expected team='infra', got %q", wf.Team)
+	if wf.Group != "infra" {
+		t.Errorf("expected group='infra', got %q", wf.Group)
 	}
 }
 
@@ -156,7 +156,7 @@ func TestWfListReturnsVersionFromLabel(t *testing.T) {
 	dep := makeTestDeployment("version-wf", "ver-ns", nil)
 	_, _ = client.Clientset.AppsV1().Deployments("ver-ns").Create(ctx, dep, metav1.CreateOptions{})
 
-	result, err := handleWfList(ctx, client, WfListParams{Namespace: "ver-ns"})
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "ver-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -173,11 +173,11 @@ func TestWfListEnvironmentFromAnnotations(t *testing.T) {
 	ctx := context.Background()
 
 	dep := makeTestDeployment("env-wf", "env-ns", map[string]string{
-		"tentacular.dev/environment": "production",
+		"tentacular.io/environment": "production",
 	})
 	_, _ = client.Clientset.AppsV1().Deployments("env-ns").Create(ctx, dep, metav1.CreateOptions{})
 
-	result, err := handleWfList(ctx, client, WfListParams{Namespace: "env-ns"})
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "env-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestWfListMultipleWorkflows(t *testing.T) {
 		_, _ = client.Clientset.AppsV1().Deployments("multi-ns").Create(ctx, dep, metav1.CreateOptions{})
 	}
 
-	result, err := handleWfList(ctx, client, WfListParams{Namespace: "multi-ns"})
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "multi-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestWfListNoAnnotationsNoOwner(t *testing.T) {
 	dep := makeTestDeployment("bare-wf", "bare-ns", nil)
 	_, _ = client.Clientset.AppsV1().Deployments("bare-ns").Create(ctx, dep, metav1.CreateOptions{})
 
-	result, err := handleWfList(ctx, client, WfListParams{Namespace: "bare-ns"})
+	result, err := handleWfList(ctx, client, WfListParams{Namespace: "bare-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfList: %v", err)
 	}
@@ -223,12 +223,12 @@ func TestWfListNoAnnotationsNoOwner(t *testing.T) {
 		t.Fatal("expected at least one workflow")
 	}
 	wf := result.Workflows[0]
-	// Without annotations, owner/team/environment should be empty strings
+	// Without annotations, owner/group/environment should be empty strings
 	if wf.Owner != "" {
 		t.Errorf("expected empty owner for workflow without annotations, got %q", wf.Owner)
 	}
-	if wf.Team != "" {
-		t.Errorf("expected empty team for workflow without annotations, got %q", wf.Team)
+	if wf.Group != "" {
+		t.Errorf("expected empty group for workflow without annotations, got %q", wf.Group)
 	}
 }
 
@@ -239,14 +239,14 @@ func TestWfDescribeBasic(t *testing.T) {
 	ctx := context.Background()
 
 	dep := makeTestDeployment("described-wf", "desc-ns", map[string]string{
-		"tentacular.dev/owner": "ops-team",
+		"tentacular.io/owner-email": "ops-team",
 	})
 	_, _ = client.Clientset.AppsV1().Deployments("desc-ns").Create(ctx, dep, metav1.CreateOptions{})
 
 	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
 		Namespace: "desc-ns",
 		Name:      "described-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestWfDescribeBasic(t *testing.T) {
 	if result.Namespace != "desc-ns" {
 		t.Errorf("expected namespace='desc-ns', got %q", result.Namespace)
 	}
-	if result.Owner != "ops-team" {
+	if result.Owner != "ops-team" { //nolint:gocritic // owner-email maps to Owner field
 		t.Errorf("expected owner='ops-team', got %q", result.Owner)
 	}
 }
@@ -271,7 +271,7 @@ func TestWfDescribeVersionFromLabel(t *testing.T) {
 	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
 		Namespace: "vd-ns",
 		Name:      "ver-describe-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
@@ -285,14 +285,14 @@ func TestWfDescribeTagsSplit(t *testing.T) {
 	ctx := context.Background()
 
 	dep := makeTestDeployment("tags-describe-wf", "td-ns", map[string]string{
-		"tentacular.dev/tags": "etl,daily,reporting",
+		"tentacular.io/tags": "etl,daily,reporting",
 	})
 	_, _ = client.Clientset.AppsV1().Deployments("td-ns").Create(ctx, dep, metav1.CreateOptions{})
 
 	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
 		Namespace: "td-ns",
 		Name:      "tags-describe-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestWfDescribeNoTagsAnnotation(t *testing.T) {
 	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
 		Namespace: "nt-ns",
 		Name:      "no-tags-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
@@ -334,7 +334,7 @@ func TestWfDescribeMissingDeployment(t *testing.T) {
 	_, err := handleWfDescribe(ctx, client, WfDescribeParams{
 		Namespace: "absent-ns",
 		Name:      "nonexistent-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err == nil {
 		t.Error("expected error when workflow Deployment not found")
 	}
@@ -345,8 +345,8 @@ func TestWfDescribeAnnotationsMapOnlyTentacular(t *testing.T) {
 	ctx := context.Background()
 
 	dep := makeTestDeployment("ann-wf", "ann-ns", map[string]string{
-		"tentacular.dev/owner":               "platform-team",
-		"tentacular.dev/team":                "infra",
+		"tentacular.io/owner-email":          "platform-team",
+		"tentacular.io/group":                "infra",
 		"kubectl.kubernetes.io/last-applied": "{}",
 		"deployment.kubernetes.io/revision":  "1",
 	})
@@ -355,19 +355,19 @@ func TestWfDescribeAnnotationsMapOnlyTentacular(t *testing.T) {
 	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
 		Namespace: "ann-ns",
 		Name:      "ann-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
-	// Annotations map should only include tentacular.dev/* keys
+	// Annotations map should only include tentacular.io/* keys
 	for k := range result.Annotations {
-		if !hasPrefix(k, "tentacular.dev/") {
-			t.Errorf("expected only tentacular.dev/* annotations, got key %q", k)
+		if !hasPrefix(k, "tentacular.io/") {
+			t.Errorf("expected only tentacular.io/* annotations, got key %q", k)
 		}
 	}
-	// Should include the tentacular annotations
-	if result.Annotations["tentacular.dev/owner"] != "platform-team" {
-		t.Errorf("expected tentacular.dev/owner='platform-team', got %q", result.Annotations["tentacular.dev/owner"])
+	// Should include the authz annotations
+	if result.Annotations["tentacular.io/owner-email"] != "platform-team" {
+		t.Errorf("expected tentacular.io/owner-email='platform-team', got %q", result.Annotations["tentacular.io/owner-email"])
 	}
 }
 
@@ -386,13 +386,13 @@ func TestWfDescribeNoAnnotationsNilAnnotationsMap(t *testing.T) {
 	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
 		Namespace: "na-ns",
 		Name:      "no-ann-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
-	// No tentacular.dev/* annotations means Annotations map should be nil
+	// No tentacular.io/* annotations means Annotations map should be nil
 	if result.Annotations != nil {
-		t.Errorf("expected nil annotations map when no tentacular.dev/* annotations present, got %v", result.Annotations)
+		t.Errorf("expected nil annotations map when no tentacular.io/* annotations present, got %v", result.Annotations)
 	}
 }
 
@@ -407,7 +407,7 @@ func TestWfDescribeReplicasFromSpec(t *testing.T) {
 	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
 		Namespace: "rep-ns",
 		Name:      "replicas-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
@@ -427,7 +427,7 @@ func TestWfDescribeReadyFalseWhenNoReadyReplicas(t *testing.T) {
 	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
 		Namespace: "nr-ns",
 		Name:      "not-ready-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
@@ -442,25 +442,25 @@ func TestWfDescribeAllMetadataFields(t *testing.T) {
 	ctx := context.Background()
 
 	dep := makeTestDeployment("full-meta-wf", "full-ns", map[string]string{
-		"tentacular.dev/owner":       "data-team",
-		"tentacular.dev/team":        "analytics",
-		"tentacular.dev/tags":        "etl,daily",
-		"tentacular.dev/environment": "production",
+		"tentacular.io/owner-email": "data-team@example.com",
+		"tentacular.io/group":       "analytics",
+		"tentacular.io/tags":        "etl,daily",
+		"tentacular.io/environment": "production",
 	})
 	_, _ = client.Clientset.AppsV1().Deployments("full-ns").Create(ctx, dep, metav1.CreateOptions{})
 
 	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
 		Namespace: "full-ns",
 		Name:      "full-meta-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
-	if result.Owner != "data-team" {
-		t.Errorf("expected owner='data-team', got %q", result.Owner)
+	if result.Owner != "data-team@example.com" {
+		t.Errorf("expected owner='data-team@example.com', got %q", result.Owner)
 	}
-	if result.Team != "analytics" {
-		t.Errorf("expected team='analytics', got %q", result.Team)
+	if result.Group != "analytics" {
+		t.Errorf("expected group='analytics', got %q", result.Group)
 	}
 	if result.Environment != "production" {
 		t.Errorf("expected environment='production', got %q", result.Environment)
