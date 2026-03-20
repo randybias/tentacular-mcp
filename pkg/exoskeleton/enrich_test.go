@@ -442,7 +442,7 @@ func TestAnnotateDeployer(t *testing.T) {
 		SessionID: "sess-123",
 	}
 
-	result := ctrl.AnnotateDeployer(manifests, deployer)
+	result := ctrl.AnnotateDeployer(manifests, AnnotateDeployerParams{Deployer: deployer})
 	if len(result) != 2 {
 		t.Fatalf("expected 2 manifests, got %d", len(result))
 	}
@@ -480,7 +480,7 @@ func TestAnnotateDeployer_NilEmail(t *testing.T) {
 		AgentType: "mcp-direct",
 	}
 
-	result := ctrl.AnnotateDeployer(manifests, deployer)
+	result := ctrl.AnnotateDeployer(manifests, AnnotateDeployerParams{Deployer: deployer})
 	depObj := &unstructured.Unstructured{Object: result[0]}
 	ann := depObj.GetAnnotations()
 	if ann["tentacular.io/deployed-by"] != "bearer-token" {

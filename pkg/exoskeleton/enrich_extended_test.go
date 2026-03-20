@@ -207,7 +207,7 @@ func TestAnnotateDeployer_EmptyAgentType(t *testing.T) {
 		Email: "user@example.com",
 	}
 
-	result := ctrl.AnnotateDeployer(manifests, deployer)
+	result := ctrl.AnnotateDeployer(manifests, AnnotateDeployerParams{Deployer: deployer})
 	obj := &unstructured.Unstructured{Object: result[0]}
 	ann := obj.GetAnnotations()
 	if ann["tentacular.io/deployed-via"] != "unknown" {

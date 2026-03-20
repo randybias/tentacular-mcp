@@ -265,14 +265,31 @@ func parseHostPort(rawURL string) (host, port string) {
 	return rawURL, ""
 }
 
-// AnnotateDeployer adds provenance annotations to each Deployment manifest.
-func (*Controller) AnnotateDeployer(manifests []map[string]any, deployer DeployerInfo) []map[string]any {
+// AnnotateDeployerParams holds the parameters for AnnotateDeployer.
+type AnnotateDeployerParams struct {
+	// Group is the IdP group assigned to this workflow resource (from wf_apply params).
+	Group string
+	// Mode is the permission string to stamp (e.g. "rwxr-x---").
+	Mode     string
+	Deployer DeployerInfo
+	// IsUpdate indicates this is an update to an existing deployment.
+	// When true, ownership annotations (owner-sub, owner-email, owner-name, group, mode)
+	// are NOT overwritten — only provenance annotations (deployed-by, deployed-via,
+	// deployed-at, auth-provider) are updated to reflect the current caller.
+	IsUpdate bool
+	// ExistingAnnotations holds the current deployment's annotations so that
+	// ownership keys can be carried forward on the update path.
+	ExistingAnnotations map[string]string
+}
+
+// AnnotateDeployer adds provenance and ownership annotations to each Deployment manifest.
+func (*Controller) AnnotateDeployer(manifests []map[string]any, p AnnotateDeployerParams) []map[string]any {
 	now := time.Now().UTC().Format(time.RFC3339)
-	deployedBy := deployer.Email
+	deployedBy := p.Deployer.Email
 	if deployedBy == "" {
 		deployedBy = "bearer-token"
 	}
-	deployedVia := deployer.AgentType
+	deployedVia := p.Deployer.AgentType
 	if deployedVia == "" {
 		deployedVia = "unknown"
 	}
@@ -286,9 +303,56 @@ func (*Controller) AnnotateDeployer(manifests []map[string]any, deployer Deploye
 		if ann == nil {
 			ann = make(map[string]string)
 		}
+		// Provenance annotations (always stamped on create and update).
 		ann["tentacular.io/deployed-by"] = deployedBy
 		ann["tentacular.io/deployed-via"] = deployedVia
 		ann["tentacular.io/deployed-at"] = now
+		ann["tentacular.io/auth-provider"] = p.Deployer.Provider
+
+		if p.IsUpdate {
+			// Carry forward ownership annotations from existing deployment.
+			ownershipKeys := []string{
+				"tentacular.io/owner-sub", "tentacular.io/owner-email",
+				"tentacular.io/owner-name", "tentacular.io/group",
+				"tentacular.io/mode", "tentacular.io/created-at",
+			}
+			for _, k := range ownershipKeys {
+				if v, ok := p.ExistingAnnotations[k]; ok && v != "" {
+					ann[k] = v
+				}
+			}
+			// Allow explicit group/mode params to override on update, but only if
+			// the caller is the owner or bearer-token. This prevents group members
+			// with Write access from changing permissions via wf_apply --group/--share.
+			isOwnerOrBearer := p.Deployer.Provider == "bearer-token" ||
+				p.ExistingAnnotations["tentacular.io/owner-sub"] == "" ||
+				(p.Deployer.Subject != "" && p.Deployer.Subject == p.ExistingAnnotations["tentacular.io/owner-sub"])
+			if isOwnerOrBearer {
+				if p.Group != "" {
+					ann["tentacular.io/group"] = p.Group
+				}
+				if p.Mode != "" {
+					ann["tentacular.io/mode"] = p.Mode
+				}
+			}
+			// Audit trail: record who last updated and when.
+			ann["tentacular.io/updated-at"] = now
+			ann["tentacular.io/updated-by-sub"] = p.Deployer.Subject
+			ann["tentacular.io/updated-by-email"] = p.Deployer.Email
+		} else {
+			// CREATE: stamp ownership and creation time.
+			ann["tentacular.io/created-at"] = now
+			// Only stamp owner-sub if non-empty to prevent matching empty-subject callers.
+			// Bearer-token deploys intentionally leave owner-sub empty (pre-authz resource).
+			if p.Deployer.Subject != "" {
+				ann["tentacular.io/owner-sub"] = p.Deployer.Subject
+			}
+			ann["tentacular.io/owner-email"] = p.Deployer.Email
+			ann["tentacular.io/owner-name"] = p.Deployer.DisplayName
+			ann["tentacular.io/group"] = p.Group
+			ann["tentacular.io/mode"] = p.Mode
+		}
+
 		obj.SetAnnotations(ann)
 	}
 	return manifests
