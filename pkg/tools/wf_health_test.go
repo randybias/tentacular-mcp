@@ -39,6 +39,28 @@ func createManagedNamespace(ctx context.Context, client *k8s.Client, name string
 	client.Clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}) //nolint:errcheck
 }
 
+// createOwnedNamespace creates a tentacular-managed namespace with ownership annotations.
+func createOwnedNamespace(ctx context.Context, client *k8s.Client, name, ownerSub string) {
+	createOwnedNamespaceWithMode(ctx, client, name, ownerSub, "rwxr-x---")
+}
+
+// createOwnedNamespaceWithMode creates a tentacular-managed namespace with specific mode.
+func createOwnedNamespaceWithMode(ctx context.Context, client *k8s.Client, name, ownerSub, mode string) {
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				k8s.ManagedByLabel: k8s.ManagedByValue,
+			},
+			Annotations: map[string]string{
+				"tentacular.io/owner-sub": ownerSub,
+				"tentacular.io/mode":      mode,
+			},
+		},
+	}
+	client.Clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}) //nolint:errcheck
+}
+
 const testNamespace = "user-ns"
 
 // makeManagedDeployment creates a tentacular-managed deployment for tests.
@@ -84,7 +106,7 @@ func TestWfHealth_UnmanagedNamespaceRejected(t *testing.T) {
 	_, err := handleWfHealth(ctx, client, WfHealthParams{
 		Namespace: "unmanaged-ns",
 		Name:      "my-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err == nil {
 		t.Fatal("expected error for unmanaged namespace, got nil")
 	}
@@ -97,7 +119,7 @@ func TestWfHealth_SystemNamespaceRejected(t *testing.T) {
 	_, err := handleWfHealth(ctx, client, WfHealthParams{
 		Namespace: "tentacular-system",
 		Name:      "my-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err == nil {
 		t.Fatal("expected error for system namespace, got nil")
 	}
@@ -111,7 +133,7 @@ func TestWfHealth_DeploymentNotFound(t *testing.T) {
 	_, err := handleWfHealth(ctx, client, WfHealthParams{
 		Namespace: "user-ns",
 		Name:      "missing-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err == nil {
 		t.Fatal("expected error for missing deployment, got nil")
 	}
@@ -128,7 +150,7 @@ func TestWfHealth_ZeroReplicas_Red(t *testing.T) {
 	result, err := handleWfHealth(ctx, client, WfHealthParams{
 		Namespace: "user-ns",
 		Name:      "my-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -158,7 +180,7 @@ func TestWfHealth_HealthEndpointUnreachable_Red(t *testing.T) {
 	result, err := handleWfHealth(ctx, client, WfHealthParams{
 		Namespace: "user-ns",
 		Name:      "my-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -185,7 +207,7 @@ func TestWfHealth_HealthyEndpoint_Green(t *testing.T) {
 	result, err := handleWfHealth(ctx, client, WfHealthParams{
 		Namespace: "user-ns",
 		Name:      "my-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -212,7 +234,7 @@ func TestWfHealth_LastExecutionFailed_Amber(t *testing.T) {
 	result, err := handleWfHealth(ctx, client, WfHealthParams{
 		Namespace: "user-ns",
 		Name:      "my-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -236,7 +258,7 @@ func TestWfHealth_InFlight_Amber(t *testing.T) {
 	result, err := handleWfHealth(ctx, client, WfHealthParams{
 		Namespace: "user-ns",
 		Name:      "my-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -261,7 +283,7 @@ func TestWfHealth_DetailNotIncludedByDefault(t *testing.T) {
 		Namespace: "user-ns",
 		Name:      "my-wf",
 		Detail:    false,
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -286,7 +308,7 @@ func TestWfHealth_DetailIncludedWhenRequested(t *testing.T) {
 		Namespace: "user-ns",
 		Name:      "my-wf",
 		Detail:    true,
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -312,7 +334,7 @@ func TestWfHealthNs_EmptyNamespace(t *testing.T) {
 	ctx := context.Background()
 	createManagedNamespace(ctx, client, "empty-ns")
 
-	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "empty-ns"})
+	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "empty-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -341,7 +363,7 @@ func TestWfHealthNs_AllGreen(t *testing.T) {
 		return `{"healthy":true}`, nil
 	})
 
-	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns"})
+	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -378,7 +400,7 @@ func TestWfHealthNs_MixedStatuses(t *testing.T) {
 		return `{"healthy":true}`, nil
 	})
 
-	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns"})
+	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -408,7 +430,7 @@ func TestWfHealthNs_TruncatesAtLimit(t *testing.T) {
 		return `{"healthy":true}`, nil
 	})
 
-	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns", Limit: 3})
+	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns", Limit: 3}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -438,7 +460,7 @@ func TestWfHealthNs_DefaultLimit(t *testing.T) {
 		return `{"healthy":true}`, nil
 	})
 
-	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns"})
+	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -467,7 +489,7 @@ func TestWfHealthNs_NotTruncatedWhenExactlyAtLimit(t *testing.T) {
 		return `{"healthy":true}`, nil
 	})
 
-	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns", Limit: 3})
+	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns", Limit: 3}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -499,7 +521,7 @@ func TestWfHealthNs_OnlyListsManagedDeployments(t *testing.T) {
 		return `{"healthy":true}`, nil
 	})
 
-	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns"})
+	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -658,7 +680,7 @@ func TestWfHealth_ResultFieldsPopulated(t *testing.T) {
 	result, err := handleWfHealth(ctx, client, WfHealthParams{
 		Namespace: "user-ns",
 		Name:      "my-wf",
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -688,7 +710,7 @@ func TestWfHealth_DetailFlagPassedToProbe(t *testing.T) {
 		Namespace: "user-ns",
 		Name:      "my-wf",
 		Detail:    true,
-	})
+	}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -711,7 +733,7 @@ func TestWfHealthNs_ProbeUnreachableCountsAsRed(t *testing.T) {
 		return "", errors.New("connection refused")
 	})
 
-	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns"})
+	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -740,7 +762,7 @@ func TestWfHealthNs_SummaryTotalsMatchWorkflowCount(t *testing.T) {
 		return `{"healthy":true}`, nil
 	})
 
-	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns"})
+	result, err := handleWfHealthNs(ctx, client, WfHealthNsParams{Namespace: "user-ns"}, bearerInfo(), bearerEval())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

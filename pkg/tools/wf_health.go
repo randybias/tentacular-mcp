@@ -11,6 +11,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/randybias/tentacular-mcp/pkg/auth"
+	"github.com/randybias/tentacular-mcp/pkg/authz"
+	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
@@ -73,7 +76,7 @@ type WfHealthNsResult struct {
 	Truncated bool              `json:"truncated"`
 }
 
-func registerWfHealthTools(srv *mcp.Server, client *k8s.Client) {
+func registerWfHealthTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_health",
 		Description: "Get G/A/R health status of a single workflow runtime deployment, with optional execution telemetry.",
@@ -88,7 +91,8 @@ func registerWfHealthTools(srv *mcp.Server, client *k8s.Client) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WfHealthResult{}, err
 		}
-		result, err := handleWfHealth(ctx, client, params)
+		deployer := auth.DeployerFromContext(ctx)
+		result, err := handleWfHealth(ctx, client, params, deployer, eval)
 		return nil, result, err
 	})
 
@@ -106,12 +110,16 @@ func registerWfHealthTools(srv *mcp.Server, client *k8s.Client) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, WfHealthNsResult{}, err
 		}
-		result, err := handleWfHealthNs(ctx, client, params)
+		deployer := auth.DeployerFromContext(ctx)
+		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
+			return nil, WfHealthNsResult{}, err
+		}
+		result, err := handleWfHealthNs(ctx, client, params, deployer, eval)
 		return nil, result, err
 	})
 }
 
-func handleWfHealth(ctx context.Context, client *k8s.Client, params WfHealthParams) (WfHealthResult, error) {
+func handleWfHealth(ctx context.Context, client *k8s.Client, params WfHealthParams, deployer *exoskeleton.DeployerInfo, eval *authz.Evaluator) (WfHealthResult, error) {
 	if err := k8s.CheckManagedNamespace(ctx, client, params.Namespace); err != nil {
 		return WfHealthResult{}, err
 	}
@@ -119,6 +127,10 @@ func handleWfHealth(ctx context.Context, client *k8s.Client, params WfHealthPara
 	dep, err := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
 	if err != nil {
 		return WfHealthResult{}, fmt.Errorf("get deployment %q in namespace %q: %w", params.Name, params.Namespace, err)
+	}
+
+	if d := eval.Check(deployer, dep.Annotations, authz.Read); !d.Allowed {
+		return WfHealthResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 	}
 
 	podReady := dep.Status.ReadyReplicas >= 1
@@ -162,8 +174,12 @@ func handleWfHealth(ctx context.Context, client *k8s.Client, params WfHealthPara
 	return result, nil
 }
 
-func handleWfHealthNs(ctx context.Context, client *k8s.Client, params WfHealthNsParams) (WfHealthNsResult, error) {
+func handleWfHealthNs(ctx context.Context, client *k8s.Client, params WfHealthNsParams, deployer *exoskeleton.DeployerInfo, eval *authz.Evaluator) (WfHealthNsResult, error) {
 	if err := k8s.CheckManagedNamespace(ctx, client, params.Namespace); err != nil {
+		return WfHealthNsResult{}, err
+	}
+
+	if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
 		return WfHealthNsResult{}, err
 	}
 
@@ -179,10 +195,18 @@ func handleWfHealthNs(ctx context.Context, client *k8s.Client, params WfHealthNs
 		return WfHealthNsResult{}, fmt.Errorf("list deployments in namespace %q: %w", params.Namespace, err)
 	}
 
-	total := len(depList.Items)
+	// Filter to only deployments the caller can read before applying the limit.
+	visible := depList.Items[:0]
+	for _, dep := range depList.Items {
+		if d := eval.Check(deployer, dep.Annotations, authz.Read); d.Allowed {
+			visible = append(visible, dep)
+		}
+	}
+
+	total := len(visible)
 	truncated := total > limit
 
-	items := depList.Items
+	items := visible
 	if truncated {
 		items = items[:limit]
 	}
