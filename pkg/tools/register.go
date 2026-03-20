@@ -17,7 +17,6 @@ func boolPtr(b bool) *bool { return &b }
 // RegisterAll registers all MCP tools with the given server.
 func RegisterAll(srv *mcp.Server, client *k8s.Client, reconciler *proxy.Reconciler, sched *scheduler.Scheduler, exoCtrl *exoskeleton.Controller, eval *authz.Evaluator) {
 	registerNamespaceTools(srv, client, eval)
-	registerCredentialTools(srv, client)
 	registerWorkflowTools(srv, client, eval)
 	registerRunTools(srv, client, eval)
 	registerDiscoverTools(srv, client, eval)
