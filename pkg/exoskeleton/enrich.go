@@ -286,6 +286,9 @@ func (*Controller) AnnotateDeployer(manifests []map[string]any, p AnnotateDeploy
 		deployedVia = "unknown"
 	}
 
+	// NOTE: Annotation keys are hardcoded here rather than using authz.Annotation*
+	// constants to avoid a circular import (authz imports exoskeleton for DeployerInfo).
+	// These keys MUST stay in sync with pkg/authz/annotations.go.
 	for _, m := range manifests {
 		obj := &unstructured.Unstructured{Object: m}
 		if obj.GetKind() != "Deployment" {

@@ -180,6 +180,9 @@ func registerPermissionsTools(srv *mcp.Server, client *k8s.Client, eval *authz.E
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, NsPermissionsSetResult{}, err
 		}
+		if params.Group == "" && params.Mode == "" && params.Share == "" && params.DefaultGroup == "" && params.DefaultShare == "" {
+			return nil, NsPermissionsSetResult{}, errors.New("at least one of group, mode, share, default_group, or default_share must be provided")
+		}
 		if params.Mode != "" && params.Share != "" {
 			return nil, NsPermissionsSetResult{}, errors.New("mode and share are mutually exclusive; provide one or the other")
 		}
