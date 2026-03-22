@@ -228,6 +228,13 @@ func (c *Controller) ProcessManifests(ctx context.Context, namespace, name strin
 
 		// Step 7.11: Patch Deployment --allow-net flags.
 		patchDeploymentAllowNet(manifests, creds)
+
+		// Merge exo credentials into the user-provided secret so the
+		// engine can resolve them via ctx.dependency().
+		manifests, err = mergeExoCredsIntoUserSecret(manifests, namespace, name, creds)
+		if err != nil {
+			return nil, fmt.Errorf("merge exo creds: %w", err)
+		}
 	}
 
 	// SPIRE identity registration: creates a ClusterSPIFFEID so matching
@@ -236,6 +243,8 @@ func (c *Controller) ProcessManifests(ctx context.Context, namespace, name strin
 	if c.spire != nil {
 		if err := c.spire.Register(ctx, id, namespace); err != nil {
 			slog.Warn("exoskeleton: SPIRE registration failed (non-fatal)", "error", err)
+		} else {
+			patchDeploymentSpireVolume(manifests)
 		}
 	}
 

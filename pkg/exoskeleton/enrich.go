@@ -78,6 +78,10 @@ func enrichContractDeps(manifests []map[string]any, creds map[string]any) error 
 				depMap["database"] = c.Database
 				depMap["user"] = c.User
 				depMap["schema"] = c.Schema
+				depMap["auth"] = map[string]any{
+					"type":   "password",
+					"secret": depName + ".password",
+				}
 				modified = true
 
 			case *NATSCreds:
@@ -85,6 +89,10 @@ func enrichContractDeps(manifests []map[string]any, creds map[string]any) error 
 				depMap["host"] = host
 				depMap["port"] = port
 				depMap["subject"] = c.SubjectPrefix
+				depMap["auth"] = map[string]any{
+					"type":   c.AuthMethod,
+					"secret": depName + ".url",
+				}
 				modified = true
 
 			case *RustFSCreds:
@@ -93,6 +101,10 @@ func enrichContractDeps(manifests []map[string]any, creds map[string]any) error 
 				depMap["port"] = port
 				depMap["container"] = c.Bucket
 				depMap["prefix"] = c.Prefix
+				depMap["auth"] = map[string]any{
+					"type":   "access-key",
+					"secret": depName + ".secret_key",
+				}
 				modified = true
 			}
 		}
@@ -263,6 +275,71 @@ func parseHostPort(rawURL string) (host, port string) {
 		return rawURL[:idx], rawURL[idx+1:]
 	}
 	return rawURL, ""
+}
+
+// patchDeploymentSpireVolume finds the Deployment manifest and adds the
+// SPIRE CSI volume and volumeMount so that the workload can receive an
+// X.509 SVID from the SPIRE agent.
+func patchDeploymentSpireVolume(manifests []map[string]any) {
+	const volumeName = "spiffe-workload-api"
+	const mountPath = "/run/spire/sockets"
+
+	for _, m := range manifests {
+		obj := &unstructured.Unstructured{Object: m}
+		if obj.GetKind() != "Deployment" {
+			continue
+		}
+
+		// Add volume to spec.template.spec.volumes.
+		volumes, _, _ := unstructured.NestedSlice(obj.Object,
+			"spec", "template", "spec", "volumes")
+
+		// Guard against duplicate injection.
+		for _, v := range volumes {
+			vm, ok := v.(map[string]any)
+			if ok && vm["name"] == volumeName {
+				slog.Info("exoskeleton: SPIRE CSI volume already present, skipping")
+				return
+			}
+		}
+
+		spireVolume := map[string]any{
+			"name": volumeName,
+			"csi": map[string]any{
+				"driver":   "csi.spiffe.io",
+				"readOnly": true,
+			},
+		}
+		volumes = append(volumes, spireVolume)
+		_ = unstructured.SetNestedSlice(obj.Object, volumes,
+			"spec", "template", "spec", "volumes")
+
+		// Add volumeMount to first container.
+		containers, found, _ := unstructured.NestedSlice(obj.Object,
+			"spec", "template", "spec", "containers")
+		if !found || len(containers) == 0 {
+			continue
+		}
+
+		container, ok := containers[0].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		mounts, _ := container["volumeMounts"].([]any)
+		mounts = append(mounts, map[string]any{
+			"name":      volumeName,
+			"mountPath": mountPath,
+			"readOnly":  true,
+		})
+		container["volumeMounts"] = mounts
+		containers[0] = container
+		_ = unstructured.SetNestedSlice(obj.Object, containers,
+			"spec", "template", "spec", "containers")
+
+		slog.Info("exoskeleton: added SPIRE CSI volume and mount to Deployment")
+		return
+	}
 }
 
 // AnnotateDeployerParams holds the parameters for AnnotateDeployer.

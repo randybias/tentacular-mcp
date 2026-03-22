@@ -365,12 +365,12 @@ func TestProcessManifests_NATSTokenMode(t *testing.T) {
 		t.Fatalf("ProcessManifests: %v", err)
 	}
 
-	// Should have original 2 manifests + 1 Secret.
-	if len(result) != 3 {
-		t.Fatalf("expected 3 manifests (2 original + 1 secret), got %d", len(result))
+	// Should have original 2 manifests + exo audit Secret + user Secret.
+	if len(result) != 4 {
+		t.Fatalf("expected 4 manifests (2 original + exo secret + user secret), got %d", len(result))
 	}
 
-	// Verify the Secret manifest.
+	// Verify the exo audit Secret manifest (index 2).
 	secret := result[2]
 	if secret["kind"] != "Secret" {
 		t.Errorf("expected Secret kind, got %v", secret["kind"])
@@ -381,6 +381,16 @@ func TestProcessManifests_NATSTokenMode(t *testing.T) {
 	}
 	if metadata["namespace"] != "tent-dev" {
 		t.Errorf("secret namespace = %v", metadata["namespace"])
+	}
+
+	// Verify the user Secret manifest (index 3).
+	userSecret := result[3]
+	if userSecret["kind"] != "Secret" {
+		t.Errorf("expected Secret kind for user secret, got %v", userSecret["kind"])
+	}
+	userMeta := userSecret["metadata"].(map[string]any)
+	if userMeta["name"] != "hn-digest-secrets" {
+		t.Errorf("user secret name = %v, want hn-digest-secrets", userMeta["name"])
 	}
 }
 
@@ -618,12 +628,12 @@ func TestProcessManifests_NATSSPIFFEMode(t *testing.T) {
 		t.Fatalf("ProcessManifests: %v", err)
 	}
 
-	// Should have 3 manifests (CM + Deployment + Secret).
-	if len(result) != 3 {
-		t.Fatalf("expected 3 manifests, got %d", len(result))
+	// Should have 4 manifests (CM + Deployment + exo Secret + user Secret).
+	if len(result) != 4 {
+		t.Fatalf("expected 4 manifests, got %d", len(result))
 	}
 
-	// Secret should not contain a token in SPIFFE mode.
+	// Exo audit Secret should not contain a token in SPIFFE mode.
 	secret := result[2]
 	stringData := secret["stringData"].(map[string]any)
 	if _, hasToken := stringData["tentacular-nats.token"]; hasToken {
@@ -631,6 +641,13 @@ func TestProcessManifests_NATSSPIFFEMode(t *testing.T) {
 	}
 	if stringData["tentacular-nats.auth_method"] != "spiffe" {
 		t.Errorf("expected auth_method=spiffe, got %v", stringData["tentacular-nats.auth_method"])
+	}
+
+	// User secret should also not contain a token in SPIFFE mode.
+	userSecret := result[3]
+	userSD := userSecret["stringData"].(map[string]any)
+	if _, hasToken := userSD["tentacular-nats.token"]; hasToken {
+		t.Error("SPIFFE mode user secret should not include a token")
 	}
 }
 
