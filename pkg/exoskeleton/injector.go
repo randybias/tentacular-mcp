@@ -197,8 +197,10 @@ func buildExoStringData(namespace, workflow string, creds map[string]any) map[st
 			"namespace": namespace,
 			"workflow":  workflow,
 		}
-		b, _ := json.Marshal(idObj)
-		sd["tentacular-identity"] = string(b)
+		b, err := json.Marshal(idObj)
+		if err == nil {
+			sd["tentacular-identity"] = string(b)
+		}
 	}
 
 	return sd
