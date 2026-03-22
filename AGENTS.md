@@ -9,7 +9,7 @@ In-cluster Go HTTP server that exposes MCP (Model Context Protocol) tools for AI
 | [tentacular](https://github.com/randybias/tentacular) | Go CLI (`tntc`) + Deno workflow engine |
 | [tentacular-mcp](https://github.com/randybias/tentacular-mcp) | In-cluster MCP server (this repo) |
 | [tentacular-skill](https://github.com/randybias/tentacular-skill) | Agent skill definition (Markdown) |
-| [tentacular-catalog](https://github.com/randybias/tentacular-catalog) | Workflow template catalog (TypeScript/Deno) |
+| [tentacular-scaffolds](https://github.com/randybias/tentacular-scaffolds) | Scaffold quickstart library (TypeScript/Deno) |
 
 ## System Architecture
 
@@ -25,7 +25,7 @@ Developer / AI Agent
     Kubernetes API
         |
     Workflow Pods             <-- Deno engine from tentacular/engine/
-        (gVisor sandbox)         Templates from tentacular-catalog
+        (gVisor sandbox)         Scaffolds from tentacular-scaffolds
 ```
 
 The CLI has zero direct Kubernetes API access. All cluster operations route through this MCP server via authenticated HTTP. The MCP server runs inside the cluster with scoped RBAC.
