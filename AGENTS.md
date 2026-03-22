@@ -9,7 +9,7 @@ In-cluster Go HTTP server that exposes MCP (Model Context Protocol) tools for AI
 | [tentacular](https://github.com/randybias/tentacular) | Go CLI (`tntc`) + Deno workflow engine |
 | [tentacular-mcp](https://github.com/randybias/tentacular-mcp) | In-cluster MCP server (this repo) |
 | [tentacular-skill](https://github.com/randybias/tentacular-skill) | Agent skill definition (Markdown) |
-| [tentacular-scaffolds](https://github.com/randybias/tentacular-scaffolds) | Scaffold quickstart library (TypeScript/Deno) |
+| [tentacular-scaffolds](https://github.com/randybias/tentacular-scaffolds) | Workflow scaffold catalog / quickstarts (TypeScript/Deno) |
 
 ## System Architecture
 
@@ -108,7 +108,7 @@ All repos use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0
 feat: add workflow health endpoint
 fix: handle nil pod status in wf_pods
 test: add unit tests for discover handler
-docs: update CLI reference for catalog commands
+docs: update CLI reference for scaffold commands
 chore: bump Go to 1.25
 ```
 
