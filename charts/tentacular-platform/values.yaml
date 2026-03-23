@@ -77,6 +77,10 @@ nats:
     # -- Token-based auth for NATS connections
     # JWT-based auth is planned for production
     merge:
+      # -- Max message payload size (8MB). NATS default is 1MB which is too small
+      # for webhook-to-NATS bridge and service tentacle payloads.
+      # 8MB is the NATS-recommended maximum (hard cap is 64MB).
+      max_payload: 8388608
       authorization:
         # -- NATS auth token (must be provided by user)
         token: ""
