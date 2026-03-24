@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -177,6 +178,93 @@ func patchDeploymentAllowNet(manifests []map[string]any, creds map[string]any) {
 			slog.Info("exoskeleton: patched Deployment --allow-net in command")
 			return
 		}
+	}
+}
+
+// patchNetworkPolicyExoEgress finds the first NetworkPolicy manifest and
+// appends egress rules for each registered exoskeleton service so that
+// workflow pods can reach their provisioned backing services.
+func patchNetworkPolicyExoEgress(manifests []map[string]any, creds map[string]any) {
+	if len(creds) == 0 {
+		return
+	}
+
+	for _, m := range manifests {
+		obj := &unstructured.Unstructured{Object: m}
+		if obj.GetKind() != "NetworkPolicy" {
+			continue
+		}
+
+		// Read existing egress rules, initialising to empty if absent.
+		egress, _, _ := unstructured.NestedSlice(obj.Object, "spec", "egress")
+		if egress == nil {
+			egress = []any{}
+		}
+
+		// Collect host/port pairs from credentials, sorted for determinism.
+		type svcEndpoint struct {
+			name string
+			host string
+			port string
+		}
+		var endpoints []svcEndpoint
+		for depName, c := range creds {
+			switch v := c.(type) {
+			case *PostgresCreds:
+				endpoints = append(endpoints, svcEndpoint{name: depName, host: v.Host, port: v.Port})
+			case *NATSCreds:
+				h, p := parseHostPort(v.URL)
+				if h != "" && p != "" {
+					endpoints = append(endpoints, svcEndpoint{name: depName, host: h, port: p})
+				}
+			case *RustFSCreds:
+				h, p := parseHostPort(v.Endpoint)
+				if h != "" && p != "" {
+					endpoints = append(endpoints, svcEndpoint{name: depName, host: h, port: p})
+				}
+			}
+		}
+		sort.Slice(endpoints, func(i, j int) bool { return endpoints[i].name < endpoints[j].name })
+
+		for _, ep := range endpoints {
+			// Extract namespace from FQDN: svc.namespace.svc.cluster.local
+			parts := strings.Split(ep.host, ".")
+			if len(parts) < 2 {
+				slog.Warn("exoskeleton: cannot extract namespace from host", "host", ep.host)
+				continue
+			}
+			targetNS := parts[1]
+
+			portInt, err := strconv.ParseInt(ep.port, 10, 64)
+			if err != nil {
+				slog.Warn("exoskeleton: invalid port for egress rule", "port", ep.port, "error", err)
+				continue
+			}
+
+			rule := map[string]any{
+				"to": []any{
+					map[string]any{
+						"namespaceSelector": map[string]any{
+							"matchLabels": map[string]any{
+								"kubernetes.io/metadata.name": targetNS,
+							},
+						},
+					},
+				},
+				"ports": []any{
+					map[string]any{
+						"protocol": "TCP",
+						"port":     portInt,
+					},
+				},
+			}
+			egress = append(egress, rule)
+			slog.Info("exoskeleton: patched NetworkPolicy egress for "+ep.name,
+				"namespace", targetNS, "port", portInt)
+		}
+
+		_ = unstructured.SetNestedSlice(obj.Object, egress, "spec", "egress")
+		return // Patch only the first NetworkPolicy.
 	}
 }
 
