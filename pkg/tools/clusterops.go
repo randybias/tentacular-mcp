@@ -5,6 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
@@ -25,7 +26,7 @@ type ClusterProfileParams struct {
 	Namespace string `json:"namespace,omitempty" jsonschema:"Optional namespace to include quota and limit range details"`
 }
 
-func registerClusterOpsTools(srv *mcp.Server, client *k8s.Client) {
+func registerClusterOpsTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exoskeleton.Controller) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "cluster_preflight",
 		Description: "Run preflight checks for a namespace: API reachability, namespace existence, RBAC, and gVisor availability.",
@@ -60,7 +61,7 @@ func registerClusterOpsTools(srv *mcp.Server, client *k8s.Client) {
 				return nil, nil, err
 			}
 		}
-		result, err := handleClusterProfile(ctx, client, params)
+		result, err := handleClusterProfile(ctx, client, exoCtrl, params)
 		return nil, result, err
 	})
 }
@@ -80,6 +81,13 @@ func handleClusterPreflight(ctx context.Context, client *k8s.Client, params Clus
 	return ClusterPreflightResult{Checks: checks, AllPass: allPass}, nil
 }
 
-func handleClusterProfile(ctx context.Context, client *k8s.Client, params ClusterProfileParams) (*k8s.ClusterProfile, error) {
-	return k8s.ProfileCluster(ctx, client, params.Namespace)
+func handleClusterProfile(ctx context.Context, client *k8s.Client, exoCtrl *exoskeleton.Controller, params ClusterProfileParams) (*k8s.ClusterProfile, error) {
+	profile, err := k8s.ProfileCluster(ctx, client, params.Namespace)
+	if err != nil {
+		return nil, err
+	}
+	if exoCtrl != nil {
+		profile.Exoskeleton = exoCtrl.ServiceInfo()
+	}
+	return profile, nil
 }

@@ -133,7 +133,7 @@ func TestClusterProfileReturnsProfile(t *testing.T) {
 	client := newClusterOpsTestClient()
 	ctx := context.Background()
 
-	result, err := handleClusterProfile(ctx, client, ClusterProfileParams{})
+	result, err := handleClusterProfile(ctx, client, nil, ClusterProfileParams{})
 	if err != nil {
 		t.Fatalf("handleClusterProfile: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestClusterProfileExtensionsSet(t *testing.T) {
 	client := newClusterOpsTestClient()
 	ctx := context.Background()
 
-	result, err := handleClusterProfile(ctx, client, ClusterProfileParams{})
+	result, err := handleClusterProfile(ctx, client, nil, ClusterProfileParams{})
 	if err != nil {
 		t.Fatalf("handleClusterProfile: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestClusterProfileWithNamespace(t *testing.T) {
 		},
 	}, metav1.CreateOptions{})
 
-	result, err := handleClusterProfile(ctx, client, ClusterProfileParams{Namespace: "profiled-ns"})
+	result, err := handleClusterProfile(ctx, client, nil, ClusterProfileParams{Namespace: "profiled-ns"})
 	if err != nil {
 		t.Fatalf("handleClusterProfile: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestClusterProfileGVisorDetected(t *testing.T) {
 	}
 	_, _ = client.Clientset.NodeV1().RuntimeClasses().Create(ctx, rc, metav1.CreateOptions{})
 
-	result, err := handleClusterProfile(ctx, client, ClusterProfileParams{})
+	result, err := handleClusterProfile(ctx, client, nil, ClusterProfileParams{})
 	if err != nil {
 		t.Fatalf("handleClusterProfile: %v", err)
 	}
