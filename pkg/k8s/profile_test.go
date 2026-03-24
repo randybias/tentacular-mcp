@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -720,5 +721,141 @@ func TestProfileNodes(t *testing.T) {
 	}
 	if profile.Distribution != "eks" {
 		t.Errorf("Distribution = %q, want eks", profile.Distribution)
+	}
+}
+
+// ---------- ExoskeletonInfo JSON ----------
+
+func TestExoskeletonInfo_OmittedWhenNil(t *testing.T) {
+	profile := &ClusterProfile{
+		K8sVersion: "v1.29.0",
+		Namespace:  "default",
+		CNI:        CNIInfo{Name: "cilium"},
+	}
+
+	data, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	if _, ok := raw["exoskeleton"]; ok {
+		t.Error("expected exoskeleton field to be omitted when nil")
+	}
+}
+
+func TestExoskeletonInfo_PresentWhenSet(t *testing.T) {
+	profile := &ClusterProfile{
+		K8sVersion: "v1.29.0",
+		Namespace:  "default",
+		CNI:        CNIInfo{Name: "cilium"},
+		Exoskeleton: &ExoskeletonInfo{
+			Enabled: true,
+			Services: []ExoskeletonServiceInfo{
+				{
+					Name:      "postgres",
+					Host:      "pg.example.com",
+					Port:      "5432",
+					Protocol:  "tcp",
+					Available: true,
+				},
+				{
+					Name:          "nats",
+					Host:          "nats.example.com",
+					Port:          "4222",
+					Protocol:      "nats",
+					Available:     true,
+					SPIFFEEnabled: true,
+				},
+			},
+			Auth: ExoskeletonAuthInfo{
+				Enabled: true,
+				Issuer:  "https://keycloak.example.com/realms/tentacular",
+			},
+		},
+	}
+
+	data, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	exo, ok := raw["exoskeleton"]
+	if !ok {
+		t.Fatal("expected exoskeleton field to be present")
+	}
+
+	exoMap, ok := exo.(map[string]any)
+	if !ok {
+		t.Fatal("expected exoskeleton to be an object")
+	}
+
+	if exoMap["enabled"] != true {
+		t.Error("expected exoskeleton.enabled=true")
+	}
+
+	services, ok := exoMap["services"].([]any)
+	if !ok || len(services) != 2 {
+		t.Fatalf("expected 2 services, got %v", exoMap["services"])
+	}
+
+	// Verify first service
+	svc0 := services[0].(map[string]any)
+	if svc0["name"] != "postgres" {
+		t.Errorf("services[0].name = %v, want postgres", svc0["name"])
+	}
+	if svc0["available"] != true {
+		t.Errorf("services[0].available = %v, want true", svc0["available"])
+	}
+
+	// Verify NATS service has spiffeEnabled
+	svc1 := services[1].(map[string]any)
+	if svc1["spiffeEnabled"] != true {
+		t.Errorf("services[1].spiffeEnabled = %v, want true", svc1["spiffeEnabled"])
+	}
+
+	// Verify auth
+	auth, ok := exoMap["auth"].(map[string]any)
+	if !ok {
+		t.Fatal("expected auth to be an object")
+	}
+	if auth["enabled"] != true {
+		t.Error("expected auth.enabled=true")
+	}
+	if auth["issuer"] != "https://keycloak.example.com/realms/tentacular" {
+		t.Errorf("auth.issuer = %v", auth["issuer"])
+	}
+}
+
+func TestExoskeletonInfo_SPIFFEEnabledOmittedWhenFalse(t *testing.T) {
+	svc := ExoskeletonServiceInfo{
+		Name:      "postgres",
+		Host:      "pg.example.com",
+		Port:      "5432",
+		Protocol:  "tcp",
+		Available: true,
+	}
+
+	data, err := json.Marshal(svc)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	if _, ok := raw["spiffeEnabled"]; ok {
+		t.Error("expected spiffeEnabled to be omitted when false")
 	}
 }

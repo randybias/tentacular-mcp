@@ -14,6 +14,29 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
+// ExoskeletonServiceInfo describes a single exoskeleton backing service.
+type ExoskeletonServiceInfo struct {
+	Name          string `json:"name"`
+	Host          string `json:"host"`
+	Port          string `json:"port"`
+	Protocol      string `json:"protocol"`
+	Available     bool   `json:"available"`
+	SPIFFEEnabled bool   `json:"spiffeEnabled,omitempty"`
+}
+
+// ExoskeletonAuthInfo describes the OIDC authentication status.
+type ExoskeletonAuthInfo struct {
+	Enabled bool   `json:"enabled"`
+	Issuer  string `json:"issuer,omitempty"`
+}
+
+// ExoskeletonInfo describes the exoskeleton subsystem and its services.
+type ExoskeletonInfo struct {
+	Enabled  bool                     `json:"enabled"`
+	Services []ExoskeletonServiceInfo `json:"services"`
+	Auth     ExoskeletonAuthInfo      `json:"auth"`
+}
+
 // ClusterProfile contains a point-in-time capability snapshot of the cluster.
 type ClusterProfile struct {
 	GeneratedAt    time.Time          `json:"generatedAt"`
@@ -34,6 +57,7 @@ type ClusterProfile struct {
 	Warnings       []string           `json:"warnings,omitempty"`
 	Extensions     ExtensionSet       `json:"extensions"`
 	NetworkPolicy  NetPolInfo         `json:"networkPolicy"`
+	Exoskeleton    *ExoskeletonInfo   `json:"exoskeleton,omitempty"`
 	GVisor         bool               `json:"gvisor"`
 }
 
