@@ -28,6 +28,7 @@ spec:
         {{- end }}
     spec:
       enableServiceLinks: {{ .Values.enableServiceLinks }}
+      serviceAccountName: {{ include "rustfs.serviceAccountName" . }}
       {{- with include "chart.imagePullSecrets" . }}
       imagePullSecrets:
         {{- . | nindent 8 }}

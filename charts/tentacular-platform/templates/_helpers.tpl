@@ -63,3 +63,21 @@ Namespace name helpers - resolve configured namespace names with defaults.
 {{- define "tentacular-platform.namespace.support" -}}
 {{- default "tentacular-support" .Values.namespaces.support.name }}
 {{- end }}
+
+{{/*
+Derive the RustFS subchart service name to match the subchart's own naming logic.
+Mirrors the rustfs.fullname template from charts/rustfs/templates/_helpers.tpl,
+then appends "-svc" (the service name suffix used in rustfs/templates/service.yaml).
+*/}}
+{{- define "tentacular-platform.rustfs.serviceName" -}}
+{{- if .Values.rustfs.fullnameOverride -}}
+  {{- printf "%s-svc" (.Values.rustfs.fullnameOverride | trunc 63 | trimSuffix "-") -}}
+{{- else -}}
+  {{- $name := default "rustfs" .Values.rustfs.nameOverride -}}
+  {{- if contains $name .Release.Name -}}
+    {{- printf "%s-svc" (.Release.Name | trunc 63 | trimSuffix "-") -}}
+  {{- else -}}
+    {{- printf "%s-%s-svc" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+  {{- end -}}
+{{- end -}}
+{{- end }}
