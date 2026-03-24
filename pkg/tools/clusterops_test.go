@@ -10,6 +10,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 
+	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
 
@@ -201,5 +202,75 @@ func TestClusterProfileGVisorDetected(t *testing.T) {
 	}
 	if !result.GVisor {
 		t.Error("expected GVisor=true when RuntimeClass with runsc handler exists")
+	}
+}
+
+// TestClusterProfileWithExoskeleton verifies exoskeleton info is included when controller is provided.
+func TestClusterProfileWithExoskeleton(t *testing.T) {
+	client := newClusterOpsTestClient()
+	ctx := context.Background()
+
+	cfg := &exoskeleton.Config{
+		Enabled: true,
+		Postgres: exoskeleton.PostgresConfig{
+			Host: "pg.example.com",
+			Port: "5432",
+		},
+		NATS: exoskeleton.NATSConfig{
+			URL: "nats://nats.example.com:4222",
+		},
+		RustFS: exoskeleton.RustFSConfig{
+			Endpoint: "http://rustfs.example.com:9000",
+		},
+	}
+	exoCtrl := exoskeleton.NewControllerWithDeps(cfg, nil, nil, nil, nil)
+
+	result, err := handleClusterProfile(ctx, client, exoCtrl, ClusterProfileParams{})
+	if err != nil {
+		t.Fatalf("handleClusterProfile: %v", err)
+	}
+	if result.Exoskeleton == nil {
+		t.Fatal("expected Exoskeleton to be non-nil when controller provided")
+	}
+	if !result.Exoskeleton.Enabled {
+		t.Error("expected Exoskeleton.Enabled=true")
+	}
+	if len(result.Exoskeleton.Services) == 0 {
+		t.Error("expected at least one service in Exoskeleton.Services")
+	}
+
+	// Verify postgres service is present
+	foundPG := false
+	for _, svc := range result.Exoskeleton.Services {
+		if svc.Name == "postgres" {
+			foundPG = true
+			if svc.Host != "pg.example.com" {
+				t.Errorf("postgres host = %q, want pg.example.com", svc.Host)
+			}
+			if svc.Port != "5432" {
+				t.Errorf("postgres port = %q, want 5432", svc.Port)
+			}
+			// No registrar provided, so not available
+			if svc.Available {
+				t.Error("expected postgres Available=false with nil registrar")
+			}
+		}
+	}
+	if !foundPG {
+		t.Error("expected postgres service in Exoskeleton.Services")
+	}
+}
+
+// TestClusterProfileNilExoskeleton verifies backward compatibility when controller is nil.
+func TestClusterProfileNilExoskeleton(t *testing.T) {
+	client := newClusterOpsTestClient()
+	ctx := context.Background()
+
+	result, err := handleClusterProfile(ctx, client, nil, ClusterProfileParams{})
+	if err != nil {
+		t.Fatalf("handleClusterProfile: %v", err)
+	}
+	if result.Exoskeleton != nil {
+		t.Error("expected Exoskeleton to be nil when controller is nil")
 	}
 }

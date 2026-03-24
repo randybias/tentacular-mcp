@@ -573,3 +573,191 @@ func TestControllerClose(t *testing.T) {
 		t.Error("spire should be closed")
 	}
 }
+
+// --- ServiceInfo tests ---
+
+func TestServiceInfoDisabled(t *testing.T) {
+	cfg := &Config{Enabled: false}
+	ctrl := NewControllerWithDeps(cfg, nil, nil, nil, nil)
+
+	info := ctrl.ServiceInfo()
+	if info != nil {
+		t.Error("expected ServiceInfo to return nil when disabled")
+	}
+}
+
+func TestServiceInfoAllServicesAvailable(t *testing.T) {
+	cfg := &Config{
+		Enabled: true,
+		Postgres: PostgresConfig{
+			Host: "pg.example.com",
+			Port: "5432",
+		},
+		NATS: NATSConfig{
+			URL:           "nats://nats.example.com:4222",
+			SPIFFEEnabled: true,
+		},
+		RustFS: RustFSConfig{
+			Endpoint: "http://rustfs.example.com:9000",
+		},
+		Auth: AuthConfig{
+			Enabled:   true,
+			IssuerURL: "https://keycloak.example.com/realms/tentacular",
+			ClientID:  "my-client",
+		},
+	}
+	pg := newMockPG()
+	nats := newMockNATS()
+	rustfs := newMockRustFS()
+	spire := &mockSPIRE{}
+	ctrl := NewControllerWithDeps(cfg, pg, nats, rustfs, spire)
+
+	info := ctrl.ServiceInfo()
+	if info == nil {
+		t.Fatal("expected non-nil ServiceInfo")
+	}
+	if !info.Enabled {
+		t.Error("expected Enabled=true")
+	}
+
+	if len(info.Services) != 4 {
+		t.Fatalf("expected 4 services, got %d", len(info.Services))
+	}
+
+	svcByName := map[string]interface{}{}
+	for _, s := range info.Services {
+		svcByName[s.Name] = s
+	}
+
+	// Postgres
+	pgSvc := info.Services[0]
+	if pgSvc.Name != "postgres" {
+		t.Errorf("services[0].Name = %q, want postgres", pgSvc.Name)
+	}
+	if pgSvc.Host != "pg.example.com" {
+		t.Errorf("postgres host = %q", pgSvc.Host)
+	}
+	if pgSvc.Port != "5432" {
+		t.Errorf("postgres port = %q", pgSvc.Port)
+	}
+	if pgSvc.Protocol != "tcp" {
+		t.Errorf("postgres protocol = %q", pgSvc.Protocol)
+	}
+	if !pgSvc.Available {
+		t.Error("expected postgres Available=true")
+	}
+
+	// NATS
+	natsSvc := info.Services[1]
+	if natsSvc.Name != "nats" {
+		t.Errorf("services[1].Name = %q, want nats", natsSvc.Name)
+	}
+	if natsSvc.Host != "nats.example.com" {
+		t.Errorf("nats host = %q", natsSvc.Host)
+	}
+	if natsSvc.Port != "4222" {
+		t.Errorf("nats port = %q", natsSvc.Port)
+	}
+	if !natsSvc.Available {
+		t.Error("expected nats Available=true")
+	}
+	if !natsSvc.SPIFFEEnabled {
+		t.Error("expected nats SPIFFEEnabled=true")
+	}
+
+	// RustFS
+	rustfsSvc := info.Services[2]
+	if rustfsSvc.Name != "rustfs" {
+		t.Errorf("services[2].Name = %q, want rustfs", rustfsSvc.Name)
+	}
+	if rustfsSvc.Host != "rustfs.example.com" {
+		t.Errorf("rustfs host = %q", rustfsSvc.Host)
+	}
+	if rustfsSvc.Port != "9000" {
+		t.Errorf("rustfs port = %q", rustfsSvc.Port)
+	}
+	if !rustfsSvc.Available {
+		t.Error("expected rustfs Available=true")
+	}
+
+	// SPIRE
+	spireSvc := info.Services[3]
+	if spireSvc.Name != "spire" {
+		t.Errorf("services[3].Name = %q, want spire", spireSvc.Name)
+	}
+	if !spireSvc.Available {
+		t.Error("expected spire Available=true")
+	}
+
+	// Auth
+	if !info.Auth.Enabled {
+		t.Error("expected auth Enabled=true")
+	}
+	if info.Auth.Issuer != "https://keycloak.example.com/realms/tentacular" {
+		t.Errorf("auth issuer = %q", info.Auth.Issuer)
+	}
+}
+
+func TestServiceInfoPartialServices(t *testing.T) {
+	cfg := &Config{
+		Enabled: true,
+		Postgres: PostgresConfig{
+			Host: "pg.test",
+			Port: "5432",
+		},
+		NATS: NATSConfig{
+			URL: "nats://nats.test:4222",
+		},
+		RustFS: RustFSConfig{
+			Endpoint: "http://rustfs.test:9000",
+		},
+	}
+	// Only postgres registrar available, others nil
+	pg := newMockPG()
+	ctrl := NewControllerWithDeps(cfg, pg, nil, nil, nil)
+
+	info := ctrl.ServiceInfo()
+	if info == nil {
+		t.Fatal("expected non-nil ServiceInfo")
+	}
+
+	for _, svc := range info.Services {
+		switch svc.Name {
+		case "postgres":
+			if !svc.Available {
+				t.Error("expected postgres Available=true")
+			}
+		case "nats":
+			if svc.Available {
+				t.Error("expected nats Available=false with nil registrar")
+			}
+		case "rustfs":
+			if svc.Available {
+				t.Error("expected rustfs Available=false with nil registrar")
+			}
+		case "spire":
+			if svc.Available {
+				t.Error("expected spire Available=false with nil registrar")
+			}
+		}
+	}
+}
+
+func TestServiceInfoNoAuth(t *testing.T) {
+	cfg := &Config{
+		Enabled: true,
+		Auth:    AuthConfig{Enabled: false},
+	}
+	ctrl := NewControllerWithDeps(cfg, nil, nil, nil, nil)
+
+	info := ctrl.ServiceInfo()
+	if info == nil {
+		t.Fatal("expected non-nil ServiceInfo")
+	}
+	if info.Auth.Enabled {
+		t.Error("expected auth Enabled=false")
+	}
+	if info.Auth.Issuer != "" {
+		t.Errorf("expected empty issuer, got %q", info.Auth.Issuer)
+	}
+}
