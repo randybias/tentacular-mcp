@@ -76,7 +76,9 @@ helm install tentacular charts/tentacular-platform/ \
   --set keycloak.admin.password="$(openssl rand -hex 16)" \
   --set keycloakx.database.password="$KC_DB_PASS" \
   --set keycloakx.database.hostname="tentacular-postgresql.tentacular-exoskeleton.svc.cluster.local" \
-  --set exoskeletonAuth.clientSecret="$(openssl rand -hex 32)"
+  --set exoskeletonAuth.clientSecret="$(openssl rand -hex 32)" \
+  --set rustfs.secret.accessKey="$(openssl rand -hex 16)" \
+  --set rustfs.secret.secretKey="$(openssl rand -hex 32)"
 ```
 
 ### AWS (K8s on EC2 with NLB)
@@ -130,7 +132,9 @@ helm install tentacular charts/tentacular-platform/ \
   --set keycloakx.database.hostname="tentacular-postgresql.tentacular-exoskeleton.svc.cluster.local" \
   --set keycloakx.proxy.mode=xforwarded \
   --set-json 'keycloakx.command=["/opt/keycloak/bin/kc.sh","start","--hostname-strict=false","--import-realm"]' \
-  --set exoskeletonAuth.clientSecret="$(openssl rand -hex 32)"
+  --set exoskeletonAuth.clientSecret="$(openssl rand -hex 32)" \
+  --set rustfs.secret.accessKey="$(openssl rand -hex 16)" \
+  --set rustfs.secret.secretKey="$(openssl rand -hex 32)"
 ```
 
 **Step 5: Verify:**
@@ -250,6 +254,9 @@ ingress:
 | `keycloak.admin.user` | string | `"admin"` | Keycloak admin username |
 | `keycloak.admin.password` | string | `""` | Keycloak admin password (required when enabled) |
 | `keycloak.hostname` | string | `""` | Keycloak hostname (e.g., tentacular-keycloak.example.com) |
+| `rustfs.enabled` | bool | `false` | Enable RustFS deployment |
+| `rustfs.secret.accessKey` | string | `""` | RustFS admin access key (required when enabled) |
+| `rustfs.secret.secretKey` | string | `""` | RustFS admin secret key (required when enabled) |
 | `esm-sh.enabled` | bool | `true` | Enable esm-sh proxy |
 | `ingress.mode` | string | `"none"` | Ingress mode (none/nodeport/ingress/istio) |
 | `ingress.mcp.hostname` | string | `""` | MCP endpoint hostname |
@@ -271,7 +278,7 @@ Every component can be independently enabled or disabled:
 | MCP Server | `tentacular-mcp.enabled` | `true` | Tentacular MCP server |
 | esm-sh | `esm-sh.enabled` | `true` | ES module proxy |
 | Network Policies | `networkPolicies.enabled` | `true` | Default-deny with allow rules |
-| RustFS | `rustfs.enabled` | `false` | Future: S3-compatible storage |
+| RustFS | `rustfs.enabled` | `false` | S3-compatible object storage (per-tentacle prefix scoping) |
 | SPIRE | `spire.enabled` | `false` | Future: Workload identity |
 
 ## Storage
