@@ -31,6 +31,10 @@ data:
       "registrationAllowed": false,
       "resetPasswordAllowed": true,
       "sslRequired": "external",
+      "accessTokenLifespan": 43200,
+      "ssoSessionIdleTimeout": 43200,
+      "ssoSessionMaxLifespan": 86400,
+      "offlineSessionIdleTimeout": 2592000,
       "clients": [
         {
           "clientId": {{ $clientID | quote }},
