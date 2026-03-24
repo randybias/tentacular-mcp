@@ -23,6 +23,10 @@ spec:
       {{- include "rustfs.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       labels:
         {{- include "rustfs.selectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
@@ -40,9 +44,12 @@ spec:
       {{- end }}
       {{- if .Values.affinity }}
       affinity:
-        {{- if .Values.affinity.nodeAffinity }}
         nodeAffinity:
-        {{- toYaml .Values.affinity.nodeAffinity | nindent 10 }}
+        {{- if .Values.affinity.nodeAffinity }}
+          {{- toYaml .Values.affinity.nodeAffinity | nindent 10 }}
+        {{- else }}
+          {}
+        {{- end }}
         {{- if .Values.affinity.podAntiAffinity.enabled }}
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -53,7 +60,6 @@ spec:
                     values:
                       - {{ include "rustfs.name" . }}
               topologyKey: {{ .Values.affinity.podAntiAffinity.topologyKey }}
-        {{- end }}
         {{- end }}
       {{- end }}
       {{- if .Values.tolerations }}

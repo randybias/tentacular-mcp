@@ -5,6 +5,9 @@ Validate that standalone and distributed modes are not both enabled.
 {{- if and .Values.mode.standalone.enabled .Values.mode.distributed.enabled }}
   {{- fail "Configuration error: mode.standalone.enabled and mode.distributed.enabled cannot both be true. Enable only one mode." }}
 {{- end }}
+{{- if and (not .Values.mode.standalone.enabled) (not .Values.mode.distributed.enabled) }}
+  {{- fail "Configuration error: at least one of mode.standalone.enabled or mode.distributed.enabled must be true." }}
+{{- end }}
 {{- end }}
 
 {{/*
