@@ -408,6 +408,62 @@ func (c *Controller) AuthIssuer() string {
 	return c.cfg.Auth.IssuerURL
 }
 
+// ServiceInfo returns an ExoskeletonInfo describing the exoskeleton subsystem
+// and its backing services. Returns nil if the exoskeleton is disabled.
+func (c *Controller) ServiceInfo() *k8s.ExoskeletonInfo {
+	if !c.cfg.Enabled {
+		return nil
+	}
+
+	var services []k8s.ExoskeletonServiceInfo
+
+	// Postgres
+	services = append(services, k8s.ExoskeletonServiceInfo{
+		Name:      "postgres",
+		Host:      c.cfg.Postgres.Host,
+		Port:      c.cfg.Postgres.Port,
+		Protocol:  "tcp",
+		Available: c.PostgresAvailable(),
+	})
+
+	// NATS — parse host and port from the URL
+	natsHost, natsPort := parseHostPort(c.cfg.NATS.URL)
+	services = append(services, k8s.ExoskeletonServiceInfo{
+		Name:          "nats",
+		Host:          natsHost,
+		Port:          natsPort,
+		Protocol:      "nats",
+		Available:     c.NATSAvailable(),
+		SPIFFEEnabled: c.cfg.NATS.SPIFFEEnabled,
+	})
+
+	// RustFS — parse host and port from the endpoint URL
+	rustfsHost, rustfsPort := parseHostPort(c.cfg.RustFS.Endpoint)
+	services = append(services, k8s.ExoskeletonServiceInfo{
+		Name:      "rustfs",
+		Host:      rustfsHost,
+		Port:      rustfsPort,
+		Protocol:  "http",
+		Available: c.RustFSAvailable(),
+	})
+
+	// SPIRE
+	services = append(services, k8s.ExoskeletonServiceInfo{
+		Name:      "spire",
+		Protocol:  "spiffe",
+		Available: c.SPIREAvailable(),
+	})
+
+	return &k8s.ExoskeletonInfo{
+		Enabled:  true,
+		Services: services,
+		Auth: k8s.ExoskeletonAuthInfo{
+			Enabled: c.AuthEnabled(),
+			Issuer:  c.AuthIssuer(),
+		},
+	}
+}
+
 // contractDeps is a minimal YAML structure to extract tentacular-*
 // dependencies from a workflow ConfigMap.
 type contractDeps struct {
