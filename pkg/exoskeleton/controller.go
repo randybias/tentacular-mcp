@@ -229,6 +229,9 @@ func (c *Controller) ProcessManifests(ctx context.Context, namespace, name strin
 		// Step 7.11: Patch Deployment --allow-net flags.
 		patchDeploymentAllowNet(manifests, creds)
 
+		// Patch NetworkPolicy egress rules for exoskeleton services.
+		patchNetworkPolicyExoEgress(manifests, creds)
+
 		// Merge exo credentials into the user-provided secret so the
 		// engine can resolve them via ctx.dependency().
 		manifests, err = mergeExoCredsIntoUserSecret(manifests, namespace, name, creds)
