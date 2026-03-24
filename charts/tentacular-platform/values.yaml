@@ -382,10 +382,47 @@ keycloakx:
 
 # -- Future components (disabled placeholders)
 
-# -- RustFS object storage (S3-compatible)
+# -- RustFS S3-compatible object storage (local fork with namespaceOverride)
+# Provides per-tentacle prefix-scoped S3 storage.
+# Admin credentials are used by the MCP server to create per-tentacle IAM users.
 rustfs:
-  # -- Enable RustFS deployment (not yet implemented)
+  # -- Enable RustFS deployment
   enabled: false
+  # -- Deploy RustFS into the exoskeleton namespace
+  namespaceOverride: tentacular-exoskeleton
+  # -- Standalone mode (single pod, single PVC)
+  mode:
+    standalone:
+      enabled: true
+    distributed:
+      enabled: false
+  # -- Admin credentials (must be provided via --set)
+  secret:
+    accessKey: ""
+    secretKey: ""
+  # -- Persistence
+  persistence:
+    dataVolume:
+      size: 5Gi
+      storageClass: ""
+  # -- Service ports
+  service:
+    endpoint:
+      port: 9000
+    console:
+      port: 9001
+    type: ClusterIP
+  # -- Ingress disabled (internal access only)
+  ingress:
+    enabled: false
+  # -- Resource requests and limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
 
 # -- SPIRE workload identity
 spire:
