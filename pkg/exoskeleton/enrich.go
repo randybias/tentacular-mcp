@@ -3,6 +3,7 @@ package exoskeleton
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"sort"
 	"strconv"
@@ -12,6 +13,10 @@ import (
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
+
+// resolveHost resolves a hostname to IP addresses. Package-level variable
+// so tests can swap in a stub without requiring real DNS.
+var resolveHost = net.LookupHost
 
 // enrichContractDeps updates the workflow.yaml inside the ConfigMap manifest
 // with resolved host/port/database/user/subject/container/auth fields from
@@ -181,67 +186,82 @@ func patchDeploymentAllowNet(manifests []map[string]any, creds map[string]any) {
 	}
 }
 
-// patchNetworkPolicyExoEgress finds the first NetworkPolicy manifest and
-// appends egress rules for each registered exoskeleton service so that
-// workflow pods can reach their provisioned backing services.
-func patchNetworkPolicyExoEgress(manifests []map[string]any, creds map[string]any) {
+// patchNetworkPolicyExoEgress finds the workflow's NetworkPolicy manifest
+// (matched by the <workflowName>-netpol naming convention) and appends
+// egress rules for each registered exoskeleton service so that workflow
+// pods can reach their provisioned backing services.
+func patchNetworkPolicyExoEgress(manifests []map[string]any, creds map[string]any, workflowName string) {
 	if len(creds) == 0 {
 		return
 	}
 
+	// Find the workflow's NetworkPolicy by exact name convention.
+	// We do NOT fall back to the first NetworkPolicy because that risks
+	// broadening egress on a non-workflow policy when multiple policies exist.
+	var target map[string]any
+	expectedName := workflowName + "-netpol"
 	for _, m := range manifests {
 		obj := &unstructured.Unstructured{Object: m}
 		if obj.GetKind() != "NetworkPolicy" {
 			continue
 		}
-
-		// Read existing egress rules, initialising to empty if absent.
-		egress, _, _ := unstructured.NestedSlice(obj.Object, "spec", "egress")
-		if egress == nil {
-			egress = []any{}
+		if obj.GetName() == expectedName {
+			target = m
+			break
 		}
+	}
+	if target == nil {
+		slog.Warn("exoskeleton: NetworkPolicy not found, skipping egress patch",
+			"expected", expectedName)
+		return
+	}
 
-		// Collect host/port pairs from credentials, sorted for determinism.
-		type svcEndpoint struct {
-			name string
-			host string
-			port string
-		}
-		var endpoints []svcEndpoint
-		for depName, c := range creds {
-			switch v := c.(type) {
-			case *PostgresCreds:
-				endpoints = append(endpoints, svcEndpoint{name: depName, host: v.Host, port: v.Port})
-			case *NATSCreds:
-				h, p := parseHostPort(v.URL)
-				if h != "" && p != "" {
-					endpoints = append(endpoints, svcEndpoint{name: depName, host: h, port: p})
-				}
-			case *RustFSCreds:
-				h, p := parseHostPort(v.Endpoint)
-				if h != "" && p != "" {
-					endpoints = append(endpoints, svcEndpoint{name: depName, host: h, port: p})
-				}
+	obj := &unstructured.Unstructured{Object: target}
+
+	// Read existing egress rules, initialising to empty if absent.
+	egress, _, _ := unstructured.NestedSlice(obj.Object, "spec", "egress")
+	if egress == nil {
+		egress = []any{}
+	}
+
+	// Collect host/port pairs from credentials, sorted for determinism.
+	type svcEndpoint struct {
+		name string
+		host string
+		port string
+	}
+	var endpoints []svcEndpoint
+	for depName, c := range creds {
+		switch v := c.(type) {
+		case *PostgresCreds:
+			endpoints = append(endpoints, svcEndpoint{name: depName, host: v.Host, port: v.Port})
+		case *NATSCreds:
+			h, p := parseHostPort(v.URL)
+			if h != "" && p != "" {
+				endpoints = append(endpoints, svcEndpoint{name: depName, host: h, port: p})
+			}
+		case *RustFSCreds:
+			h, p := parseHostPort(v.Endpoint)
+			if h != "" && p != "" {
+				endpoints = append(endpoints, svcEndpoint{name: depName, host: h, port: p})
 			}
 		}
-		sort.Slice(endpoints, func(i, j int) bool { return endpoints[i].name < endpoints[j].name })
+	}
+	sort.Slice(endpoints, func(i, j int) bool { return endpoints[i].name < endpoints[j].name })
 
-		for _, ep := range endpoints {
-			// Extract namespace from FQDN: svc.namespace.svc.cluster.local
+	for _, ep := range endpoints {
+		portInt, err := strconv.ParseInt(ep.port, 10, 64)
+		if err != nil {
+			slog.Warn("exoskeleton: invalid port for egress rule", "port", ep.port, "error", err)
+			continue
+		}
+
+		var rule map[string]any
+		if isInClusterHost(ep.host) {
+			// In-cluster service: use namespaceSelector targeting the service's namespace.
 			parts := strings.Split(ep.host, ".")
-			if len(parts) < 2 {
-				slog.Warn("exoskeleton: cannot extract namespace from host", "host", ep.host)
-				continue
-			}
 			targetNS := parts[1]
-
-			portInt, err := strconv.ParseInt(ep.port, 10, 64)
-			if err != nil {
-				slog.Warn("exoskeleton: invalid port for egress rule", "port", ep.port, "error", err)
-				continue
-			}
-
-			rule := map[string]any{
+			rule = map[string]any{
 				"to": []any{
 					map[string]any{
 						"namespaceSelector": map[string]any{
@@ -258,14 +278,46 @@ func patchNetworkPolicyExoEgress(manifests []map[string]any, creds map[string]an
 					},
 				},
 			}
-			egress = append(egress, rule)
 			slog.Info("exoskeleton: patched NetworkPolicy egress for "+ep.name,
 				"namespace", targetNS, "port", portInt)
+		} else {
+			// External host: resolve to specific /32 CIDRs.
+			// Fail closed — if resolution fails, skip the rule so we don't
+			// widen default-deny egress to 0.0.0.0/0.
+			ips, err := resolveHost(ep.host)
+			if err != nil || len(ips) == 0 {
+				slog.Warn("exoskeleton: could not resolve external host, skipping egress rule (fail closed)",
+					"host", ep.host, "port", portInt, "error", err)
+				continue
+			}
+			var peers []any
+			for _, ip := range ips {
+				cidr := ip + "/32"
+				if strings.Contains(ip, ":") {
+					cidr = ip + "/128"
+				}
+				peers = append(peers, map[string]any{
+					"ipBlock": map[string]any{
+						"cidr": cidr,
+					},
+				})
+			}
+			rule = map[string]any{
+				"to": peers,
+				"ports": []any{
+					map[string]any{
+						"protocol": "TCP",
+						"port":     portInt,
+					},
+				},
+			}
+			slog.Info("exoskeleton: patched NetworkPolicy egress for "+ep.name+" (external, resolved)",
+				"host", ep.host, "ips", ips, "port", portInt)
 		}
-
-		_ = unstructured.SetNestedSlice(obj.Object, egress, "spec", "egress")
-		return // Patch only the first NetworkPolicy.
+		egress = append(egress, rule)
 	}
+
+	_ = unstructured.SetNestedSlice(obj.Object, egress, "spec", "egress")
 }
 
 // patchAllowNetInSlice finds a --allow-net=... entry in the named string
@@ -346,9 +398,24 @@ func collectExoHosts(creds map[string]any) []string {
 	return hosts
 }
 
+// isInClusterHost returns true if the host looks like an in-cluster
+// Kubernetes service DNS name. Recognised forms:
+//   - <svc>.<ns>.svc.cluster.local  (FQDN, 4+ labels with parts[2]=="svc")
+//   - <svc>.<ns>.svc                (3 labels, parts[2]=="svc")
+//
+// Two-label hostnames (e.g. "pg.local", "broker.corp") are NOT treated as
+// in-cluster because exoskeleton credentials may point to external services.
+// The platform chart always generates in-cluster FQDNs with ".svc.cluster.local",
+// so legitimate in-cluster services will contain the ".svc" label.
+func isInClusterHost(host string) bool {
+	parts := strings.Split(host, ".")
+	return len(parts) >= 3 && parts[2] == "svc"
+}
+
 // parseHostPort extracts host and port from a URL string.
 // For "nats://host:4222" returns ("host", "4222").
 // For "http://host:9000" returns ("host", "9000").
+// For "https://host" returns ("host", "443") — infers scheme default.
 // For "host:5432" returns ("host", "5432").
 func parseHostPort(rawURL string) (host, port string) {
 	// Try parsing as a full URL first.
@@ -356,6 +423,9 @@ func parseHostPort(rawURL string) (host, port string) {
 	if err == nil && u.Host != "" {
 		host = u.Hostname()
 		port = u.Port()
+		if port == "" {
+			port = defaultPortForScheme(u.Scheme)
+		}
 		return host, port
 	}
 	// Fallback: treat as host:port.
@@ -363,6 +433,24 @@ func parseHostPort(rawURL string) (host, port string) {
 		return rawURL[:idx], rawURL[idx+1:]
 	}
 	return rawURL, ""
+}
+
+// defaultPortForScheme returns the well-known default port for common URL schemes.
+func defaultPortForScheme(scheme string) string {
+	switch scheme {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	case "nats":
+		return "4222"
+	case "nats+tls", "tls":
+		return "4222"
+	case "postgresql", "postgres":
+		return "5432"
+	default:
+		return ""
+	}
 }
 
 // patchDeploymentSpireVolume finds the Deployment manifest and adds the

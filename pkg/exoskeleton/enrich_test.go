@@ -1,6 +1,7 @@
 package exoskeleton
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -498,6 +499,10 @@ func TestParseHostPort(t *testing.T) {
 		{"http://rustfs.exo.svc:9000", "rustfs.exo.svc", "9000"},
 		{"https://secure.host:443", "secure.host", "443"},
 		{"pg.exo.svc:5432", "pg.exo.svc", "5432"},
+		// Scheme-default port inference:
+		{"https://s3.example.com", "s3.example.com", "443"},
+		{"http://minio.local", "minio.local", "80"},
+		{"nats://nats.example.com", "nats.example.com", "4222"},
 	}
 
 	for _, tt := range tests {
@@ -613,7 +618,7 @@ func TestPatchNetworkPolicyEgress_Postgres(t *testing.T) {
 		},
 	}
 
-	patchNetworkPolicyExoEgress(manifests, creds)
+	patchNetworkPolicyExoEgress(manifests, creds, "test-workflow")
 
 	egress, found, _ := unstructured.NestedSlice(np, "spec", "egress")
 	if !found {
@@ -660,7 +665,7 @@ func TestPatchNetworkPolicyEgress_AllServices(t *testing.T) {
 		},
 	}
 
-	patchNetworkPolicyExoEgress(manifests, creds)
+	patchNetworkPolicyExoEgress(manifests, creds, "test-workflow")
 
 	egress, found, _ := unstructured.NestedSlice(np, "spec", "egress")
 	if !found {
@@ -710,7 +715,7 @@ func TestPatchNetworkPolicyEgress_NoNetworkPolicy(t *testing.T) {
 	}
 
 	// Should not panic when no NetworkPolicy is present.
-	patchNetworkPolicyExoEgress(manifests, creds)
+	patchNetworkPolicyExoEgress(manifests, creds, "test-workflow")
 }
 
 func TestPatchNetworkPolicyEgress_EmptyCreds(t *testing.T) {
@@ -724,7 +729,7 @@ func TestPatchNetworkPolicyEgress_EmptyCreds(t *testing.T) {
 		"tentacular-unknown": "not-a-known-creds-struct",
 	}
 
-	patchNetworkPolicyExoEgress(manifests, creds)
+	patchNetworkPolicyExoEgress(manifests, creds, "test-workflow")
 
 	egress, found, _ := unstructured.NestedSlice(np, "spec", "egress")
 	if !found {
@@ -761,7 +766,7 @@ func TestPatchNetworkPolicyEgress_NoExistingEgress(t *testing.T) {
 		},
 	}
 
-	patchNetworkPolicyExoEgress(manifests, creds)
+	patchNetworkPolicyExoEgress(manifests, creds, "test-workflow")
 
 	egress, found, _ := unstructured.NestedSlice(np, "spec", "egress")
 	if !found {
@@ -789,7 +794,7 @@ func TestPatchNetworkPolicyEgress_PreservesExistingRules(t *testing.T) {
 		},
 	}
 
-	patchNetworkPolicyExoEgress(manifests, creds)
+	patchNetworkPolicyExoEgress(manifests, creds, "test-workflow")
 
 	egress, found, _ := unstructured.NestedSlice(np, "spec", "egress")
 	if !found {
@@ -816,6 +821,232 @@ func TestPatchNetworkPolicyEgress_PreservesExistingRules(t *testing.T) {
 	natsPort := natsPorts[0].(map[string]any)
 	if natsPort["port"] != int64(4222) {
 		t.Errorf("expected NATS port 4222, got %v", natsPort["port"])
+	}
+}
+
+func TestPatchNetworkPolicyEgress_ExternalHostResolved(t *testing.T) {
+	// DNS resolution succeeds — expect specific /32 CIDRs, not 0.0.0.0/0.
+	origResolver := resolveHost
+	resolveHost = func(host string) ([]string, error) {
+		return []string{"203.0.113.10"}, nil
+	}
+	defer func() { resolveHost = origResolver }()
+
+	np := makeNetworkPolicyManifest()
+	manifests := []map[string]any{np}
+
+	creds := map[string]any{
+		"tentacular-nats": &NATSCreds{
+			URL: "nats://broker.example.com:4222",
+		},
+	}
+
+	patchNetworkPolicyExoEgress(manifests, creds, "test-workflow")
+
+	egress, found, _ := unstructured.NestedSlice(np, "spec", "egress")
+	if !found {
+		t.Fatal("expected spec.egress to exist")
+	}
+	if len(egress) != 2 {
+		t.Fatalf("expected 2 egress rules, got %d", len(egress))
+	}
+
+	rule := egress[1].(map[string]any)
+	to := rule["to"].([]any)
+	peer := to[0].(map[string]any)
+	if _, hasNS := peer["namespaceSelector"]; hasNS {
+		t.Error("external host should NOT use namespaceSelector")
+	}
+	ipBlock, ok := peer["ipBlock"].(map[string]any)
+	if !ok {
+		t.Fatal("expected ipBlock for resolved external host")
+	}
+	if ipBlock["cidr"] != "203.0.113.10/32" {
+		t.Errorf("expected cidr 203.0.113.10/32, got %v", ipBlock["cidr"])
+	}
+
+	ports := rule["ports"].([]any)
+	portEntry := ports[0].(map[string]any)
+	if portEntry["port"] != int64(4222) {
+		t.Errorf("expected port 4222, got %v", portEntry["port"])
+	}
+}
+
+func TestPatchNetworkPolicyEgress_ExternalHostDNSFailure(t *testing.T) {
+	// DNS resolution fails — endpoint is skipped (fail closed), no 0.0.0.0/0.
+	origResolver := resolveHost
+	resolveHost = func(host string) ([]string, error) {
+		return nil, fmt.Errorf("no such host")
+	}
+	defer func() { resolveHost = origResolver }()
+
+	np := makeNetworkPolicyManifest()
+	manifests := []map[string]any{np}
+
+	creds := map[string]any{
+		"tentacular-nats": &NATSCreds{
+			URL: "nats://broker.example.com:4222",
+		},
+	}
+
+	patchNetworkPolicyExoEgress(manifests, creds, "test-workflow")
+
+	egress, found, _ := unstructured.NestedSlice(np, "spec", "egress")
+	if !found {
+		t.Fatal("expected spec.egress to exist")
+	}
+	// Only the original DNS rule should remain — failed resolution skips the rule.
+	if len(egress) != 1 {
+		t.Fatalf("expected 1 egress rule (DNS only, external skipped), got %d", len(egress))
+	}
+}
+
+func TestPatchNetworkPolicyEgress_MatchesByName(t *testing.T) {
+	// Two NetworkPolicies: a custom one first, then the workflow's.
+	customNP := map[string]any{
+		"apiVersion": "networking.k8s.io/v1",
+		"kind":       "NetworkPolicy",
+		"metadata": map[string]any{
+			"name":      "custom-policy",
+			"namespace": "tent-dev",
+		},
+		"spec": map[string]any{
+			"podSelector": map[string]any{},
+			"policyTypes": []any{"Egress"},
+			"egress":      []any{},
+		},
+	}
+	workflowNP := makeNetworkPolicyManifest() // name: test-workflow-netpol
+	manifests := []map[string]any{customNP, workflowNP}
+
+	creds := map[string]any{
+		"tentacular-postgres": &PostgresCreds{
+			Host: "pg.tentacular-exoskeleton.svc.cluster.local",
+			Port: "5432",
+		},
+	}
+
+	patchNetworkPolicyExoEgress(manifests, creds, "test-workflow")
+
+	// Custom policy should be untouched.
+	customEgress, _, _ := unstructured.NestedSlice(customNP, "spec", "egress")
+	if len(customEgress) != 0 {
+		t.Errorf("custom policy should be untouched, got %d rules", len(customEgress))
+	}
+
+	// Workflow policy should have the new rule.
+	wfEgress, found, _ := unstructured.NestedSlice(workflowNP, "spec", "egress")
+	if !found {
+		t.Fatal("expected spec.egress on workflow policy")
+	}
+	if len(wfEgress) != 2 {
+		t.Fatalf("expected 2 egress rules on workflow policy, got %d", len(wfEgress))
+	}
+}
+
+func TestPatchNetworkPolicyEgress_TwoLabelHostIsExternal(t *testing.T) {
+	// Two-label hosts like "pg.local" or "postgres-postgresql.tentacular-exoskeleton"
+	// are NOT treated as in-cluster because exoskeleton credentials may reference
+	// external services. Only hosts with ".svc" (e.g. "<svc>.<ns>.svc.cluster.local")
+	// are recognized as in-cluster. Two-label hosts go through DNS resolution.
+	origResolver := resolveHost
+	resolveHost = func(host string) ([]string, error) {
+		return []string{"10.96.0.42"}, nil
+	}
+	defer func() { resolveHost = origResolver }()
+
+	np := makeNetworkPolicyManifest()
+	manifests := []map[string]any{np}
+
+	creds := map[string]any{
+		"tentacular-postgres": &PostgresCreds{
+			Host: "postgres-postgresql.tentacular-exoskeleton",
+			Port: "5432",
+		},
+	}
+
+	patchNetworkPolicyExoEgress(manifests, creds, "test-workflow")
+
+	egress, found, _ := unstructured.NestedSlice(np, "spec", "egress")
+	if !found {
+		t.Fatal("expected spec.egress to exist")
+	}
+	if len(egress) != 2 {
+		t.Fatalf("expected 2 egress rules, got %d", len(egress))
+	}
+
+	rule := egress[1].(map[string]any)
+	to := rule["to"].([]any)
+	peer := to[0].(map[string]any)
+
+	// Must use ipBlock (external path), not namespaceSelector.
+	if _, hasNS := peer["namespaceSelector"]; hasNS {
+		t.Error("2-label host should NOT use namespaceSelector — could be external")
+	}
+	ipBlock, ok := peer["ipBlock"].(map[string]any)
+	if !ok {
+		t.Fatal("expected ipBlock for 2-label host (treated as external)")
+	}
+	if ipBlock["cidr"] != "10.96.0.42/32" {
+		t.Errorf("expected cidr 10.96.0.42/32, got %v", ipBlock["cidr"])
+	}
+}
+
+func TestPatchNetworkPolicyEgress_NoFallbackToFirstPolicy(t *testing.T) {
+	// When no NetworkPolicy matches <workflow>-netpol, the function should
+	// NOT fall back to patching the first NetworkPolicy it finds.
+	np := map[string]any{
+		"apiVersion": "networking.k8s.io/v1",
+		"kind":       "NetworkPolicy",
+		"metadata": map[string]any{
+			"name":      "some-other-policy",
+			"namespace": "tent-dev",
+		},
+		"spec": map[string]any{
+			"podSelector": map[string]any{},
+			"policyTypes": []any{"Egress"},
+			"egress":      []any{},
+		},
+	}
+	manifests := []map[string]any{np}
+
+	creds := map[string]any{
+		"tentacular-postgres": &PostgresCreds{
+			Host: "pg.tentacular-exoskeleton.svc.cluster.local",
+			Port: "5432",
+		},
+	}
+
+	patchNetworkPolicyExoEgress(manifests, creds, "test-workflow")
+
+	// The non-matching policy should remain untouched.
+	egress, _, _ := unstructured.NestedSlice(np, "spec", "egress")
+	if len(egress) != 0 {
+		t.Errorf("non-matching policy should be untouched, got %d rules", len(egress))
+	}
+}
+
+func TestIsInClusterHost(t *testing.T) {
+	tests := []struct {
+		host string
+		want bool
+	}{
+		{"pg.tentacular-exoskeleton.svc.cluster.local", true},
+		{"nats.ns.svc.cluster.local", true},
+		{"svc.ns.svc", true},
+		{"pg.tentacular-exoskeleton", false}, // 2-label: no .svc suffix, could be external
+		{"rustfs.exo-ns", false},             // 2-label: no .svc suffix, could be external
+		{"broker.corp", false},               // 2-label: external hostname
+		{"minio.local", false},               // 2-label: external hostname
+		{"broker.example.com", false},        // 3-label without .svc: external FQDN
+		{"single", false},                    // 1-label: not a valid service.namespace form
+	}
+	for _, tt := range tests {
+		t.Run(tt.host, func(t *testing.T) {
+			if got := isInClusterHost(tt.host); got != tt.want {
+				t.Errorf("isInClusterHost(%q) = %v, want %v", tt.host, got, tt.want)
+			}
+		})
 	}
 }
 

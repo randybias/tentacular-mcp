@@ -230,7 +230,7 @@ func (c *Controller) ProcessManifests(ctx context.Context, namespace, name strin
 		patchDeploymentAllowNet(manifests, creds)
 
 		// Patch NetworkPolicy egress rules for exoskeleton services.
-		patchNetworkPolicyExoEgress(manifests, creds)
+		patchNetworkPolicyExoEgress(manifests, creds, name)
 
 		// Merge exo credentials into the user-provided secret so the
 		// engine can resolve them via ctx.dependency().
