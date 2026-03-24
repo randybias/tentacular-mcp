@@ -164,29 +164,21 @@ func registerExoskeletonTools(srv *mcp.Server, client *k8s.Client, ctrl *exoskel
 }
 
 // buildServiceInfoList returns a slice of ExoStatusServiceInfo for each
-// backing service, using the controller's status accessors.
+// backing service, derived from the controller's ServiceInfo to avoid
+// duplicating the service inventory.
 func buildServiceInfoList(ctrl *exoskeleton.Controller) []ExoStatusServiceInfo {
-	if !ctrl.Enabled() {
+	info := ctrl.ServiceInfo()
+	if info == nil {
 		return []ExoStatusServiceInfo{}
 	}
-	return []ExoStatusServiceInfo{
-		{
-			Name:    "postgres",
-			Enabled: ctrl.PostgresAvailable(),
-		},
-		{
-			Name:    "nats",
-			Enabled: ctrl.NATSAvailable(),
-		},
-		{
-			Name:    "rustfs",
-			Enabled: ctrl.RustFSAvailable(),
-		},
-		{
-			Name:    "spire",
-			Enabled: ctrl.SPIREAvailable(),
-		},
+	result := make([]ExoStatusServiceInfo, len(info.Services))
+	for i, svc := range info.Services {
+		result[i] = ExoStatusServiceInfo{
+			Name:    svc.Name,
+			Enabled: svc.Available,
+		}
 	}
+	return result
 }
 
 // handleExoList scans for Secrets labeled with the exoskeleton label

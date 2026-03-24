@@ -642,7 +642,7 @@ func TestServiceInfoAllServicesAvailable(t *testing.T) {
 	if pgSvc.Port != "5432" {
 		t.Errorf("postgres port = %q", pgSvc.Port)
 	}
-	if pgSvc.Protocol != "tcp" {
+	if pgSvc.Protocol != "postgresql" {
 		t.Errorf("postgres protocol = %q", pgSvc.Protocol)
 	}
 	if !pgSvc.Available {

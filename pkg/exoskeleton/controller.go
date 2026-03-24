@@ -422,7 +422,7 @@ func (c *Controller) ServiceInfo() *k8s.ExoskeletonInfo {
 		Name:      "postgres",
 		Host:      c.cfg.Postgres.Host,
 		Port:      c.cfg.Postgres.Port,
-		Protocol:  "tcp",
+		Protocol:  "postgresql",
 		Available: c.PostgresAvailable(),
 	})
 
@@ -443,7 +443,7 @@ func (c *Controller) ServiceInfo() *k8s.ExoskeletonInfo {
 		Name:      "rustfs",
 		Host:      rustfsHost,
 		Port:      rustfsPort,
-		Protocol:  "http",
+		Protocol:  "s3",
 		Available: c.RustFSAvailable(),
 	})
 

@@ -760,7 +760,7 @@ func TestExoskeletonInfo_PresentWhenSet(t *testing.T) {
 					Name:      "postgres",
 					Host:      "pg.example.com",
 					Port:      "5432",
-					Protocol:  "tcp",
+					Protocol:  "postgresql",
 					Available: true,
 				},
 				{
@@ -841,7 +841,7 @@ func TestExoskeletonInfo_SPIFFEEnabledOmittedWhenFalse(t *testing.T) {
 		Name:      "postgres",
 		Host:      "pg.example.com",
 		Port:      "5432",
-		Protocol:  "tcp",
+		Protocol:  "postgresql",
 		Available: true,
 	}
 
