@@ -317,7 +317,9 @@ func patchNetworkPolicyExoEgress(manifests []map[string]any, creds map[string]an
 		egress = append(egress, rule)
 	}
 
-	_ = unstructured.SetNestedSlice(obj.Object, egress, "spec", "egress")
+	if err := unstructured.SetNestedSlice(obj.Object, egress, "spec", "egress"); err != nil {
+		slog.Warn("exoskeleton: failed to set egress on NetworkPolicy", "error", err)
+	}
 }
 
 // patchAllowNetInSlice finds a --allow-net=... entry in the named string
