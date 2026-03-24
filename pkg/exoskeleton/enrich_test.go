@@ -646,16 +646,17 @@ func TestPatchNetworkPolicyEgress_AllServices(t *testing.T) {
 	np := makeNetworkPolicyManifest()
 	manifests := []map[string]any{np}
 
+	// Use distinct namespaces to verify namespace extraction per credential type.
 	creds := map[string]any{
 		"tentacular-postgres": &PostgresCreds{
-			Host: "pg.tentacular-exoskeleton.svc.cluster.local",
+			Host: "pg.ns-postgres.svc.cluster.local",
 			Port: "5432",
 		},
 		"tentacular-nats": &NATSCreds{
-			URL: "nats://nats.tentacular-exoskeleton.svc.cluster.local:4222",
+			URL: "nats://nats.ns-nats.svc.cluster.local:4222",
 		},
 		"tentacular-rustfs": &RustFSCreds{
-			Endpoint: "http://rustfs-svc.tentacular-exoskeleton.svc.cluster.local:9000",
+			Endpoint: "http://rustfs-svc.ns-rustfs.svc.cluster.local:9000",
 		},
 	}
 
@@ -671,13 +672,27 @@ func TestPatchNetworkPolicyEgress_AllServices(t *testing.T) {
 	}
 
 	// Rules are sorted by dep name: nats, postgres, rustfs
-	wantPorts := []int64{4222, 5432, 9000}
-	for i, wantPort := range wantPorts {
+	type want struct {
+		port int64
+		ns   string
+	}
+	wantRules := []want{
+		{port: 4222, ns: "ns-nats"},
+		{port: 5432, ns: "ns-postgres"},
+		{port: 9000, ns: "ns-rustfs"},
+	}
+	for i, w := range wantRules {
 		rule := egress[i+1].(map[string]any)
 		ports := rule["ports"].([]any)
 		portEntry := ports[0].(map[string]any)
-		if portEntry["port"] != wantPort {
-			t.Errorf("rule %d: expected port %d, got %v", i+1, wantPort, portEntry["port"])
+		if portEntry["port"] != w.port {
+			t.Errorf("rule %d: expected port %d, got %v", i+1, w.port, portEntry["port"])
+		}
+		to := rule["to"].([]any)
+		nsSelector := to[0].(map[string]any)["namespaceSelector"].(map[string]any)
+		matchLabels := nsSelector["matchLabels"].(map[string]any)
+		if matchLabels["kubernetes.io/metadata.name"] != w.ns {
+			t.Errorf("rule %d: expected namespace %s, got %v", i+1, w.ns, matchLabels["kubernetes.io/metadata.name"])
 		}
 	}
 }
@@ -702,7 +717,12 @@ func TestPatchNetworkPolicyEgress_EmptyCreds(t *testing.T) {
 	np := makeNetworkPolicyManifest()
 	manifests := []map[string]any{np}
 
-	creds := map[string]any{}
+	// Use an unrecognized credential type so the loop body executes but
+	// the type-switch produces no endpoints. This exercises the full code
+	// path (not just the len(creds)==0 early return).
+	creds := map[string]any{
+		"tentacular-unknown": "not-a-known-creds-struct",
+	}
 
 	patchNetworkPolicyExoEgress(manifests, creds)
 
@@ -710,9 +730,52 @@ func TestPatchNetworkPolicyEgress_EmptyCreds(t *testing.T) {
 	if !found {
 		t.Fatal("expected spec.egress to exist")
 	}
-	// Only the original DNS rule should remain.
+	// Only the original DNS rule should remain — no rules added for unknown type.
 	if len(egress) != 1 {
 		t.Fatalf("expected 1 egress rule (unchanged), got %d", len(egress))
+	}
+}
+
+func TestPatchNetworkPolicyEgress_NoExistingEgress(t *testing.T) {
+	// NetworkPolicy with no spec.egress key — tests the nil initialization branch.
+	np := map[string]any{
+		"apiVersion": "networking.k8s.io/v1",
+		"kind":       "NetworkPolicy",
+		"metadata": map[string]any{
+			"name":      "test-workflow-netpol",
+			"namespace": "tent-dev",
+		},
+		"spec": map[string]any{
+			"podSelector": map[string]any{
+				"matchLabels": map[string]any{"app": "test-workflow"},
+			},
+			"policyTypes": []any{"Ingress", "Egress"},
+		},
+	}
+	manifests := []map[string]any{np}
+
+	creds := map[string]any{
+		"tentacular-postgres": &PostgresCreds{
+			Host: "pg.tentacular-exoskeleton.svc.cluster.local",
+			Port: "5432",
+		},
+	}
+
+	patchNetworkPolicyExoEgress(manifests, creds)
+
+	egress, found, _ := unstructured.NestedSlice(np, "spec", "egress")
+	if !found {
+		t.Fatal("expected spec.egress to be created")
+	}
+	if len(egress) != 1 {
+		t.Fatalf("expected 1 egress rule, got %d", len(egress))
+	}
+
+	rule := egress[0].(map[string]any)
+	ports := rule["ports"].([]any)
+	portEntry := ports[0].(map[string]any)
+	if portEntry["port"] != int64(5432) {
+		t.Errorf("expected port 5432, got %v", portEntry["port"])
 	}
 }
 

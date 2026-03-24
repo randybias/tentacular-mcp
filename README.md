@@ -420,6 +420,8 @@ Every created namespace gets:
 - A **default-deny** NetworkPolicy blocking all ingress and egress
 - A **DNS-allow** NetworkPolicy permitting UDP/TCP egress on port 53 to kube-system/kube-dns
 
+When a workflow declares `tentacular-*` dependencies, the exoskeleton enrichment pipeline automatically appends egress rules to the workflow's NetworkPolicy for each provisioned backing service (Postgres, NATS, RustFS), targeting the service's namespace and port.
+
 ### RBAC Scoping
 
 The server's ClusterRole is scoped to exactly the verbs and resources needed by the 36 tools. It is significantly narrower than `cluster-admin`. Key constraints:
