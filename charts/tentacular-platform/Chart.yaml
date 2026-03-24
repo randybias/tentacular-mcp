@@ -48,6 +48,13 @@ dependencies:
     version: "7.1.9"
     repository: "file://../../charts/keycloakx"
     condition: keycloak.enabled
+  - name: rustfs
+    # Official RustFS chart - S3-compatible object storage, local fork
+    # Patched to support namespaceOverride for umbrella chart deployments.
+    # Upstream: https://charts.rustfs.com/
+    version: "0.0.90"
+    repository: "file://../../charts/rustfs"
+    condition: rustfs.enabled
   - name: tentacular-mcp
     # Local reference for development; for releases use:
     # repository: oci://ghcr.io/randybias/tentacular-mcp/charts
