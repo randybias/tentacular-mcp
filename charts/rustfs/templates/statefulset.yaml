@@ -1,3 +1,4 @@
+{{- include "rustfs.validateMode" . }}
 {{- $logDir := .Values.config.rustfs.obs_log_directory }}
 
 {{- if .Values.mode.distributed.enabled }}

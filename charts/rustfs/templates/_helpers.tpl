@@ -127,9 +127,10 @@ Render RUSTFS_VOLUMES
 
 {{- if eq (int .Values.replicaCount) 4 }}
 {{- printf "%s://%s-{0...%d}.%s-headless.%s.svc.cluster.local:%d/data/rustfs{0...%d}" $protocol (include "rustfs.fullname" .) (sub (.Values.replicaCount | int) 1) (include "rustfs.fullname" . ) (include "rustfs.namespace" .) (.Values.service.endpoint.port | int) (sub (.Values.replicaCount | int) 1) }}
-{{- end }}
-{{- if eq (int .Values.replicaCount) 16 }}
+{{- else if eq (int .Values.replicaCount) 16 }}
 {{- printf "%s://%s-{0...%d}.%s-headless.%s.svc.cluster.local:%d/data" $protocol (include "rustfs.fullname" .) (sub (.Values.replicaCount | int) 1) (include "rustfs.fullname" .) (include "rustfs.namespace" .) (.Values.service.endpoint.port | int) }}
+{{- else }}
+{{- fail (printf "Distributed mode requires replicaCount of 4 or 16, got %d. Set config.rustfs.volumes manually for other counts." (.Values.replicaCount | int)) }}
 {{- end }}
 {{- end }}
 

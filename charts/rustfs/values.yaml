@@ -49,8 +49,8 @@ mode:
 secret:
   existingSecret: ""
   rustfs:
-    access_key: rustfsadmin
-    secret_key: rustfsadmin
+    access_key: ""
+    secret_key: ""
 
 config:
   rustfs:
