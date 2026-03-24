@@ -722,6 +722,24 @@ func TestPatchNetworkPolicyEgress_EmptyCreds(t *testing.T) {
 	np := makeNetworkPolicyManifest()
 	manifests := []map[string]any{np}
 
+	creds := map[string]any{}
+
+	patchNetworkPolicyExoEgress(manifests, creds, "test-workflow")
+
+	egress, found, _ := unstructured.NestedSlice(np, "spec", "egress")
+	if !found {
+		t.Fatal("expected spec.egress to exist (unchanged)")
+	}
+	// Early return — egress should be untouched (still has original DNS rule).
+	if len(egress) != 1 {
+		t.Fatalf("expected 1 egress rule (unchanged), got %d", len(egress))
+	}
+}
+
+func TestPatchNetworkPolicyEgress_UnknownCredType(t *testing.T) {
+	np := makeNetworkPolicyManifest()
+	manifests := []map[string]any{np}
+
 	// Use an unrecognized credential type so the loop body executes but
 	// the type-switch produces no endpoints. This exercises the full code
 	// path (not just the len(creds)==0 early return).
@@ -1040,6 +1058,8 @@ func TestIsInClusterHost(t *testing.T) {
 		{"minio.local", false},               // 2-label: external hostname
 		{"broker.example.com", false},        // 3-label without .svc: external FQDN
 		{"single", false},                    // 1-label: not a valid service.namespace form
+		{"mydb.production.svc.amazonaws.com", false}, // external host with "svc" as 3rd label
+		{"pg.ns.svc.cluster", true},                  // partial FQDN (no .local)
 	}
 	for _, tt := range tests {
 		t.Run(tt.host, func(t *testing.T) {

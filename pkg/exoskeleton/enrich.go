@@ -411,7 +411,15 @@ func collectExoHosts(creds map[string]any) []string {
 // so legitimate in-cluster services will contain the ".svc" label.
 func isInClusterHost(host string) bool {
 	parts := strings.Split(host, ".")
-	return len(parts) >= 3 && parts[2] == "svc"
+	if len(parts) < 3 || parts[2] != "svc" {
+		return false
+	}
+	// <svc>.<ns>.svc — short form
+	if len(parts) == 3 {
+		return true
+	}
+	// <svc>.<ns>.svc.cluster[.local] — full/partial FQDN
+	return parts[3] == "cluster"
 }
 
 // parseHostPort extracts host and port from a URL string.
