@@ -157,6 +157,29 @@ keycloakx:
     # CHANGE: Must match the password used in postgres-init
     password: "CHANGE-ME-keycloak-db-password"
 
+# RustFS S3-compatible object storage
+rustfs:
+  enabled: true
+  mode:
+    standalone:
+      enabled: true
+    distributed:
+      enabled: false
+  secret:
+    # CHANGE: Use strong credentials
+    accessKey: "CHANGE-ME-rustfs-admin"
+    secretKey: "CHANGE-ME-rustfs-admin-secret"
+  persistence:
+    dataVolume:
+      size: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
 esm-sh:
   enabled: true
   replicas: 2
