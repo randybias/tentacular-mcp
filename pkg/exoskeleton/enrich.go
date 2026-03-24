@@ -234,7 +234,9 @@ func patchNetworkPolicyExoEgress(manifests []map[string]any, creds map[string]an
 	for depName, c := range creds {
 		switch v := c.(type) {
 		case *PostgresCreds:
-			endpoints = append(endpoints, svcEndpoint{name: depName, host: v.Host, port: v.Port})
+			if v.Host != "" && v.Port != "" {
+				endpoints = append(endpoints, svcEndpoint{name: depName, host: v.Host, port: v.Port})
+			}
 		case *NATSCreds:
 			h, p := parseHostPort(v.URL)
 			if h != "" && p != "" {
@@ -418,7 +420,12 @@ func isInClusterHost(host string) bool {
 	if len(parts) == 3 {
 		return true
 	}
-	// <svc>.<ns>.svc.cluster[.local] — full/partial FQDN
+	// <svc>.<ns>.svc.cluster — partial FQDN (4 labels)
+	// <svc>.<ns>.svc.cluster.local — full FQDN (5 labels)
+	// Reject 6+ labels to avoid false positives like "x.ns.svc.cluster.evil.com".
+	if len(parts) > 5 {
+		return false
+	}
 	return parts[3] == "cluster"
 }
 

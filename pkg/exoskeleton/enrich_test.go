@@ -1058,8 +1058,10 @@ func TestIsInClusterHost(t *testing.T) {
 		{"minio.local", false},               // 2-label: external hostname
 		{"broker.example.com", false},        // 3-label without .svc: external FQDN
 		{"single", false},                    // 1-label: not a valid service.namespace form
-		{"mydb.production.svc.amazonaws.com", false}, // external host with "svc" as 3rd label
-		{"pg.ns.svc.cluster", true},                  // partial FQDN (no .local)
+		{"mydb.production.svc.amazonaws.com", false},       // external host with "svc" as 3rd label
+		{"attack.ns.svc.cluster.evil.com", false},          // 6+ labels: reject to prevent false positive
+		{"pg.ns.svc.cluster", true},                        // partial FQDN (no .local)
+		{"pg.ns.svc.cluster.local", true},                  // full FQDN (5 labels)
 	}
 	for _, tt := range tests {
 		t.Run(tt.host, func(t *testing.T) {
