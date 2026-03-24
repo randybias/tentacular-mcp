@@ -17,8 +17,8 @@ import (
 // ExoskeletonServiceInfo describes a single exoskeleton backing service.
 type ExoskeletonServiceInfo struct {
 	Name          string `json:"name"`
-	Host          string `json:"host"`
-	Port          string `json:"port"`
+	Host          string `json:"host,omitempty"`
+	Port          string `json:"port,omitempty"`
 	Protocol      string `json:"protocol"`
 	Available     bool   `json:"available"`
 	SPIFFEEnabled bool   `json:"spiffeEnabled,omitempty"`

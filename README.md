@@ -210,7 +210,7 @@ curl http://localhost:8080/healthz
 | Tool | Description |
 |------|-------------|
 | `cluster_preflight` | Run preflight validation checks (API connectivity, namespace access, RBAC, gVisor availability). |
-| `cluster_profile` | Generate a full cluster profile: K8s version, nodes, CNI, storage classes, runtime classes, and extensions. |
+| `cluster_profile` | Generate a full cluster profile: K8s version, nodes, CNI, storage classes, runtime classes, extensions, and exoskeleton services. |
 
 ### gVisor Sandbox
 

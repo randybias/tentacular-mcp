@@ -235,29 +235,39 @@ func TestClusterProfileWithExoskeleton(t *testing.T) {
 	if !result.Exoskeleton.Enabled {
 		t.Error("expected Exoskeleton.Enabled=true")
 	}
-	if len(result.Exoskeleton.Services) == 0 {
-		t.Error("expected at least one service in Exoskeleton.Services")
+	if len(result.Exoskeleton.Services) != 4 {
+		t.Fatalf("expected 4 services, got %d", len(result.Exoskeleton.Services))
 	}
 
-	// Verify postgres service is present
-	foundPG := false
+	// Verify all services are present by name
+	svcByName := map[string]k8s.ExoskeletonServiceInfo{}
 	for _, svc := range result.Exoskeleton.Services {
-		if svc.Name == "postgres" {
-			foundPG = true
-			if svc.Host != "pg.example.com" {
-				t.Errorf("postgres host = %q, want pg.example.com", svc.Host)
-			}
-			if svc.Port != "5432" {
-				t.Errorf("postgres port = %q, want 5432", svc.Port)
-			}
-			// No registrar provided, so not available
-			if svc.Available {
-				t.Error("expected postgres Available=false with nil registrar")
-			}
-		}
+		svcByName[svc.Name] = svc
 	}
-	if !foundPG {
-		t.Error("expected postgres service in Exoskeleton.Services")
+
+	pgSvc, ok := svcByName["postgres"]
+	if !ok {
+		t.Fatal("expected postgres service in Exoskeleton.Services")
+	}
+	if pgSvc.Host != "pg.example.com" {
+		t.Errorf("postgres host = %q, want pg.example.com", pgSvc.Host)
+	}
+	if pgSvc.Port != "5432" {
+		t.Errorf("postgres port = %q, want 5432", pgSvc.Port)
+	}
+	// No registrar provided, so not available
+	if pgSvc.Available {
+		t.Error("expected postgres Available=false with nil registrar")
+	}
+
+	if _, ok := svcByName["nats"]; !ok {
+		t.Error("expected nats service in Exoskeleton.Services")
+	}
+	if _, ok := svcByName["rustfs"]; !ok {
+		t.Error("expected rustfs service in Exoskeleton.Services")
+	}
+	if _, ok := svcByName["spire"]; !ok {
+		t.Error("expected spire service in Exoskeleton.Services")
 	}
 }
 

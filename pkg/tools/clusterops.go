@@ -47,7 +47,7 @@ func registerClusterOpsTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exosk
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "cluster_profile",
-		Description: "Profile the cluster: K8s version, distribution, nodes, runtime classes, CNI, storage, and extensions.",
+		Description: "Profile the cluster: K8s version, distribution, nodes, runtime classes, CNI, storage, extensions, and exoskeleton services.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Profile Cluster Capabilities",
 			ReadOnlyHint:    true,

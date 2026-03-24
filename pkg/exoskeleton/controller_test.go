@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
 
 // --- Mock registrars for interface-based testing ---
@@ -624,15 +626,15 @@ func TestServiceInfoAllServicesAvailable(t *testing.T) {
 		t.Fatalf("expected 4 services, got %d", len(info.Services))
 	}
 
-	svcByName := map[string]interface{}{}
+	svcByName := map[string]k8s.ExoskeletonServiceInfo{}
 	for _, s := range info.Services {
 		svcByName[s.Name] = s
 	}
 
 	// Postgres
-	pgSvc := info.Services[0]
-	if pgSvc.Name != "postgres" {
-		t.Errorf("services[0].Name = %q, want postgres", pgSvc.Name)
+	pgSvc, ok := svcByName["postgres"]
+	if !ok {
+		t.Fatal("expected postgres service")
 	}
 	if pgSvc.Host != "pg.example.com" {
 		t.Errorf("postgres host = %q", pgSvc.Host)
@@ -648,9 +650,9 @@ func TestServiceInfoAllServicesAvailable(t *testing.T) {
 	}
 
 	// NATS
-	natsSvc := info.Services[1]
-	if natsSvc.Name != "nats" {
-		t.Errorf("services[1].Name = %q, want nats", natsSvc.Name)
+	natsSvc, ok := svcByName["nats"]
+	if !ok {
+		t.Fatal("expected nats service")
 	}
 	if natsSvc.Host != "nats.example.com" {
 		t.Errorf("nats host = %q", natsSvc.Host)
@@ -666,9 +668,9 @@ func TestServiceInfoAllServicesAvailable(t *testing.T) {
 	}
 
 	// RustFS
-	rustfsSvc := info.Services[2]
-	if rustfsSvc.Name != "rustfs" {
-		t.Errorf("services[2].Name = %q, want rustfs", rustfsSvc.Name)
+	rustfsSvc, ok := svcByName["rustfs"]
+	if !ok {
+		t.Fatal("expected rustfs service")
 	}
 	if rustfsSvc.Host != "rustfs.example.com" {
 		t.Errorf("rustfs host = %q", rustfsSvc.Host)
@@ -681,9 +683,9 @@ func TestServiceInfoAllServicesAvailable(t *testing.T) {
 	}
 
 	// SPIRE
-	spireSvc := info.Services[3]
-	if spireSvc.Name != "spire" {
-		t.Errorf("services[3].Name = %q, want spire", spireSvc.Name)
+	spireSvc, ok := svcByName["spire"]
+	if !ok {
+		t.Fatal("expected spire service")
 	}
 	if !spireSvc.Available {
 		t.Error("expected spire Available=true")
@@ -739,6 +741,8 @@ func TestServiceInfoPartialServices(t *testing.T) {
 			if svc.Available {
 				t.Error("expected spire Available=false with nil registrar")
 			}
+		default:
+			t.Errorf("unexpected service name: %s", svc.Name)
 		}
 	}
 }
@@ -759,5 +763,28 @@ func TestServiceInfoNoAuth(t *testing.T) {
 	}
 	if info.Auth.Issuer != "" {
 		t.Errorf("expected empty issuer, got %q", info.Auth.Issuer)
+	}
+}
+
+func TestServiceInfoPartialAuthConfig(t *testing.T) {
+	cfg := &Config{
+		Enabled: true,
+		Auth: AuthConfig{
+			Enabled:   true,
+			IssuerURL: "https://keycloak.example.com/realms/tentacular",
+			// ClientID intentionally missing — AuthEnabled() should return false
+		},
+	}
+	ctrl := NewControllerWithDeps(cfg, nil, nil, nil, nil)
+
+	info := ctrl.ServiceInfo()
+	if info == nil {
+		t.Fatal("expected non-nil ServiceInfo")
+	}
+	if info.Auth.Enabled {
+		t.Error("expected auth Enabled=false when ClientID is missing")
+	}
+	if info.Auth.Issuer != "" {
+		t.Errorf("expected empty issuer when auth not fully enabled, got %q", info.Auth.Issuer)
 	}
 }

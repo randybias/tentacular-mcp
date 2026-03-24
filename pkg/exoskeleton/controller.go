@@ -454,12 +454,17 @@ func (c *Controller) ServiceInfo() *k8s.ExoskeletonInfo {
 		Available: c.SPIREAvailable(),
 	})
 
+	var issuer string
+	if c.AuthEnabled() {
+		issuer = c.AuthIssuer()
+	}
+
 	return &k8s.ExoskeletonInfo{
 		Enabled:  true,
 		Services: services,
 		Auth: k8s.ExoskeletonAuthInfo{
 			Enabled: c.AuthEnabled(),
-			Issuer:  c.AuthIssuer(),
+			Issuer:  issuer,
 		},
 	}
 }
