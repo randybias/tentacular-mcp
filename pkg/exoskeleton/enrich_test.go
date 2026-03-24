@@ -562,6 +562,200 @@ nodes:
 	t.Error("expected --allow-net to remain unchanged")
 }
 
+// makeNetworkPolicyManifest returns a minimal NetworkPolicy manifest matching
+// the CLI's output format, with one existing DNS egress rule.
+func makeNetworkPolicyManifest() map[string]any {
+	return map[string]any{
+		"apiVersion": "networking.k8s.io/v1",
+		"kind":       "NetworkPolicy",
+		"metadata": map[string]any{
+			"name":      "test-workflow-netpol",
+			"namespace": "tent-dev",
+		},
+		"spec": map[string]any{
+			"podSelector": map[string]any{
+				"matchLabels": map[string]any{
+					"app": "test-workflow",
+				},
+			},
+			"policyTypes": []any{"Ingress", "Egress"},
+			"egress": []any{
+				map[string]any{
+					"to": []any{
+						map[string]any{
+							"namespaceSelector": map[string]any{
+								"matchLabels": map[string]any{
+									"kubernetes.io/metadata.name": "kube-system",
+								},
+							},
+						},
+					},
+					"ports": []any{
+						map[string]any{
+							"protocol": "UDP",
+							"port":     int64(53),
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestPatchNetworkPolicyEgress_Postgres(t *testing.T) {
+	np := makeNetworkPolicyManifest()
+	manifests := []map[string]any{np}
+
+	creds := map[string]any{
+		"tentacular-postgres": &PostgresCreds{
+			Host: "postgres-postgresql.tentacular-exoskeleton.svc.cluster.local",
+			Port: "5432",
+		},
+	}
+
+	patchNetworkPolicyExoEgress(manifests, creds)
+
+	egress, found, _ := unstructured.NestedSlice(np, "spec", "egress")
+	if !found {
+		t.Fatal("expected spec.egress to exist")
+	}
+	// 1 existing DNS rule + 1 new postgres rule
+	if len(egress) != 2 {
+		t.Fatalf("expected 2 egress rules, got %d", len(egress))
+	}
+
+	rule := egress[1].(map[string]any)
+	to := rule["to"].([]any)
+	nsSelector := to[0].(map[string]any)["namespaceSelector"].(map[string]any)
+	matchLabels := nsSelector["matchLabels"].(map[string]any)
+	if matchLabels["kubernetes.io/metadata.name"] != "tentacular-exoskeleton" {
+		t.Errorf("expected namespace tentacular-exoskeleton, got %v", matchLabels["kubernetes.io/metadata.name"])
+	}
+
+	ports := rule["ports"].([]any)
+	portEntry := ports[0].(map[string]any)
+	if portEntry["port"] != int64(5432) {
+		t.Errorf("expected port 5432, got %v", portEntry["port"])
+	}
+	if portEntry["protocol"] != "TCP" {
+		t.Errorf("expected protocol TCP, got %v", portEntry["protocol"])
+	}
+}
+
+func TestPatchNetworkPolicyEgress_AllServices(t *testing.T) {
+	np := makeNetworkPolicyManifest()
+	manifests := []map[string]any{np}
+
+	creds := map[string]any{
+		"tentacular-postgres": &PostgresCreds{
+			Host: "pg.tentacular-exoskeleton.svc.cluster.local",
+			Port: "5432",
+		},
+		"tentacular-nats": &NATSCreds{
+			URL: "nats://nats.tentacular-exoskeleton.svc.cluster.local:4222",
+		},
+		"tentacular-rustfs": &RustFSCreds{
+			Endpoint: "http://rustfs-svc.tentacular-exoskeleton.svc.cluster.local:9000",
+		},
+	}
+
+	patchNetworkPolicyExoEgress(manifests, creds)
+
+	egress, found, _ := unstructured.NestedSlice(np, "spec", "egress")
+	if !found {
+		t.Fatal("expected spec.egress to exist")
+	}
+	// 1 existing DNS rule + 3 new service rules
+	if len(egress) != 4 {
+		t.Fatalf("expected 4 egress rules, got %d", len(egress))
+	}
+
+	// Rules are sorted by dep name: nats, postgres, rustfs
+	wantPorts := []int64{4222, 5432, 9000}
+	for i, wantPort := range wantPorts {
+		rule := egress[i+1].(map[string]any)
+		ports := rule["ports"].([]any)
+		portEntry := ports[0].(map[string]any)
+		if portEntry["port"] != wantPort {
+			t.Errorf("rule %d: expected port %d, got %v", i+1, wantPort, portEntry["port"])
+		}
+	}
+}
+
+func TestPatchNetworkPolicyEgress_NoNetworkPolicy(t *testing.T) {
+	cm := makeConfigMapManifest("name: test")
+	dep := makeDeploymentManifest([]string{"run", "main.ts"})
+	manifests := []map[string]any{cm, dep}
+
+	creds := map[string]any{
+		"tentacular-postgres": &PostgresCreds{
+			Host: "pg.exo.svc.cluster.local",
+			Port: "5432",
+		},
+	}
+
+	// Should not panic when no NetworkPolicy is present.
+	patchNetworkPolicyExoEgress(manifests, creds)
+}
+
+func TestPatchNetworkPolicyEgress_EmptyCreds(t *testing.T) {
+	np := makeNetworkPolicyManifest()
+	manifests := []map[string]any{np}
+
+	creds := map[string]any{}
+
+	patchNetworkPolicyExoEgress(manifests, creds)
+
+	egress, found, _ := unstructured.NestedSlice(np, "spec", "egress")
+	if !found {
+		t.Fatal("expected spec.egress to exist")
+	}
+	// Only the original DNS rule should remain.
+	if len(egress) != 1 {
+		t.Fatalf("expected 1 egress rule (unchanged), got %d", len(egress))
+	}
+}
+
+func TestPatchNetworkPolicyEgress_PreservesExistingRules(t *testing.T) {
+	np := makeNetworkPolicyManifest()
+	manifests := []map[string]any{np}
+
+	creds := map[string]any{
+		"tentacular-nats": &NATSCreds{
+			URL: "nats://nats.tentacular-exoskeleton.svc.cluster.local:4222",
+		},
+	}
+
+	patchNetworkPolicyExoEgress(manifests, creds)
+
+	egress, found, _ := unstructured.NestedSlice(np, "spec", "egress")
+	if !found {
+		t.Fatal("expected spec.egress to exist")
+	}
+	if len(egress) != 2 {
+		t.Fatalf("expected 2 egress rules, got %d", len(egress))
+	}
+
+	// First rule should be the original DNS rule (preserved).
+	dnsRule := egress[0].(map[string]any)
+	dnsPorts := dnsRule["ports"].([]any)
+	dnsPort := dnsPorts[0].(map[string]any)
+	if dnsPort["protocol"] != "UDP" {
+		t.Errorf("expected original DNS rule preserved with protocol UDP, got %v", dnsPort["protocol"])
+	}
+	if dnsPort["port"] != int64(53) {
+		t.Errorf("expected original DNS rule preserved with port 53, got %v", dnsPort["port"])
+	}
+
+	// Second rule should be the new NATS rule.
+	natsRule := egress[1].(map[string]any)
+	natsPorts := natsRule["ports"].([]any)
+	natsPort := natsPorts[0].(map[string]any)
+	if natsPort["port"] != int64(4222) {
+		t.Errorf("expected NATS port 4222, got %v", natsPort["port"])
+	}
+}
+
 // getContainers is a test helper to extract containers from a deployment.
 func getContainers(dep map[string]any) []any {
 	spec, ok := dep["spec"].(map[string]any)
