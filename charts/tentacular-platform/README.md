@@ -1,6 +1,6 @@
 # Tentacular Platform Helm Chart
 
-Umbrella Helm chart for the complete Tentacular platform. Deploys the MCP server, PostgreSQL, NATS, Keycloak, esm-sh module proxy, namespace management, network policies, and configurable ingress in a single `helm install`.
+Umbrella Helm chart for the complete Tentacular platform. Deploys the MCP server, PostgreSQL, NATS, RustFS, Keycloak, esm-sh module proxy, namespace management, network policies, and configurable ingress in a single `helm install`.
 
 ## Exoskeleton Subsystem (Phase 1)
 
@@ -77,8 +77,8 @@ helm install tentacular charts/tentacular-platform/ \
   --set keycloakx.database.password="$KC_DB_PASS" \
   --set keycloakx.database.hostname="tentacular-postgresql.tentacular-exoskeleton.svc.cluster.local" \
   --set exoskeletonAuth.clientSecret="$(openssl rand -hex 32)" \
-  --set rustfs.secret.accessKey="$(openssl rand -hex 16)" \
-  --set rustfs.secret.secretKey="$(openssl rand -hex 32)"
+  --set rustfs.secret.rustfs.access_key="$(openssl rand -hex 16)" \
+  --set rustfs.secret.rustfs.secret_key="$(openssl rand -hex 32)"
 ```
 
 ### AWS (K8s on EC2 with NLB)
@@ -133,8 +133,8 @@ helm install tentacular charts/tentacular-platform/ \
   --set keycloakx.proxy.mode=xforwarded \
   --set-json 'keycloakx.command=["/opt/keycloak/bin/kc.sh","start","--hostname-strict=false","--import-realm"]' \
   --set exoskeletonAuth.clientSecret="$(openssl rand -hex 32)" \
-  --set rustfs.secret.accessKey="$(openssl rand -hex 16)" \
-  --set rustfs.secret.secretKey="$(openssl rand -hex 32)"
+  --set rustfs.secret.rustfs.access_key="$(openssl rand -hex 16)" \
+  --set rustfs.secret.rustfs.secret_key="$(openssl rand -hex 32)"
 ```
 
 **Step 5: Verify:**
@@ -255,8 +255,8 @@ ingress:
 | `keycloak.admin.password` | string | `""` | Keycloak admin password (required when enabled) |
 | `keycloak.hostname` | string | `""` | Keycloak hostname (e.g., tentacular-keycloak.example.com) |
 | `rustfs.enabled` | bool | `false` | Enable RustFS deployment |
-| `rustfs.secret.accessKey` | string | `""` | RustFS admin access key (required when enabled) |
-| `rustfs.secret.secretKey` | string | `""` | RustFS admin secret key (required when enabled) |
+| `rustfs.secret.rustfs.access_key` | string | `""` | RustFS admin access key (required when enabled) |
+| `rustfs.secret.rustfs.secret_key` | string | `""` | RustFS admin secret key (required when enabled) |
 | `esm-sh.enabled` | bool | `true` | Enable esm-sh proxy |
 | `ingress.mode` | string | `"none"` | Ingress mode (none/nodeport/ingress/istio) |
 | `ingress.mcp.hostname` | string | `""` | MCP endpoint hostname |
@@ -283,7 +283,7 @@ Every component can be independently enabled or disabled:
 
 ## Storage
 
-PostgreSQL and NATS require persistent storage. In production clusters with a
+PostgreSQL, NATS, and RustFS require persistent storage. In production clusters with a
 StorageClass provisioner this works out of the box (uses cluster default). For
 **dev/test clusters without a provisioner** (e.g., kind, bare minikube), the CI
 value files disable PVCs and fall back to `emptyDir`:

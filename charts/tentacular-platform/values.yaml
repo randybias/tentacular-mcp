@@ -380,8 +380,6 @@ keycloakx:
   postgresql:
     enabled: false
 
-# -- Future components (disabled placeholders)
-
 # -- RustFS S3-compatible object storage (local fork with namespaceOverride)
 # Provides per-tentacle prefix-scoped S3 storage.
 # Admin credentials are used by the MCP server to create per-tentacle IAM users.
@@ -397,14 +395,16 @@ rustfs:
     distributed:
       enabled: false
   # -- Admin credentials (must be provided via --set)
+  # Key path must match subchart schema: secret.rustfs.access_key / secret_key
   secret:
-    accessKey: ""
-    secretKey: ""
-  # -- Persistence
-  persistence:
-    dataVolume:
-      size: 5Gi
-      storageClass: ""
+    rustfs:
+      access_key: ""
+      secret_key: ""
+  # -- Storage class and sizes (matches subchart storageclass.* keys)
+  storageclass:
+    name: ""
+    dataStorageSize: 5Gi
+    logStorageSize: 256Mi
   # -- Service ports
   service:
     endpoint:
@@ -423,6 +423,8 @@ rustfs:
     limits:
       cpu: 500m
       memory: 1Gi
+
+# -- Future components (disabled placeholders)
 
 # -- SPIRE workload identity
 spire:

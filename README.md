@@ -77,7 +77,9 @@ helm install tentacular charts/tentacular-platform/ \
   -n tentacular-system --create-namespace \
   --set tentacular-mcp.auth.token="$(openssl rand -hex 32)" \
   --set postgresql.auth.password="$(openssl rand -hex 16)" \
-  --set nats.config.merge.authorization.token="$(openssl rand -hex 16)"
+  --set nats.config.merge.authorization.token="$(openssl rand -hex 16)" \
+  --set rustfs.secret.rustfs.access_key="$(openssl rand -hex 16)" \
+  --set rustfs.secret.rustfs.secret_key="$(openssl rand -hex 32)"
 ```
 
 If you don't need TLS certificates, disable them and skip the cert-manager step:
@@ -90,7 +92,9 @@ helm install tentacular charts/tentacular-platform/ \
   --set tls.certificates.mcp.create=false \
   --set tentacular-mcp.auth.token="$(openssl rand -hex 32)" \
   --set postgresql.auth.password="$(openssl rand -hex 16)" \
-  --set nats.config.merge.authorization.token="$(openssl rand -hex 16)"
+  --set nats.config.merge.authorization.token="$(openssl rand -hex 16)" \
+  --set rustfs.secret.rustfs.access_key="$(openssl rand -hex 16)" \
+  --set rustfs.secret.rustfs.secret_key="$(openssl rand -hex 32)"
 ```
 
 The `-n tentacular-system` flag is required so the MCP pod and its Secret are co-located. See `charts/tentacular-platform/README.md` for all value profiles, ingress modes (nodeport, ingress, istio, alb-istio), network policies, and component toggles.

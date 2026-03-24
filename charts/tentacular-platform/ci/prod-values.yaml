@@ -7,7 +7,9 @@
 #   --set tentacular-mcp.auth.token=<secret> \
 #   --set keycloak.admin.password=<secret> \
 #   --set keycloakx.database.password=<secret> \
-#   --set exoskeletonAuth.clientSecret=<secret>
+#   --set exoskeletonAuth.clientSecret=<secret> \
+#   --set rustfs.secret.rustfs.access_key=<secret> \
+#   --set rustfs.secret.rustfs.secret_key=<secret>
 #
 # NOTE: Replace all CHANGE-ME placeholder values before deploying.
 # In production, use --set or external secret management (e.g., Sealed Secrets,
@@ -166,12 +168,14 @@ rustfs:
     distributed:
       enabled: false
   secret:
-    # CHANGE: Use strong credentials
-    accessKey: "CHANGE-ME-rustfs-admin"
-    secretKey: "CHANGE-ME-rustfs-admin-secret"
-  persistence:
-    dataVolume:
-      size: 10Gi
+    rustfs:
+      # CHANGE: Use strong credentials
+      access_key: "CHANGE-ME-rustfs-admin"
+      secret_key: "CHANGE-ME-rustfs-admin-secret"
+  storageclass:
+    name: ""
+    dataStorageSize: 10Gi
+    logStorageSize: 256Mi
   resources:
     requests:
       cpu: 100m

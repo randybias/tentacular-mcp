@@ -1,4 +1,13 @@
 {{/*
+Validate that standalone and distributed modes are not both enabled.
+*/}}
+{{- define "rustfs.validateMode" -}}
+{{- if and .Values.mode.standalone.enabled .Values.mode.distributed.enabled }}
+  {{- fail "Configuration error: mode.standalone.enabled and mode.distributed.enabled cannot both be true. Enable only one mode." }}
+{{- end }}
+{{- end }}
+
+{{/*
 Allow namespace override for umbrella chart deployments.
 */}}
 {{- define "rustfs.namespace" -}}
