@@ -123,17 +123,23 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
-            {{- $lp := omit .Values.livenessProbe "enabled" }}
+            {{- $lp := merge (dict) .Values.livenessProbe }}
+            {{- $_ := unset $lp "enabled" }}
             {{- if and .Values.mtls.enabled (hasKey $lp "httpGet") }}
-            {{- $_ := set $lp.httpGet "scheme" "HTTPS" }}
+            {{- $lpHttpGet := deepCopy $lp.httpGet }}
+            {{- $_ := set $lpHttpGet "scheme" "HTTPS" }}
+            {{- $_ := set $lp "httpGet" $lpHttpGet }}
             {{- end }}
             {{- $lp | toYaml | nindent 12 }}
           {{- end }}
           {{- if .Values.readinessProbe.enabled }}
           readinessProbe:
-            {{- $rp := omit .Values.readinessProbe "enabled" }}
+            {{- $rp := merge (dict) .Values.readinessProbe }}
+            {{- $_ := unset $rp "enabled" }}
             {{- if and .Values.mtls.enabled (hasKey $rp "httpGet") }}
-            {{- $_ := set $rp.httpGet "scheme" "HTTPS" }}
+            {{- $rpHttpGet := deepCopy $rp.httpGet }}
+            {{- $_ := set $rpHttpGet "scheme" "HTTPS" }}
+            {{- $_ := set $rp "httpGet" $rpHttpGet }}
             {{- end }}
             {{- $rp | toYaml | nindent 12 }}
           {{- end }}
