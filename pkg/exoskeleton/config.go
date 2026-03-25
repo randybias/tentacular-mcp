@@ -44,11 +44,12 @@ type NATSConfig struct {
 
 // RustFSConfig holds admin connection details for the RustFS (MinIO-compatible) registrar.
 type RustFSConfig struct {
-	Endpoint  string
-	AccessKey string
-	SecretKey string
-	Bucket    string
-	Region    string
+	Endpoint   string
+	AccessKey  string
+	SecretKey  string
+	Bucket     string
+	Region     string
+	CACertPath string
 }
 
 // LoadFromEnv reads exoskeleton configuration from environment variables.
@@ -72,11 +73,12 @@ func LoadFromEnv() *Config {
 			AuthzNamespace: envDefault("TENTACULAR_NATS_AUTHZ_NAMESPACE", "tentacular-exoskeleton"),
 		},
 		RustFS: RustFSConfig{
-			Endpoint:  os.Getenv("TENTACULAR_RUSTFS_ENDPOINT"),
-			AccessKey: os.Getenv("TENTACULAR_RUSTFS_ACCESS_KEY"),
-			SecretKey: os.Getenv("TENTACULAR_RUSTFS_SECRET_KEY"),
-			Bucket:    envDefault("TENTACULAR_RUSTFS_BUCKET", "tentacular"),
-			Region:    envDefault("TENTACULAR_RUSTFS_REGION", "us-east-1"),
+			Endpoint:   os.Getenv("TENTACULAR_RUSTFS_ENDPOINT"),
+			AccessKey:  os.Getenv("TENTACULAR_RUSTFS_ACCESS_KEY"),
+			SecretKey:  os.Getenv("TENTACULAR_RUSTFS_SECRET_KEY"),
+			Bucket:     envDefault("TENTACULAR_RUSTFS_BUCKET", "tentacular"),
+			Region:     envDefault("TENTACULAR_RUSTFS_REGION", "us-east-1"),
+			CACertPath: os.Getenv("TENTACULAR_RUSTFS_CA_CERT_PATH"),
 		},
 		Auth: AuthConfig{
 			Enabled:      envBool("TENTACULAR_EXOSKELETON_AUTH_ENABLED"),
