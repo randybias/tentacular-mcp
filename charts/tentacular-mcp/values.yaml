@@ -40,7 +40,8 @@ auth:
   # If set, the chart will not create its own Secret.
   existingSecret: ""
   # -- Auth token value. Used only when existingSecret is empty.
-  # Generate with: openssl rand -hex 32
+  # If left empty, a secure 64-character random token is auto-generated.
+  # The auto-generated token is persisted across helm upgrades.
   token: ""
 
 service:

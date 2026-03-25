@@ -8,7 +8,7 @@ tentacular-mcp has been deployed to namespace {{ .Release.Namespace }}.
 
    curl http://localhost:8080/healthz
 
-3. Retrieve the auth token:
+3. Retrieve the auth token{{- if not .Values.auth.token }} (auto-generated){{- end }}:
 
    kubectl get secret {{ include "tentacular-mcp.authSecretName" . }} -n {{ .Release.Namespace }} \
      -o jsonpath='{.data.token}' | base64 -d
