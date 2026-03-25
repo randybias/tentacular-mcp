@@ -106,19 +106,73 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
-            {{- omit .Values.livenessProbe "enabled" | toYaml | nindent 12 }}
+            {{- $lp := omit .Values.livenessProbe "enabled" }}
+            {{- if and .Values.mtls.enabled (hasKey $lp "httpGet") }}
+            {{- $_ := set $lp.httpGet "scheme" "HTTPS" }}
+            {{- end }}
+            {{- $lp | toYaml | nindent 12 }}
           {{- end }}
           {{- if .Values.readinessProbe.enabled }}
           readinessProbe:
-            {{- omit .Values.readinessProbe "enabled" | toYaml | nindent 12 }}
+            {{- $rp := omit .Values.readinessProbe "enabled" }}
+            {{- if and .Values.mtls.enabled (hasKey $rp "httpGet") }}
+            {{- $_ := set $rp.httpGet "scheme" "HTTPS" }}
+            {{- end }}
+            {{- $rp | toYaml | nindent 12 }}
           {{- end }}
           volumeMounts:
+            {{- if .Values.mtls.enabled }}
+            {{- if not .Values.mtls.serverOnly }}
+            - name: client-cert
+              mountPath: /opt/tls/client_cert.pem
+              subPath: client_cert.pem
+            - name: client-cert
+              mountPath: /opt/tls/client_key.pem
+              subPath: client_key.pem
+            - name: client-cert
+              mountPath: /opt/tls/client_ca.crt
+              subPath: client_ca.crt
+            {{- end }}
+            - name: server-cert
+              mountPath: /opt/tls/rustfs_cert.pem
+              subPath: rustfs_cert.pem
+            - name: server-cert
+              mountPath: /opt/tls/rustfs_key.pem
+              subPath: rustfs_key.pem
+            - name: server-cert
+              mountPath: /opt/tls/ca.crt
+              subPath: ca.crt
+            {{- end }}
             - name: logs
               mountPath: {{ $logDir }}
               subPath: logs
             - name: data
               mountPath: /data
       volumes:
+        {{- if .Values.mtls.enabled }}
+        - name: server-cert
+          secret:
+            secretName: {{ include "rustfs.fullname" . }}-server-tls
+            items:
+              - key: tls.crt
+                path: rustfs_cert.pem
+              - key: tls.key
+                path: rustfs_key.pem
+              - key: ca.crt
+                path: ca.crt
+        {{- if not .Values.mtls.serverOnly }}
+        - name: client-cert
+          secret:
+            secretName: {{ include "rustfs.fullname" . }}-client-tls
+            items:
+              - key: tls.crt
+                path: client_cert.pem
+              - key: tls.key
+                path: client_key.pem
+              - key: ca.crt
+                path: client_ca.crt
+        {{- end }}
+        {{- end }}
         - name: logs
           persistentVolumeClaim:
             {{- if .Values.mode.standalone.existingClaim.logsClaim }}

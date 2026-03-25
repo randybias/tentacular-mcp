@@ -123,11 +123,19 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
-            {{- omit .Values.livenessProbe "enabled" | toYaml | nindent 12 }}
+            {{- $lp := omit .Values.livenessProbe "enabled" }}
+            {{- if and .Values.mtls.enabled (hasKey $lp "httpGet") }}
+            {{- $_ := set $lp.httpGet "scheme" "HTTPS" }}
+            {{- end }}
+            {{- $lp | toYaml | nindent 12 }}
           {{- end }}
           {{- if .Values.readinessProbe.enabled }}
           readinessProbe:
-            {{- omit .Values.readinessProbe "enabled" | toYaml | nindent 12 }}
+            {{- $rp := omit .Values.readinessProbe "enabled" }}
+            {{- if and .Values.mtls.enabled (hasKey $rp "httpGet") }}
+            {{- $_ := set $rp.httpGet "scheme" "HTTPS" }}
+            {{- end }}
+            {{- $rp | toYaml | nindent 12 }}
           {{- end }}
           volumeMounts:
             {{- if .Values.mtls.enabled }}

@@ -394,6 +394,7 @@ pkg/server/                   MCP server setup and HTTP handler
 pkg/tools/                    36 MCP tool handlers (one file per group)
 charts/tentacular-platform/   Umbrella Helm chart (recommended deployment)
 charts/tentacular-mcp/        Standalone MCP server Helm chart
+charts/rustfs/                RustFS S3 object storage Helm chart (local fork)
 deploy/manifests/             Kustomize deployment manifests
 test/integration/             Integration tests (kind cluster)
 test/e2e/                     E2E tests (production cluster)
@@ -407,6 +408,13 @@ test/e2e/                     E2E tests (production cluster)
 | `TENTACULAR_MCP_TOKEN` | (required) | Bearer auth token for client authentication |
 | `TENTACULAR_MCP_NAMESPACE` | `tentacular-system` | Namespace the MCP server is installed in |
 | `TENTACULAR_PROXY_RECONCILER_DISABLED` | (unset) | Set to `"true"` to disable the built-in esm-sh proxy reconciler (used by umbrella chart) |
+| `TENTACULAR_RUSTFS_ENDPOINT` | (unset) | RustFS S3-compatible endpoint URL |
+| `TENTACULAR_RUSTFS_ACCESS_KEY` | (unset) | RustFS admin access key for IAM user provisioning |
+| `TENTACULAR_RUSTFS_SECRET_KEY` | (unset) | RustFS admin secret key for IAM user provisioning |
+| `TENTACULAR_RUSTFS_BUCKET` | `tentacular` | Default S3 bucket for tentacle storage |
+| `TENTACULAR_RUSTFS_REGION` | `us-east-1` | S3 region for RustFS operations |
+| `TENTACULAR_RUSTFS_CA_CERT_PATH` | (unset) | Path to PEM CA certificate file for RustFS HTTPS trust |
+| `TENTACULAR_RUSTFS_CA_CERT_PEM` | (unset) | PEM CA certificate content for RustFS HTTPS trust (takes precedence over path) |
 
 ## Security Model
 

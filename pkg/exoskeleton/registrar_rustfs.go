@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -96,9 +97,11 @@ func (a *rustfsAdmin) doNoBody(ctx context.Context, method, path string, query u
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("admin %s %s: HTTP %d: %s", method, path, resp.StatusCode, string(respBody))
 	}
+	// Drain the body so the underlying TCP connection can be reused.
+	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
 }
 
@@ -171,25 +174,29 @@ func NewRustFSRegistrar(_ context.Context, cfg RustFSConfig) (*RustFSRegistrar, 
 	endpoint := strings.TrimPrefix(strings.TrimPrefix(cfg.Endpoint, "http://"), "https://")
 	useSSL := strings.HasPrefix(cfg.Endpoint, "https://")
 
-	// Build custom TLS transport when a CA cert path is configured and SSL is enabled.
+	// Build custom TLS transport when a CA cert is configured and SSL is enabled.
+	// CACertPEM (env var with PEM content) takes precedence over CACertPath (file path).
 	var httpClient *http.Client
 	var transport http.RoundTripper
-	if cfg.CACertPath != "" && useSSL {
-		pemData, err := os.ReadFile(cfg.CACertPath)
-		if err != nil {
-			return nil, fmt.Errorf("rustfs read CA cert %s: %w", cfg.CACertPath, err)
+	if useSSL && (cfg.CACertPEM != "" || cfg.CACertPath != "") {
+		var pemData []byte
+		if cfg.CACertPEM != "" {
+			pemData = []byte(cfg.CACertPEM)
+		} else {
+			var err error
+			pemData, err = os.ReadFile(cfg.CACertPath)
+			if err != nil {
+				return nil, fmt.Errorf("rustfs read CA cert %s: %w", cfg.CACertPath, err)
+			}
 		}
-		pool, err := x509.SystemCertPool()
-		if err != nil {
-			pool = x509.NewCertPool()
-		}
+		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(pemData) {
-			return nil, fmt.Errorf("rustfs CA cert %s: no valid PEM certificates found", cfg.CACertPath)
+			return nil, errors.New("rustfs CA cert: no valid PEM certificates found")
 		}
 		tlsConfig := &tls.Config{RootCAs: pool}
 		transport = &http.Transport{TLSClientConfig: tlsConfig}
 		httpClient = &http.Client{Transport: transport}
-		slog.Info("exoskeleton: rustfs using custom CA cert", "path", cfg.CACertPath)
+		slog.Info("exoskeleton: rustfs using custom CA cert")
 	}
 
 	s3Client, err := minio.New(endpoint, &minio.Options{

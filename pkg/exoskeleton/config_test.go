@@ -26,6 +26,8 @@ func TestLoadFromEnv(t *testing.T) {
 		"TENTACULAR_RUSTFS_SECRET_KEY",
 		"TENTACULAR_RUSTFS_BUCKET",
 		"TENTACULAR_RUSTFS_REGION",
+		"TENTACULAR_RUSTFS_CA_CERT_PATH",
+		"TENTACULAR_RUSTFS_CA_CERT_PEM",
 		"TENTACULAR_EXOSKELETON_AUTH_ENABLED",
 		"TENTACULAR_KEYCLOAK_ISSUER",
 		"TENTACULAR_KEYCLOAK_CLIENT_ID",
@@ -114,6 +116,8 @@ func TestLoadFromEnv(t *testing.T) {
 		os.Setenv("TENTACULAR_RUSTFS_ENDPOINT", "http://minio:9000")
 		os.Setenv("TENTACULAR_RUSTFS_ACCESS_KEY", "ak")
 		os.Setenv("TENTACULAR_RUSTFS_SECRET_KEY", "sk")
+		os.Setenv("TENTACULAR_RUSTFS_CA_CERT_PATH", "/etc/ssl/ca.pem")
+		os.Setenv("TENTACULAR_RUSTFS_CA_CERT_PEM", "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----")
 
 		cfg := LoadFromEnv()
 		if !cfg.RustFSEnabled() {
@@ -125,11 +129,19 @@ func TestLoadFromEnv(t *testing.T) {
 		if cfg.RustFS.Region != "us-east-1" {
 			t.Errorf("expected default region us-east-1, got %q", cfg.RustFS.Region)
 		}
+		if cfg.RustFS.CACertPath != "/etc/ssl/ca.pem" {
+			t.Errorf("expected CACertPath, got %q", cfg.RustFS.CACertPath)
+		}
+		if cfg.RustFS.CACertPEM == "" {
+			t.Error("expected CACertPEM to be set")
+		}
 
 		os.Unsetenv("TENTACULAR_EXOSKELETON_ENABLED")
 		os.Unsetenv("TENTACULAR_RUSTFS_ENDPOINT")
 		os.Unsetenv("TENTACULAR_RUSTFS_ACCESS_KEY")
 		os.Unsetenv("TENTACULAR_RUSTFS_SECRET_KEY")
+		os.Unsetenv("TENTACULAR_RUSTFS_CA_CERT_PATH")
+		os.Unsetenv("TENTACULAR_RUSTFS_CA_CERT_PEM")
 	})
 
 	t.Run("cleanup on undeploy", func(t *testing.T) {

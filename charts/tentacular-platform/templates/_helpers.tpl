@@ -65,19 +65,25 @@ Namespace name helpers - resolve configured namespace names with defaults.
 {{- end }}
 
 {{/*
-Derive the RustFS subchart service name to match the subchart's own naming logic.
-Mirrors the rustfs.fullname template from charts/rustfs/templates/_helpers.tpl,
-then appends "-svc" (the service name suffix used in rustfs/templates/service.yaml).
+Derive the RustFS subchart fullname to match the subchart's own naming logic.
+Mirrors the rustfs.fullname template from charts/rustfs/templates/_helpers.tpl.
 */}}
-{{- define "tentacular-platform.rustfs.serviceName" -}}
+{{- define "tentacular-platform.rustfs.fullname" -}}
 {{- if .Values.rustfs.fullnameOverride -}}
-  {{- printf "%s-svc" (.Values.rustfs.fullnameOverride | trunc 63 | trimSuffix "-") -}}
+  {{- .Values.rustfs.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
   {{- $name := default "rustfs" .Values.rustfs.nameOverride -}}
   {{- if contains $name .Release.Name -}}
-    {{- printf "%s-svc" (.Release.Name | trunc 63 | trimSuffix "-") -}}
+    {{- .Release.Name | trunc 63 | trimSuffix "-" -}}
   {{- else -}}
-    {{- printf "%s-%s-svc" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+    {{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
   {{- end -}}
 {{- end -}}
+{{- end }}
+
+{{/*
+Derive the RustFS subchart service name (fullname + "-svc").
+*/}}
+{{- define "tentacular-platform.rustfs.serviceName" -}}
+{{- printf "%s-svc" (include "tentacular-platform.rustfs.fullname" .) -}}
 {{- end }}

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -14,7 +15,7 @@ import (
 
 // errNoDeployer is the sentinel error returned when a tool handler requires
 // deployer identity but the request context has none (unauthenticated).
-var errNoDeployer = fmt.Errorf("authentication required: no deployer identity in request context")
+var errNoDeployer = stderrors.New("authentication required: no deployer identity in request context")
 
 // requireDeployer returns errNoDeployer when deployer is nil and authz is
 // enabled. Tool handlers that use deployer identity should call this at the

@@ -50,6 +50,7 @@ type RustFSConfig struct {
 	Bucket     string
 	Region     string
 	CACertPath string
+	CACertPEM  string
 }
 
 // LoadFromEnv reads exoskeleton configuration from environment variables.
@@ -79,6 +80,7 @@ func LoadFromEnv() *Config {
 			Bucket:     envDefault("TENTACULAR_RUSTFS_BUCKET", "tentacular"),
 			Region:     envDefault("TENTACULAR_RUSTFS_REGION", "us-east-1"),
 			CACertPath: os.Getenv("TENTACULAR_RUSTFS_CA_CERT_PATH"),
+			CACertPEM:  os.Getenv("TENTACULAR_RUSTFS_CA_CERT_PEM"),
 		},
 		Auth: AuthConfig{
 			Enabled:      envBool("TENTACULAR_EXOSKELETON_AUTH_ENABLED"),

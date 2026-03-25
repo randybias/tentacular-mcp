@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,12 +28,12 @@ func generateTestCACertPEM(t *testing.T) []byte {
 	}
 
 	template := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "Test CA"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(24 * time.Hour),
-		IsCA:         true,
-		KeyUsage:     x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "Test CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
 	}
 
@@ -61,9 +62,9 @@ func writeTempFile(t *testing.T, dir, pattern string, data []byte) string {
 	return f.Name()
 }
 
-// TestNewRustFSRegistrar_WithCACert verifies that NewRustFSRegistrar loads
+// TestNewRustFSRegistrar_WithCACertPath verifies that NewRustFSRegistrar loads
 // a valid CA cert PEM file and initializes with HTTPS successfully.
-func TestNewRustFSRegistrar_WithCACert(t *testing.T) {
+func TestNewRustFSRegistrar_WithCACertPath(t *testing.T) {
 	caPEM := generateTestCACertPEM(t)
 	caPath := writeTempFile(t, t.TempDir(), "ca-*.pem", caPEM)
 
@@ -88,13 +89,95 @@ func TestNewRustFSRegistrar_WithCACert(t *testing.T) {
 	if reg.s3 == nil {
 		t.Error("s3 client should be initialized")
 	}
-	// Verify endpoint was preserved.
-	if reg.cfg.Endpoint != cfg.Endpoint {
-		t.Errorf("cfg.Endpoint = %q, want %q", reg.cfg.Endpoint, cfg.Endpoint)
-	}
-	// Verify admin endpoint uses HTTPS.
 	if !strings.HasPrefix(reg.admin.endpoint, "https://") {
 		t.Errorf("admin endpoint = %q, expected https:// prefix", reg.admin.endpoint)
+	}
+	// Verify custom TLS transport was applied with RootCAs pool.
+	tr, ok := reg.admin.httpClient.Transport.(*http.Transport)
+	if !ok || tr.TLSClientConfig == nil || tr.TLSClientConfig.RootCAs == nil {
+		t.Error("expected custom TLS transport with RootCAs pool from CA cert")
+	}
+}
+
+// TestNewRustFSRegistrar_WithCACertPEM verifies that NewRustFSRegistrar accepts
+// PEM content directly via CACertPEM (env-var-based approach).
+func TestNewRustFSRegistrar_WithCACertPEM(t *testing.T) {
+	caPEM := generateTestCACertPEM(t)
+
+	cfg := RustFSConfig{
+		Endpoint:  "https://rustfs.example.svc.cluster.local:9000",
+		AccessKey: "admin",
+		SecretKey: "admin123",
+		Bucket:    "tentacular",
+		Region:    "us-east-1",
+		CACertPEM: string(caPEM),
+	}
+
+	reg, err := NewRustFSRegistrar(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("NewRustFSRegistrar with CACertPEM should succeed, got: %v", err)
+	}
+	defer reg.Close()
+
+	if reg.admin == nil {
+		t.Error("admin client should be initialized")
+	}
+	if reg.s3 == nil {
+		t.Error("s3 client should be initialized")
+	}
+	// Verify custom TLS transport was applied.
+	tr, ok := reg.admin.httpClient.Transport.(*http.Transport)
+	if !ok || tr.TLSClientConfig == nil || tr.TLSClientConfig.RootCAs == nil {
+		t.Error("expected custom TLS transport with RootCAs pool from CACertPEM")
+	}
+}
+
+// TestNewRustFSRegistrar_CACertPEM_PrecedenceOverPath verifies that CACertPEM
+// takes precedence over CACertPath when both are set.
+func TestNewRustFSRegistrar_CACertPEM_PrecedenceOverPath(t *testing.T) {
+	caPEM := generateTestCACertPEM(t)
+
+	cfg := RustFSConfig{
+		Endpoint:   "https://rustfs.example.svc.cluster.local:9000",
+		AccessKey:  "admin",
+		SecretKey:  "admin123",
+		Bucket:     "tentacular",
+		Region:     "us-east-1",
+		CACertPEM:  string(caPEM),
+		CACertPath: "/nonexistent/path/ca.pem", // Should be ignored.
+	}
+
+	reg, err := NewRustFSRegistrar(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("CACertPEM should take precedence, got: %v", err)
+	}
+	defer reg.Close()
+
+	tr, ok := reg.admin.httpClient.Transport.(*http.Transport)
+	if !ok || tr.TLSClientConfig == nil || tr.TLSClientConfig.RootCAs == nil {
+		t.Error("expected custom TLS transport from CACertPEM")
+	}
+}
+
+// TestNewRustFSRegistrar_WithInvalidCACertPEM verifies that invalid PEM in
+// CACertPEM produces an error.
+func TestNewRustFSRegistrar_WithInvalidCACertPEM(t *testing.T) {
+	cfg := RustFSConfig{
+		Endpoint:  "https://rustfs.example.svc.cluster.local:9000",
+		AccessKey: "admin",
+		SecretKey: "admin123",
+		Bucket:    "tentacular",
+		Region:    "us-east-1",
+		CACertPEM: "this is not a PEM certificate",
+	}
+
+	reg, err := NewRustFSRegistrar(context.Background(), cfg)
+	if err == nil {
+		reg.Close()
+		t.Fatal("NewRustFSRegistrar should fail with invalid CACertPEM")
+	}
+	if !strings.Contains(err.Error(), "no valid PEM") {
+		t.Errorf("error should mention invalid PEM, got: %v", err)
 	}
 }
 
@@ -153,7 +236,7 @@ func TestNewRustFSRegistrar_NoCACert_HTTP(t *testing.T) {
 		SecretKey: "admin123",
 		Bucket:    "tentacular",
 		Region:    "us-east-1",
-		// CACertPath intentionally empty.
+		// CACertPath and CACertPEM intentionally empty.
 	}
 
 	reg, err := NewRustFSRegistrar(context.Background(), cfg)
@@ -168,12 +251,11 @@ func TestNewRustFSRegistrar_NoCACert_HTTP(t *testing.T) {
 	if reg.s3 == nil {
 		t.Error("s3 client should be initialized")
 	}
-	// Verify admin endpoint uses HTTP.
 	if !strings.HasPrefix(reg.admin.endpoint, "http://") {
 		t.Errorf("admin endpoint = %q, expected http:// prefix", reg.admin.endpoint)
 	}
-	// Verify the admin client uses the default http client (no custom transport).
-	if reg.admin.httpClient != nil && reg.admin.httpClient.Transport != nil {
-		t.Error("admin httpClient should use default transport when no CA cert configured")
+	// Default HTTP client should be used (no custom transport).
+	if reg.admin.httpClient != http.DefaultClient {
+		t.Error("admin httpClient should be http.DefaultClient when no CA cert configured")
 	}
 }
