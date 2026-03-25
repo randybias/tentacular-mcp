@@ -322,6 +322,25 @@ postgresql:
     certKeyFilename: tls.key
 ```
 
+## RustFS TLS
+
+RustFS serves HTTPS internally using cert-manager-issued certificates (server-only mTLS).
+The CA certificate is automatically mounted into the MCP pod so the registrar trusts
+the self-signed cert chain. No manual certificate management is needed.
+
+```yaml
+rustfs:
+  mtls:
+    enabled: true
+    serverOnly: true
+```
+
+When `rustfs.mtls.enabled` is true, the RustFS subchart creates a cert-manager CA and
+server certificate. The platform chart mounts the CA secret (`tentacular-rustfs-root-ca-secret`)
+into the MCP pod at `/etc/rustfs-ca/` and configures the exoskeleton registrar to load
+the CA cert for HTTPS connections. The volume mount is `optional: true`, so the MCP pod
+still starts when RustFS is disabled.
+
 ## Keycloak User Management
 
 When `keycloak.enabled: true`, the chart deploys Keycloak and auto-creates the `tentacular`
