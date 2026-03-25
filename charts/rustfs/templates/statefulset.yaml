@@ -204,7 +204,9 @@ spec:
           {{- toYaml .Values.commonLabels | nindent 10 }}
       spec:
         accessModes: ["ReadWriteOnce"]
+        {{- if .Values.storageclass.name }}
         storageClassName: {{ .Values.storageclass.name }}
+        {{- end }}
         resources:
           requests:
             storage: {{ .Values.storageclass.logStorageSize }}
@@ -216,7 +218,9 @@ spec:
           {{- toYaml $.Values.commonLabels | nindent 10 }}
       spec:
         accessModes: ["ReadWriteOnce"]
+        {{- if $.Values.storageclass.name }}
         storageClassName: {{ $.Values.storageclass.name }}
+        {{- end }}
         resources:
           requests:
             storage: {{ $.Values.storageclass.dataStorageSize }}
@@ -228,7 +232,9 @@ spec:
           {{- toYaml .Values.commonLabels | nindent 10 }}
       spec:
         accessModes: ["ReadWriteOnce"]
+        {{- if .Values.storageclass.name }}
         storageClassName: {{ .Values.storageclass.name }}
+        {{- end }}
         resources:
           requests:
             storage: {{ .Values.storageclass.dataStorageSize }}
