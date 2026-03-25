@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/minio/minio-go/v7"
@@ -168,10 +171,32 @@ func NewRustFSRegistrar(_ context.Context, cfg RustFSConfig) (*RustFSRegistrar, 
 	endpoint := strings.TrimPrefix(strings.TrimPrefix(cfg.Endpoint, "http://"), "https://")
 	useSSL := strings.HasPrefix(cfg.Endpoint, "https://")
 
+	// Build custom TLS transport when a CA cert path is configured and SSL is enabled.
+	var httpClient *http.Client
+	var transport http.RoundTripper
+	if cfg.CACertPath != "" && useSSL {
+		pemData, err := os.ReadFile(cfg.CACertPath)
+		if err != nil {
+			return nil, fmt.Errorf("rustfs read CA cert %s: %w", cfg.CACertPath, err)
+		}
+		pool, err := x509.SystemCertPool()
+		if err != nil {
+			pool = x509.NewCertPool()
+		}
+		if !pool.AppendCertsFromPEM(pemData) {
+			return nil, fmt.Errorf("rustfs CA cert %s: no valid PEM certificates found", cfg.CACertPath)
+		}
+		tlsConfig := &tls.Config{RootCAs: pool}
+		transport = &http.Transport{TLSClientConfig: tlsConfig}
+		httpClient = &http.Client{Transport: transport}
+		slog.Info("exoskeleton: rustfs using custom CA cert", "path", cfg.CACertPath)
+	}
+
 	s3Client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
-		Secure: useSSL,
-		Region: cfg.Region,
+		Creds:     credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
+		Secure:    useSSL,
+		Region:    cfg.Region,
+		Transport: transport,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("rustfs s3 client: %w", err)
@@ -184,7 +209,7 @@ func NewRustFSRegistrar(_ context.Context, cfg RustFSConfig) (*RustFSRegistrar, 
 	}
 	adminEndpoint := scheme + endpoint
 
-	admin := newRustFSAdmin(adminEndpoint, cfg.AccessKey, cfg.SecretKey, cfg.Region, nil)
+	admin := newRustFSAdmin(adminEndpoint, cfg.AccessKey, cfg.SecretKey, cfg.Region, httpClient)
 
 	return &RustFSRegistrar{admin: admin, s3: s3Client, cfg: cfg}, nil
 }
