@@ -165,6 +165,18 @@ tentacular-mcp:
     - configMapRef:
         name: tentacular-proxy-config
         optional: true
+  # -- Mount the RustFS CA certificate for HTTPS trust.
+  # The cert-manager CA Secret is created by the RustFS subchart when mtls is enabled.
+  # optional: true so the pod still starts when RustFS is disabled.
+  extraVolumes:
+    - name: rustfs-ca
+      secret:
+        secretName: tentacular-rustfs-root-ca-secret
+        optional: true
+  extraVolumeMounts:
+    - name: rustfs-ca
+      mountPath: /etc/rustfs-ca
+      readOnly: true
 
 # -- Exoskeleton configuration for MCP server
 # Controls how backing-service connection details are wired to the MCP server
@@ -412,6 +424,10 @@ rustfs:
     console:
       port: 9001
     type: ClusterIP
+  # -- mTLS for RustFS internal traffic (cert-manager-issued certificates)
+  mtls:
+    enabled: true
+    serverOnly: true
   # -- Ingress disabled (internal access only)
   ingress:
     enabled: false

@@ -115,6 +115,12 @@ affinity: {}
 # -- Extra environment variable sources (e.g., ConfigMaps) to add to the pod via envFrom.
 extraEnvFrom: []
 
+# -- Extra volumes to add to the pod (e.g., for CA certificates)
+extraVolumes: []
+
+# -- Extra volume mounts to add to the container (e.g., for CA certificates)
+extraVolumeMounts: []
+
 # -- Authorization (authz) configuration.
 authz:
   # -- Enable per-workflow permission enforcement.

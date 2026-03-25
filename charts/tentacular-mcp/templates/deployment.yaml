@@ -254,6 +254,9 @@ spec:
             - name: auth-secret
               mountPath: /etc/tentacular-mcp
               readOnly: true
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           livenessProbe:
@@ -266,6 +269,9 @@ spec:
         - name: auth-secret
           secret:
             secretName: {{ include "tentacular-mcp.authSecretName" . }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
