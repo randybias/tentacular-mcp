@@ -194,7 +194,9 @@ func NewRustFSRegistrar(_ context.Context, cfg RustFSConfig) (*RustFSRegistrar, 
 			return nil, errors.New("rustfs CA cert: no valid PEM certificates found")
 		}
 		tlsConfig := &tls.Config{RootCAs: pool}
-		transport = &http.Transport{TLSClientConfig: tlsConfig}
+		baseTransport := http.DefaultTransport.(*http.Transport).Clone()
+		baseTransport.TLSClientConfig = tlsConfig
+		transport = baseTransport
 		httpClient = &http.Client{Transport: transport}
 		slog.Info("exoskeleton: rustfs using custom CA cert")
 	}
