@@ -187,7 +187,10 @@ func (t *lazyCATransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	t.mu.Lock()
 	if !t.loaded {
 		if pemData, err := os.ReadFile(t.certPath); err == nil && len(pemData) > 0 {
-			pool := x509.NewCertPool()
+			pool, sysErr := x509.SystemCertPool()
+			if sysErr != nil {
+				pool = x509.NewCertPool()
+			}
 			if pool.AppendCertsFromPEM(pemData) {
 				t.inner.CloseIdleConnections()
 				newTransport := t.inner.Clone()
@@ -234,7 +237,10 @@ func NewRustFSRegistrar(_ context.Context, cfg RustFSConfig) (*RustFSRegistrar, 
 			}
 		}
 		if len(pemData) > 0 {
-			pool := x509.NewCertPool()
+			pool, sysErr := x509.SystemCertPool()
+			if sysErr != nil {
+				pool = x509.NewCertPool()
+			}
 			if !pool.AppendCertsFromPEM(pemData) {
 				return nil, errors.New("rustfs CA cert: no valid PEM certificates found")
 			}
