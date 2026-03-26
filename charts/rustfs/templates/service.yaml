@@ -29,10 +29,12 @@ kind: Service
 metadata:
   name: {{ include "rustfs.fullname" . }}-svc
   namespace: {{ include "rustfs.namespace" . }}
-  {{- if and .Values.mode.distributed.enabled (eq .Values.ingress.className "traefik")}}
+  {{- if and (eq .Values.ingress.className "traefik") (or .Values.mode.distributed.enabled .Values.mtls.enabled) }}
   annotations:
+    {{- if .Values.mode.distributed.enabled }}
     {{- toYaml .Values.ingress.traefikAnnotations | nindent 4 }}
-    {{- if and .Values.mtls.enabled (eq .Values.ingress.className "traefik") }}
+    {{- end }}
+    {{- if .Values.mtls.enabled }}
     traefik.ingress.kubernetes.io/service.serversscheme: https
     traefik.ingress.kubernetes.io/service.serverstransport: {{ include "rustfs.namespace" . }}-{{ include "rustfs.fullname" . }}-transport@kubernetescrd
     {{- end }}

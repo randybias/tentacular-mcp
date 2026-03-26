@@ -165,11 +165,16 @@ tentacular-mcp:
     - configMapRef:
         name: tentacular-proxy-config
         optional: true
-  # -- Extra volumes for the MCP pod.
-  # RustFS CA trust is delivered via the TENTACULAR_RUSTFS_CA_CERT_PEM env var
-  # (populated by Helm lookup) rather than a cross-namespace Secret volume mount.
-  extraVolumes: []
-  extraVolumeMounts: []
+  # -- RustFS CA certificate volume mount (standalone chart only).
+  # Disabled in the umbrella chart because the CA Secret is created by
+  # cert-manager in the exoskeleton namespace while MCP runs in the system
+  # namespace; Kubernetes Secrets are namespace-scoped so the volume mount
+  # cannot resolve the Secret cross-namespace.
+  # In the umbrella chart, CA trust is delivered exclusively via the
+  # TENTACULAR_RUSTFS_CA_CERT_PEM env var (populated by Helm lookup on
+  # upgrade; unavailable on first install until a subsequent helm upgrade).
+  rustfsCa:
+    enabled: false
 
 # -- Exoskeleton configuration for MCP server
 # Controls how backing-service connection details are wired to the MCP server

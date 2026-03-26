@@ -88,3 +88,17 @@ ServiceAccount name.
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+RustFS CA certificate secret name.
+Defaults to "rustfs-root-ca-secret", matching a standard standalone RustFS
+deployment (helm install rustfs charts/rustfs). Override via rustfsCa.secretName
+when RustFS uses a non-standard release name or fullnameOverride.
+*/}}
+{{- define "tentacular-mcp.rustfsCa.secretName" -}}
+{{- if .Values.rustfsCa.secretName -}}
+  {{- .Values.rustfsCa.secretName -}}
+{{- else -}}
+  {{- "rustfs-root-ca-secret" -}}
+{{- end -}}
+{{- end }}

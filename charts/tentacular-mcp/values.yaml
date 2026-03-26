@@ -121,6 +121,19 @@ extraVolumes: []
 # -- Extra volume mounts to add to the container (e.g., for CA certificates)
 extraVolumeMounts: []
 
+# -- RustFS CA certificate configuration.
+# When enabled, mounts the RustFS CA cert secret as a volume so the registrar
+# can trust RustFS's cert-manager-issued TLS certificates.
+# The secret name is derived from the release name by default, matching the
+# cert-manager Certificate created by the RustFS subchart.
+rustfsCa:
+  # -- Enable RustFS CA certificate volume mount
+  enabled: false
+  # -- Override the CA cert secret name (default: rustfs-root-ca-secret)
+  secretName: ""
+  # -- Mount path for the CA cert file
+  mountPath: /etc/rustfs-ca
+
 # -- Authorization (authz) configuration.
 authz:
   # -- Enable per-workflow permission enforcement.

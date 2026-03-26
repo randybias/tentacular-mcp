@@ -24,7 +24,15 @@ spec:
       labels:
         {{- include "tentacular-mcp.labels" . | nindent 8 }}
         app.kubernetes.io/component: server
-      {{- with .Values.deployment.podAnnotations }}
+      {{- $checksumAnnotations := dict }}
+      {{- if .Values.exoskeleton.secretRef }}
+      {{- $secret := lookup "v1" "Secret" (include "tentacular-mcp.namespace" .) .Values.exoskeleton.secretRef }}
+      {{- if $secret }}
+      {{- $_ := set $checksumAnnotations "checksum/exoskeleton-config" ($secret.data | toJson | sha256sum) }}
+      {{- end }}
+      {{- end }}
+      {{- $allAnnotations := merge $checksumAnnotations (.Values.deployment.podAnnotations | default dict) }}
+      {{- with $allAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -61,6 +69,10 @@ spec:
             {{- if not .Values.authz.enabled }}
             - name: TENTACULAR_AUTHZ_ENABLED
               value: "false"
+            {{- end }}
+            {{- if .Values.rustfsCa.enabled }}
+            - name: TENTACULAR_RUSTFS_CA_CERT_PATH
+              value: {{ printf "%s/ca.crt" (.Values.rustfsCa.mountPath | default "/etc/rustfs-ca") | quote }}
             {{- end }}
             {{- if not .Values.exoskeleton.secretRef }}
             {{- if .Values.exoskeletonAuth.enabled }}
@@ -254,6 +266,11 @@ spec:
             - name: auth-secret
               mountPath: /etc/tentacular-mcp
               readOnly: true
+            {{- if .Values.rustfsCa.enabled }}
+            - name: rustfs-ca
+              mountPath: {{ .Values.rustfsCa.mountPath | default "/etc/rustfs-ca" }}
+              readOnly: true
+            {{- end }}
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -269,6 +286,12 @@ spec:
         - name: auth-secret
           secret:
             secretName: {{ include "tentacular-mcp.authSecretName" . }}
+        {{- if .Values.rustfsCa.enabled }}
+        - name: rustfs-ca
+          secret:
+            secretName: {{ include "tentacular-mcp.rustfsCa.secretName" . }}
+            optional: true
+        {{- end }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

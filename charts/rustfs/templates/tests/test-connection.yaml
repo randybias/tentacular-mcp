@@ -13,5 +13,5 @@ spec:
       image: "{{ .Values.image.initImage.repository }}:{{ .Values.image.initImage.tag }}"
       imagePullPolicy: {{ .Values.image.initImage.pullPolicy }}
       command: ['wget']
-      args: ['-O', '/dev/null', '{{ include "rustfs.fullname" . }}-svc:{{ .Values.service.endpoint.port }}/health']
+      args: ['-O', '/dev/null', {{- if .Values.mtls.enabled }} '--no-check-certificate', 'https://{{ include "rustfs.fullname" . }}-svc:{{ .Values.service.endpoint.port }}/health' {{- else }} '{{ include "rustfs.fullname" . }}-svc:{{ .Values.service.endpoint.port }}/health' {{- end }}]
   restartPolicy: Never

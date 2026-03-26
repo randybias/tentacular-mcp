@@ -182,7 +182,9 @@ func TestNewRustFSRegistrar_WithInvalidCACertPEM(t *testing.T) {
 }
 
 // TestNewRustFSRegistrar_WithMissingCACert verifies that NewRustFSRegistrar
-// returns an error when the CA cert file does not exist.
+// uses a lazy-loading transport when the CA cert file does not yet exist
+// (e.g., optional volume mount not yet populated by cert-manager on first install).
+// The lazy transport will attempt to load the cert on each request until it appears.
 func TestNewRustFSRegistrar_WithMissingCACert(t *testing.T) {
 	cfg := RustFSConfig{
 		Endpoint:   "https://rustfs.example.svc.cluster.local:9000",
@@ -194,12 +196,78 @@ func TestNewRustFSRegistrar_WithMissingCACert(t *testing.T) {
 	}
 
 	reg, err := NewRustFSRegistrar(context.Background(), cfg)
-	if err == nil {
-		reg.Close()
-		t.Fatal("NewRustFSRegistrar should fail with missing CA cert file")
+	if err != nil {
+		t.Fatalf("NewRustFSRegistrar should succeed with missing CA cert file (lazy fallback), got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "rustfs read CA cert") {
-		t.Errorf("error should mention reading CA cert, got: %v", err)
+	defer reg.Close()
+
+	if reg.admin == nil {
+		t.Error("admin client should be initialized")
+	}
+	if reg.s3 == nil {
+		t.Error("s3 client should be initialized")
+	}
+	// A lazy CA transport should be used so the cert can be loaded later.
+	if reg.admin.httpClient == nil {
+		t.Fatal("admin httpClient should not be nil when CACertPath is set")
+	}
+	if _, ok := reg.admin.httpClient.Transport.(*lazyCATransport); !ok {
+		t.Errorf("expected lazyCATransport when CA cert file is missing, got %T", reg.admin.httpClient.Transport)
+	}
+}
+
+// TestLazyCATransport_LoadsWhenFileAppears verifies that the lazyCATransport
+// picks up the CA cert file once it is created (simulating cert-manager
+// creating the secret after pod startup).
+func TestLazyCATransport_LoadsWhenFileAppears(t *testing.T) {
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "ca.crt")
+
+	// Create the registrar with a non-existent cert file.
+	cfg := RustFSConfig{
+		Endpoint:   "https://rustfs.example.svc.cluster.local:9000",
+		AccessKey:  "admin",
+		SecretKey:  "admin123",
+		Bucket:     "tentacular",
+		Region:     "us-east-1",
+		CACertPath: certPath,
+	}
+
+	reg, err := NewRustFSRegistrar(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("NewRustFSRegistrar should succeed, got: %v", err)
+	}
+	defer reg.Close()
+
+	lt, ok := reg.admin.httpClient.Transport.(*lazyCATransport)
+	if !ok {
+		t.Fatalf("expected lazyCATransport, got %T", reg.admin.httpClient.Transport)
+	}
+
+	// Verify cert is not loaded yet.
+	if lt.loaded {
+		t.Error("cert should not be loaded before file exists")
+	}
+
+	// Now create the cert file (simulating cert-manager).
+	caPEM := generateTestCACertPEM(t)
+	if err := os.WriteFile(certPath, caPEM, 0o644); err != nil {
+		t.Fatalf("write cert file: %v", err)
+	}
+
+	// Trigger a load attempt by calling RoundTrip directly.
+	// We expect a connection error (no server) but the cert should be loaded.
+	// Use a short timeout to avoid waiting for the default dial timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", "https://rustfs.example.svc.cluster.local:9000/health", nil)
+	_, _ = lt.RoundTrip(req) // Will fail to connect, that's expected.
+
+	if !lt.loaded {
+		t.Error("lazyCATransport should have loaded the cert after file appeared")
+	}
+	if lt.inner.TLSClientConfig == nil || lt.inner.TLSClientConfig.RootCAs == nil {
+		t.Error("expected TLS config with custom RootCAs after lazy load")
 	}
 }
 

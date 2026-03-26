@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -169,6 +170,39 @@ type RustFSRegistrar struct {
 	cfg   RustFSConfig
 }
 
+// lazyCATransport wraps an http.Transport and defers loading a CA cert file
+// until the first HTTP request. This handles the first-install race where
+// cert-manager hasn't created the CA secret yet when the registrar initializes.
+// On each request, if the cert hasn't been loaded yet, it attempts to read the
+// file. Once the cert is successfully loaded, it is cached and no further file
+// reads occur.
+type lazyCATransport struct {
+	inner    *http.Transport
+	certPath string
+	mu       sync.Mutex
+	loaded   bool
+}
+
+func (t *lazyCATransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.mu.Lock()
+	if !t.loaded {
+		if pemData, err := os.ReadFile(t.certPath); err == nil && len(pemData) > 0 {
+			pool := x509.NewCertPool()
+			if pool.AppendCertsFromPEM(pemData) {
+				t.inner.CloseIdleConnections()
+				newTransport := t.inner.Clone()
+				newTransport.TLSClientConfig = &tls.Config{RootCAs: pool}
+				t.inner = newTransport
+				t.loaded = true
+				slog.Info("exoskeleton: rustfs CA cert loaded from file (deferred)", "path", t.certPath)
+			}
+		}
+	}
+	inner := t.inner
+	t.mu.Unlock()
+	return inner.RoundTrip(req)
+}
+
 // NewRustFSRegistrar creates a new RustFS registrar with admin and S3 clients.
 func NewRustFSRegistrar(_ context.Context, cfg RustFSConfig) (*RustFSRegistrar, error) {
 	endpoint := strings.TrimPrefix(strings.TrimPrefix(cfg.Endpoint, "http://"), "https://")
@@ -186,19 +220,31 @@ func NewRustFSRegistrar(_ context.Context, cfg RustFSConfig) (*RustFSRegistrar, 
 			var err error
 			pemData, err = os.ReadFile(cfg.CACertPath)
 			if err != nil {
-				return nil, fmt.Errorf("rustfs read CA cert %s: %w", cfg.CACertPath, err)
+				if os.IsNotExist(err) {
+					// File doesn't exist yet (e.g., cert-manager hasn't created the
+					// CA secret on first install). Use a lazy transport that retries
+					// loading the file on each request until it appears.
+					slog.Warn("exoskeleton: rustfs CA cert file not yet available, will load on first use", "path", cfg.CACertPath)
+					baseTransport := http.DefaultTransport.(*http.Transport).Clone()
+					transport = &lazyCATransport{inner: baseTransport, certPath: cfg.CACertPath}
+					httpClient = &http.Client{Transport: transport}
+				} else {
+					return nil, fmt.Errorf("rustfs read CA cert %s: %w", cfg.CACertPath, err)
+				}
 			}
 		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(pemData) {
-			return nil, errors.New("rustfs CA cert: no valid PEM certificates found")
+		if len(pemData) > 0 {
+			pool := x509.NewCertPool()
+			if !pool.AppendCertsFromPEM(pemData) {
+				return nil, errors.New("rustfs CA cert: no valid PEM certificates found")
+			}
+			tlsConfig := &tls.Config{RootCAs: pool}
+			baseTransport := http.DefaultTransport.(*http.Transport).Clone()
+			baseTransport.TLSClientConfig = tlsConfig
+			transport = baseTransport
+			httpClient = &http.Client{Transport: transport}
+			slog.Info("exoskeleton: rustfs using custom CA cert")
 		}
-		tlsConfig := &tls.Config{RootCAs: pool}
-		baseTransport := http.DefaultTransport.(*http.Transport).Clone()
-		baseTransport.TLSClientConfig = tlsConfig
-		transport = baseTransport
-		httpClient = &http.Client{Transport: transport}
-		slog.Info("exoskeleton: rustfs using custom CA cert")
 	}
 
 	s3Client, err := minio.New(endpoint, &minio.Options{
