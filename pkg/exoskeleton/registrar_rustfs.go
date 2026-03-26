@@ -191,7 +191,7 @@ func (t *lazyCATransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			if pool.AppendCertsFromPEM(pemData) {
 				t.inner.CloseIdleConnections()
 				newTransport := t.inner.Clone()
-				newTransport.TLSClientConfig = &tls.Config{RootCAs: pool}
+				newTransport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
 				t.inner = newTransport
 				t.loaded = true
 				slog.Info("exoskeleton: rustfs CA cert loaded from file (deferred)", "path", t.certPath)
@@ -238,7 +238,7 @@ func NewRustFSRegistrar(_ context.Context, cfg RustFSConfig) (*RustFSRegistrar, 
 			if !pool.AppendCertsFromPEM(pemData) {
 				return nil, errors.New("rustfs CA cert: no valid PEM certificates found")
 			}
-			tlsConfig := &tls.Config{RootCAs: pool}
+			tlsConfig := &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
 			baseTransport := http.DefaultTransport.(*http.Transport).Clone()
 			baseTransport.TLSClientConfig = tlsConfig
 			transport = baseTransport

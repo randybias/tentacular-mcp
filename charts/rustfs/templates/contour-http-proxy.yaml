@@ -35,7 +35,7 @@ spec:
         response: infinity
         idle: 5m
       {{- if $.Values.ingress.tls.enabled }}
-      permitInsecure: true
+      permitInsecure: false
       {{- end }}
 {{- end }}
 {{- end }}
