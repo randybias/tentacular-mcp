@@ -109,10 +109,10 @@ jobs:
             --namespace tentacular-system \
             --set auth.existingSecret=my-secret
 
-      - name: Fail without auth
+      - name: Auto-generate auth token when not provided
         run: |
-          ! helm template test charts/tentacular-mcp/ \
-            --namespace tentacular-system 2>&1
+          helm template test charts/tentacular-mcp/ \
+            --namespace tentacular-system 2>&1 | grep -q 'tentacular-mcp-auth'
 
   coverage:
     name: Coverage
