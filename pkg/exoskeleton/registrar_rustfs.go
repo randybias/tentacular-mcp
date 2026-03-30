@@ -222,18 +222,17 @@ func NewRustFSRegistrar(_ context.Context, cfg RustFSConfig) (*RustFSRegistrar, 
 		} else {
 			var err error
 			pemData, err = os.ReadFile(cfg.CACertPath)
-			if err != nil {
-				if os.IsNotExist(err) {
-					// File doesn't exist yet (e.g., cert-manager hasn't created the
-					// CA secret on first install). Use a lazy transport that retries
-					// loading the file on each request until it appears.
-					slog.Warn("exoskeleton: rustfs CA cert file not yet available, will load on first use", "path", cfg.CACertPath)
-					baseTransport := http.DefaultTransport.(*http.Transport).Clone()
-					transport = &lazyCATransport{inner: baseTransport, certPath: cfg.CACertPath}
-					httpClient = &http.Client{Transport: transport}
-				} else {
-					return nil, fmt.Errorf("rustfs read CA cert %s: %w", cfg.CACertPath, err)
-				}
+			if err != nil && !os.IsNotExist(err) {
+				return nil, fmt.Errorf("rustfs read CA cert %s: %w", cfg.CACertPath, err)
+			}
+			if os.IsNotExist(err) {
+				// File doesn't exist yet (e.g., cert-manager hasn't created the
+				// CA secret on first install). Use a lazy transport that retries
+				// loading the file on each request until it appears.
+				slog.Warn("exoskeleton: rustfs CA cert file not yet available, will load on first use", "path", cfg.CACertPath)
+				baseTransport := http.DefaultTransport.(*http.Transport).Clone()
+				transport = &lazyCATransport{inner: baseTransport, certPath: cfg.CACertPath}
+				httpClient = &http.Client{Transport: transport}
 			}
 		}
 		if len(pemData) > 0 {

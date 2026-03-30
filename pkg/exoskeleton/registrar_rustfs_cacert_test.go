@@ -260,8 +260,11 @@ func TestLazyCATransport_LoadsWhenFileAppears(t *testing.T) {
 	// Use a short timeout to avoid waiting for the default dial timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET", "https://rustfs.example.svc.cluster.local:9000/health", nil)
-	_, _ = lt.RoundTrip(req) // Will fail to connect, that's expected.
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://rustfs.example.svc.cluster.local:9000/health", nil)
+	resp, _ := lt.RoundTrip(req) // Will fail to connect, that's expected.
+	if resp != nil && resp.Body != nil {
+		resp.Body.Close()
+	}
 
 	if !lt.loaded {
 		t.Error("lazyCATransport should have loaded the cert after file appeared")
