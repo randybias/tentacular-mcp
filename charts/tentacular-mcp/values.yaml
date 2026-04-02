@@ -115,6 +115,12 @@ affinity: {}
 # -- Extra environment variable sources (e.g., ConfigMaps) to add to the pod via envFrom.
 extraEnvFrom: []
 
+# -- External URL of the MCP server (e.g., "https://mcp.example.com").
+# When set alongside exoskeletonAuth.enabled, the server advertises
+# RFC 9728 Protected Resource Metadata at /.well-known/oauth-protected-resource,
+# enabling OAuth clients (e.g., Claude Code) to auto-discover the authorization server.
+externalURL: ""
+
 # -- Authorization (authz) configuration.
 authz:
   # -- Enable per-workflow permission enforcement.

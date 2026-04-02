@@ -58,6 +58,10 @@ spec:
           env:
             - name: TOKEN_PATH
               value: /etc/tentacular-mcp/token
+            {{- if .Values.externalURL }}
+            - name: TENTACULAR_EXTERNAL_URL
+              value: {{ .Values.externalURL | quote }}
+            {{- end }}
             {{- if not .Values.authz.enabled }}
             - name: TENTACULAR_AUTHZ_ENABLED
               value: "false"

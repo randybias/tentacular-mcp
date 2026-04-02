@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	testToken = "super-secret-token"
-	testKeyID = "test-key-1"
+	testToken               = "super-secret-token"
+	testKeyID               = "test-key-1"
+	testResourceMetadataURL = "https://mcp.example.com/.well-known/oauth-protected-resource"
 )
 
 // okHandler is a trivial HTTP handler that returns 200 OK.
@@ -41,7 +42,7 @@ func makeRequest(t *testing.T, handler http.Handler, path, authHeader string) *h
 }
 
 func TestMiddleware_ValidToken(t *testing.T) {
-	h := auth.Middleware(testToken, okHandler)
+	h := auth.Middleware(testToken, "", okHandler)
 	rr := makeRequest(t, h, "/some/path", "Bearer "+testToken)
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rr.Code)
@@ -49,7 +50,7 @@ func TestMiddleware_ValidToken(t *testing.T) {
 }
 
 func TestMiddleware_MissingToken(t *testing.T) {
-	h := auth.Middleware(testToken, okHandler)
+	h := auth.Middleware(testToken, "", okHandler)
 	rr := makeRequest(t, h, "/some/path", "")
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rr.Code)
@@ -57,7 +58,7 @@ func TestMiddleware_MissingToken(t *testing.T) {
 }
 
 func TestMiddleware_InvalidToken(t *testing.T) {
-	h := auth.Middleware(testToken, okHandler)
+	h := auth.Middleware(testToken, "", okHandler)
 	rr := makeRequest(t, h, "/some/path", "Bearer wrong-token")
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rr.Code)
@@ -65,7 +66,7 @@ func TestMiddleware_InvalidToken(t *testing.T) {
 }
 
 func TestMiddleware_MissingBearerPrefix(t *testing.T) {
-	h := auth.Middleware(testToken, okHandler)
+	h := auth.Middleware(testToken, "", okHandler)
 	rr := makeRequest(t, h, "/some/path", testToken)
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401 for missing Bearer prefix, got %d", rr.Code)
@@ -73,11 +74,46 @@ func TestMiddleware_MissingBearerPrefix(t *testing.T) {
 }
 
 func TestMiddleware_HealthzBypassesAuth(t *testing.T) {
-	h := auth.Middleware(testToken, okHandler)
+	h := auth.Middleware(testToken, "", okHandler)
 	// No Authorization header on /healthz should still succeed.
 	rr := makeRequest(t, h, "/healthz", "")
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200 for /healthz without auth, got %d", rr.Code)
+	}
+}
+
+func TestMiddleware_WWWAuthenticate(t *testing.T) {
+	h := auth.Middleware(testToken, testResourceMetadataURL, okHandler)
+	rr := makeRequest(t, h, "/mcp", "")
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rr.Code)
+	}
+	wwwAuth := rr.Header().Get("WWW-Authenticate")
+	if wwwAuth == "" {
+		t.Fatal("expected WWW-Authenticate header, got empty")
+	}
+	expected := `Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"`
+	if wwwAuth != expected {
+		t.Errorf("WWW-Authenticate header mismatch\n  got:  %s\n  want: %s", wwwAuth, expected)
+	}
+}
+
+func TestMiddleware_NoWWWAuthenticateWithoutMetadataURL(t *testing.T) {
+	h := auth.Middleware(testToken, "", okHandler)
+	rr := makeRequest(t, h, "/mcp", "")
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rr.Code)
+	}
+	if wwwAuth := rr.Header().Get("WWW-Authenticate"); wwwAuth != "" {
+		t.Errorf("expected no WWW-Authenticate header, got %q", wwwAuth)
+	}
+}
+
+func TestMiddleware_WellKnownBypassesAuth(t *testing.T) {
+	h := auth.Middleware(testToken, "", okHandler)
+	rr := makeRequest(t, h, "/.well-known/oauth-protected-resource", "")
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 for well-known endpoint without auth, got %d", rr.Code)
 	}
 }
 
@@ -187,7 +223,7 @@ func signTestToken(t *testing.T, key *rsa.PrivateKey, keyID string, claims map[s
 
 func TestDualAuthMiddleware_NilValidator_BearerToken(t *testing.T) {
 	// When validator is nil, should behave like basic Middleware.
-	h := auth.DualAuthMiddleware(testToken, nil, okHandler)
+	h := auth.DualAuthMiddleware(testToken, nil, "", okHandler)
 	rr := makeRequest(t, h, "/some/path", "Bearer "+testToken)
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rr.Code)
@@ -195,7 +231,7 @@ func TestDualAuthMiddleware_NilValidator_BearerToken(t *testing.T) {
 }
 
 func TestDualAuthMiddleware_NilValidator_InvalidToken(t *testing.T) {
-	h := auth.DualAuthMiddleware(testToken, nil, okHandler)
+	h := auth.DualAuthMiddleware(testToken, nil, "", okHandler)
 	rr := makeRequest(t, h, "/some/path", "Bearer wrong")
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rr.Code)
@@ -241,7 +277,7 @@ func TestDualAuthMiddleware_OIDCToken_SetsDeployerContext(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	h := auth.DualAuthMiddleware(testToken, validator, checkHandler)
+	h := auth.DualAuthMiddleware(testToken, validator, "", checkHandler)
 	rr := makeRequest(t, h, "/mcp", "Bearer "+token)
 
 	if rr.Code != http.StatusOK {
@@ -283,7 +319,7 @@ func TestDualAuthMiddleware_BearerFallback_WithValidator(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	h := auth.DualAuthMiddleware(testToken, validator, checkHandler)
+	h := auth.DualAuthMiddleware(testToken, validator, "", checkHandler)
 	rr := makeRequest(t, h, "/mcp", "Bearer "+testToken)
 
 	if rr.Code != http.StatusOK {
@@ -315,10 +351,68 @@ func TestDualAuthMiddleware_HealthzBypass(t *testing.T) {
 		t.Fatalf("create validator: %v", err)
 	}
 
-	h := auth.DualAuthMiddleware(testToken, validator, okHandler)
+	h := auth.DualAuthMiddleware(testToken, validator, "", okHandler)
 	rr := makeRequest(t, h, "/healthz", "")
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200 for /healthz, got %d", rr.Code)
+	}
+}
+
+func TestDualAuthMiddleware_WellKnownBypass(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	srv := testKeycloakServer(t, key)
+	defer srv.Close()
+
+	validator, err := exoskeleton.NewOIDCValidator(exoskeleton.AuthConfig{
+		Enabled:   true,
+		IssuerURL: srv.URL,
+		ClientID:  "tentacular-mcp",
+	})
+	if err != nil {
+		t.Fatalf("create validator: %v", err)
+	}
+
+	h := auth.DualAuthMiddleware(testToken, validator, "", okHandler)
+	rr := makeRequest(t, h, "/.well-known/oauth-protected-resource", "")
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 for well-known endpoint, got %d", rr.Code)
+	}
+}
+
+func TestDualAuthMiddleware_WWWAuthenticate(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	srv := testKeycloakServer(t, key)
+	defer srv.Close()
+
+	validator, err := exoskeleton.NewOIDCValidator(exoskeleton.AuthConfig{
+		Enabled:   true,
+		IssuerURL: srv.URL,
+		ClientID:  "tentacular-mcp",
+	})
+	if err != nil {
+		t.Fatalf("create validator: %v", err)
+	}
+
+	h := auth.DualAuthMiddleware(testToken, validator, testResourceMetadataURL, okHandler)
+	rr := makeRequest(t, h, "/mcp", "")
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rr.Code)
+	}
+	wwwAuth := rr.Header().Get("WWW-Authenticate")
+	if wwwAuth == "" {
+		t.Fatal("expected WWW-Authenticate header on 401, got empty")
+	}
+	expected := `Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"`
+	if wwwAuth != expected {
+		t.Errorf("WWW-Authenticate header mismatch\n  got:  %s\n  want: %s", wwwAuth, expected)
 	}
 }
 
@@ -340,7 +434,7 @@ func TestDualAuthMiddleware_InvalidBothPaths(t *testing.T) {
 		t.Fatalf("create validator: %v", err)
 	}
 
-	h := auth.DualAuthMiddleware(testToken, validator, okHandler)
+	h := auth.DualAuthMiddleware(testToken, validator, "", okHandler)
 	rr := makeRequest(t, h, "/mcp", "Bearer totally-wrong-token")
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rr.Code)
