@@ -2,9 +2,10 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/randybias/tentacular-mcp/pkg/authz"
@@ -14,7 +15,7 @@ import (
 
 // errNoDeployer is the sentinel error returned when a tool handler requires
 // deployer identity but the request context has none (unauthenticated).
-var errNoDeployer = fmt.Errorf("authentication required: no deployer identity in request context")
+var errNoDeployer = errors.New("authentication required: no deployer identity in request context")
 
 // requireDeployer returns errNoDeployer when deployer is nil and authz is
 // enabled. Tool handlers that use deployer identity should call this at the
@@ -40,7 +41,7 @@ func checkNamespaceAuthz(ctx context.Context, client *k8s.Client, namespace stri
 
 	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// Namespace resource not found — treat as pre-authz (no owner-sub),
 			// which allows all callers. The namespace clearly exists if the caller
 			// is operating on resources within it.

@@ -1,7 +1,7 @@
 package exoskeleton
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 	"testing"
 
@@ -678,8 +678,8 @@ func TestPatchNetworkPolicyEgress_AllServices(t *testing.T) {
 
 	// Rules are sorted by dep name: nats, postgres, rustfs
 	type want struct {
-		port int64
 		ns   string
+		port int64
 	}
 	wantRules := []want{
 		{port: 4222, ns: "ns-nats"},
@@ -894,7 +894,7 @@ func TestPatchNetworkPolicyEgress_ExternalHostDNSFailure(t *testing.T) {
 	// DNS resolution fails — endpoint is skipped (fail closed), no 0.0.0.0/0.
 	origResolver := resolveHost
 	resolveHost = func(host string) ([]string, error) {
-		return nil, fmt.Errorf("no such host")
+		return nil, errors.New("no such host")
 	}
 	defer func() { resolveHost = origResolver }()
 
@@ -1052,16 +1052,16 @@ func TestIsInClusterHost(t *testing.T) {
 		{"pg.tentacular-exoskeleton.svc.cluster.local", true},
 		{"nats.ns.svc.cluster.local", true},
 		{"svc.ns.svc", true},
-		{"pg.tentacular-exoskeleton", false}, // 2-label: no .svc suffix, could be external
-		{"rustfs.exo-ns", false},             // 2-label: no .svc suffix, could be external
-		{"broker.corp", false},               // 2-label: external hostname
-		{"minio.local", false},               // 2-label: external hostname
-		{"broker.example.com", false},        // 3-label without .svc: external FQDN
-		{"single", false},                    // 1-label: not a valid service.namespace form
-		{"mydb.production.svc.amazonaws.com", false},       // external host with "svc" as 3rd label
-		{"attack.ns.svc.cluster.evil.com", false},          // 6+ labels: reject to prevent false positive
-		{"pg.ns.svc.cluster", true},                        // partial FQDN (no .local)
-		{"pg.ns.svc.cluster.local", true},                  // full FQDN (5 labels)
+		{"pg.tentacular-exoskeleton", false},         // 2-label: no .svc suffix, could be external
+		{"rustfs.exo-ns", false},                     // 2-label: no .svc suffix, could be external
+		{"broker.corp", false},                       // 2-label: external hostname
+		{"minio.local", false},                       // 2-label: external hostname
+		{"broker.example.com", false},                // 3-label without .svc: external FQDN
+		{"single", false},                            // 1-label: not a valid service.namespace form
+		{"mydb.production.svc.amazonaws.com", false}, // external host with "svc" as 3rd label
+		{"attack.ns.svc.cluster.evil.com", false},    // 6+ labels: reject to prevent false positive
+		{"pg.ns.svc.cluster", true},                  // partial FQDN (no .local)
+		{"pg.ns.svc.cluster.local", true},            // full FQDN (5 labels)
 	}
 	for _, tt := range tests {
 		t.Run(tt.host, func(t *testing.T) {

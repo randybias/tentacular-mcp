@@ -799,7 +799,7 @@ func TestExoskeletonInfo_PresentWhenSet(t *testing.T) {
 		t.Fatal("expected exoskeleton to be an object")
 	}
 
-	if exoMap["enabled"] != true {
+	if enabled, _ := exoMap["enabled"].(bool); !enabled {
 		t.Error("expected exoskeleton.enabled=true")
 	}
 
@@ -813,13 +813,13 @@ func TestExoskeletonInfo_PresentWhenSet(t *testing.T) {
 	if svc0["name"] != "postgres" {
 		t.Errorf("services[0].name = %v, want postgres", svc0["name"])
 	}
-	if svc0["available"] != true {
+	if available, _ := svc0["available"].(bool); !available {
 		t.Errorf("services[0].available = %v, want true", svc0["available"])
 	}
 
 	// Verify NATS service has spiffeEnabled
 	svc1 := services[1].(map[string]any)
-	if svc1["spiffeEnabled"] != true {
+	if spiffeEnabled, _ := svc1["spiffeEnabled"].(bool); !spiffeEnabled {
 		t.Errorf("services[1].spiffeEnabled = %v, want true", svc1["spiffeEnabled"])
 	}
 
@@ -828,7 +828,7 @@ func TestExoskeletonInfo_PresentWhenSet(t *testing.T) {
 	if !ok {
 		t.Fatal("expected auth to be an object")
 	}
-	if auth["enabled"] != true {
+	if enabled, _ := auth["enabled"].(bool); !enabled {
 		t.Error("expected auth.enabled=true")
 	}
 	if auth["issuer"] != "https://keycloak.example.com/realms/tentacular" {
