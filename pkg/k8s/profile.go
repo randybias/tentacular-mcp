@@ -26,28 +26,29 @@ type ExoskeletonServiceInfo struct {
 
 // ExoskeletonAuthInfo describes the OIDC authentication status.
 type ExoskeletonAuthInfo struct {
-	Enabled bool   `json:"enabled"`
 	Issuer  string `json:"issuer,omitempty"`
+	Enabled bool   `json:"enabled"`
 }
 
 // ExoskeletonInfo describes the exoskeleton subsystem and its services.
 type ExoskeletonInfo struct {
-	Enabled  bool                     `json:"enabled"`
 	Services []ExoskeletonServiceInfo `json:"services"`
 	Auth     ExoskeletonAuthInfo      `json:"auth"`
+	Enabled  bool                     `json:"enabled"`
 }
 
 // ClusterProfile contains a point-in-time capability snapshot of the cluster.
 type ClusterProfile struct {
 	GeneratedAt    time.Time          `json:"generatedAt"`
+	CNI            CNIInfo            `json:"cni"`
 	LimitRange     *LimitRangeSummary `json:"limitRange,omitempty"`
 	Quota          *QuotaSummary      `json:"quota,omitempty"`
+	Exoskeleton    *ExoskeletonInfo   `json:"exoskeleton,omitempty"`
 	K8sVersion     string             `json:"k8sVersion"`
 	Distribution   string             `json:"distribution"`
 	PodSecurity    string             `json:"podSecurity"`
 	Namespace      string             `json:"namespace"`
 	RWXNote        string             `json:"rwxNote"`
-	CNI            CNIInfo            `json:"cni"`
 	RuntimeClasses []RuntimeClassInfo `json:"runtimeClasses"`
 	Ingress        []string           `json:"ingress"`
 	CSIDrivers     []string           `json:"csiDrivers"`
@@ -57,7 +58,6 @@ type ClusterProfile struct {
 	Warnings       []string           `json:"warnings,omitempty"`
 	Extensions     ExtensionSet       `json:"extensions"`
 	NetworkPolicy  NetPolInfo         `json:"networkPolicy"`
-	Exoskeleton    *ExoskeletonInfo   `json:"exoskeleton,omitempty"`
 	GVisor         bool               `json:"gvisor"`
 }
 

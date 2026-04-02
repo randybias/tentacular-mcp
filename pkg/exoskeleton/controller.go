@@ -418,7 +418,7 @@ func (c *Controller) ServiceInfo() *k8s.ExoskeletonInfo {
 		return nil
 	}
 
-	var services []k8s.ExoskeletonServiceInfo
+	services := make([]k8s.ExoskeletonServiceInfo, 0, 4)
 
 	// Postgres
 	services = append(services, k8s.ExoskeletonServiceInfo{

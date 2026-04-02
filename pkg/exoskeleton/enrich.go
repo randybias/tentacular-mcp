@@ -218,7 +218,7 @@ func patchNetworkPolicyExoEgress(manifests []map[string]any, creds map[string]an
 
 	obj := &unstructured.Unstructured{Object: target}
 
-	// Read existing egress rules, initialising to empty if absent.
+	// Read existing egress rules, initializing to empty if absent.
 	egress, _, _ := unstructured.NestedSlice(obj.Object, "spec", "egress")
 	if egress == nil {
 		egress = []any{}
@@ -403,7 +403,7 @@ func collectExoHosts(creds map[string]any) []string {
 }
 
 // isInClusterHost returns true if the host looks like an in-cluster
-// Kubernetes service DNS name. Recognised forms:
+// Kubernetes service DNS name. Recognized forms:
 //   - <svc>.<ns>.svc.cluster.local  (FQDN, 4+ labels with parts[2]=="svc")
 //   - <svc>.<ns>.svc                (3 labels, parts[2]=="svc")
 //
