@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -78,6 +79,43 @@ func main() {
 		slog.Info("OIDC authentication enabled", "issuer", exoCfg.Auth.IssuerURL)
 	}
 
+	// Build RFC 9728 Protected Resource Metadata when OIDC auth is enabled
+	// and an external URL is configured. This lets OAuth clients (e.g., Claude Code)
+	// auto-discover the authorization server without manual configuration.
+	var resourceMeta *server.ResourceMetadataConfig
+	if exoCfg.AuthEnabled() {
+		if extURL := os.Getenv("TENTACULAR_EXTERNAL_URL"); extURL != "" {
+			u, parseErr := url.Parse(extURL)
+			if parseErr != nil {
+				slog.Error("TENTACULAR_EXTERNAL_URL is not a valid URL", "value", extURL, "error", parseErr)
+				os.Exit(1)
+			}
+			if u.Scheme != "https" && u.Scheme != "http" {
+				slog.Error("TENTACULAR_EXTERNAL_URL must have scheme https (or http)", "scheme", u.Scheme)
+				os.Exit(1)
+			}
+			if u.Scheme == "http" {
+				slog.Warn("TENTACULAR_EXTERNAL_URL uses http; https is recommended for production")
+			}
+			if u.Host == "" {
+				slog.Error("TENTACULAR_EXTERNAL_URL must include a host")
+				os.Exit(1)
+			}
+			if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+				slog.Error("TENTACULAR_EXTERNAL_URL must not contain userinfo, query, or fragment", "value", extURL)
+				os.Exit(1)
+			}
+			resourceMeta = &server.ResourceMetadataConfig{
+				Resource:               extURL + "/mcp",
+				AuthorizationServers:   []string{exoCfg.Auth.IssuerURL},
+				ScopesSupported:        []string{"openid", "email", "profile"},
+				BearerMethodsSupported: []string{"header"},
+				ResourceName:           "Tentacular MCP Server",
+			}
+			slog.Info("RFC 9728 protected resource metadata enabled", "resource", resourceMeta.Resource)
+		}
+	}
+
 	// Initialize authz evaluator. TENTACULAR_AUTHZ_ENABLED=false disables all authz checks.
 	eval := authz.NewEvaluator(authz.DefaultMode)
 	if os.Getenv("TENTACULAR_AUTHZ_ENABLED") == "false" {
@@ -85,7 +123,7 @@ func main() {
 		slog.Info("authz disabled via TENTACULAR_AUTHZ_ENABLED=false")
 	}
 
-	srv, err := server.New(client, reconciler, sched, exoCtrl, eval, oidcValidator, token, logger)
+	srv, err := server.New(client, reconciler, sched, exoCtrl, eval, oidcValidator, resourceMeta, token, logger)
 	if err != nil {
 		slog.Error("failed to create MCP server", "error", err)
 		os.Exit(1)

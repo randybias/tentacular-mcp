@@ -42,29 +42,46 @@ func LoadToken(path string) (string, error) {
 	return token, nil
 }
 
+// writeUnauthorized writes a 401 response with an optional WWW-Authenticate header.
+// When resourceMetadataURL is non-empty, the header points clients to the
+// RFC 9728 Protected Resource Metadata endpoint for auth server discovery.
+func writeUnauthorized(w http.ResponseWriter, resourceMetadataURL, msg string) {
+	if resourceMetadataURL != "" {
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata=%q`, resourceMetadataURL))
+	}
+	http.Error(w, msg, http.StatusUnauthorized)
+}
+
+// bypassAuth returns true for paths that should skip authentication.
+func bypassAuth(path string) bool {
+	return path == "/healthz" || path == "/.well-known/oauth-protected-resource"
+}
+
 // Middleware returns an HTTP middleware that validates Bearer token authentication.
-// The /healthz endpoint bypasses authentication.
-func Middleware(token string, next http.Handler) http.Handler {
+// The /healthz and /.well-known/oauth-protected-resource endpoints bypass authentication.
+// resourceMetadataURL is the URL to the RFC 9728 metadata endpoint; pass "" to omit
+// the WWW-Authenticate header on 401 responses.
+func Middleware(token, resourceMetadataURL string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" {
+		if bypassAuth(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			http.Error(w, "missing authorization header", http.StatusUnauthorized)
+			writeUnauthorized(w, resourceMetadataURL, "missing authorization header")
 			return
 		}
 
 		if !strings.HasPrefix(authHeader, "Bearer ") {
-			http.Error(w, "invalid authorization header format", http.StatusUnauthorized)
+			writeUnauthorized(w, resourceMetadataURL, "invalid authorization header format")
 			return
 		}
 
 		provided := strings.TrimPrefix(authHeader, "Bearer ")
 		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
-			http.Error(w, "invalid token", http.StatusUnauthorized)
+			writeUnauthorized(w, resourceMetadataURL, "invalid token")
 			return
 		}
 
@@ -86,27 +103,29 @@ func Middleware(token string, next http.Handler) http.Handler {
 //
 //	Behaves identically to the original Middleware (bearer-token only).
 //
-// The /healthz endpoint always bypasses authentication.
-func DualAuthMiddleware(token string, validator *exoskeleton.OIDCValidator, next http.Handler) http.Handler {
+// The /healthz and /.well-known/oauth-protected-resource endpoints always bypass
+// authentication. resourceMetadataURL is the URL to the RFC 9728 metadata endpoint;
+// pass "" to omit the WWW-Authenticate header on 401 responses.
+func DualAuthMiddleware(token string, validator *exoskeleton.OIDCValidator, resourceMetadataURL string, next http.Handler) http.Handler {
 	// If no OIDC validator, use the simple bearer-token middleware.
 	if validator == nil {
-		return Middleware(token, next)
+		return Middleware(token, resourceMetadataURL, next)
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" {
+		if bypassAuth(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			http.Error(w, "missing authorization header", http.StatusUnauthorized)
+			writeUnauthorized(w, resourceMetadataURL, "missing authorization header")
 			return
 		}
 
 		if !strings.HasPrefix(authHeader, "Bearer ") {
-			http.Error(w, "invalid authorization header format", http.StatusUnauthorized)
+			writeUnauthorized(w, resourceMetadataURL, "invalid authorization header format")
 			return
 		}
 
@@ -129,7 +148,7 @@ func DualAuthMiddleware(token string, validator *exoskeleton.OIDCValidator, next
 
 		// Bearer-token fallback: constant-time comparison.
 		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
-			http.Error(w, "invalid token", http.StatusUnauthorized)
+			writeUnauthorized(w, resourceMetadataURL, "invalid token")
 			return
 		}
 
