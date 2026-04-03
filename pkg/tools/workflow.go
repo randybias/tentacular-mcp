@@ -24,7 +24,7 @@ import (
 
 // WfPodsParams are the parameters for wf_pods.
 type WfPodsParams struct {
-	Namespace string `json:"namespace" jsonschema:"Namespace to list pods in"`
+	Namespace string `json:"namespace,omitempty" jsonschema:"Namespace to list pods in (auto-resolved if caller belongs to exactly one enclave)"`
 }
 
 // WfPodInfo is a single pod in the list result.
@@ -44,7 +44,7 @@ type WfPodsResult struct {
 
 // WfLogsParams are the parameters for wf_logs.
 type WfLogsParams struct {
-	Namespace string `json:"namespace" jsonschema:"Namespace of the pod"`
+	Namespace string `json:"namespace,omitempty" jsonschema:"Namespace of the pod (auto-resolved if caller belongs to exactly one enclave)"`
 	Pod       string `json:"pod" jsonschema:"Name of the pod to get logs from"`
 	Container string `json:"container,omitempty" jsonschema:"Container name (optional, defaults to first container)"`
 	TailLines int64  `json:"tail_lines,omitempty" jsonschema:"Number of log lines to return (default 100)"`
@@ -59,7 +59,7 @@ type WfLogsResult struct {
 
 // WfEventsParams are the parameters for wf_events.
 type WfEventsParams struct {
-	Namespace string `json:"namespace" jsonschema:"Namespace to list events in"`
+	Namespace string `json:"namespace,omitempty" jsonschema:"Namespace to list events in (auto-resolved if caller belongs to exactly one enclave)"`
 	Limit     int64  `json:"limit,omitempty" jsonschema:"Maximum number of events to return (default 100)"`
 }
 
@@ -80,7 +80,7 @@ type WfEventsResult struct {
 
 // WfJobsParams are the parameters for wf_jobs.
 type WfJobsParams struct {
-	Namespace string `json:"namespace" jsonschema:"Namespace to list jobs in"`
+	Namespace string `json:"namespace,omitempty" jsonschema:"Namespace to list jobs in (auto-resolved if caller belongs to exactly one enclave)"`
 }
 
 // WfJobInfo is a single job in the list result.
@@ -109,7 +109,7 @@ type WfJobsResult struct {
 
 // WfRestartParams are the parameters for wf_restart.
 type WfRestartParams struct {
-	Namespace  string `json:"namespace" jsonschema:"Namespace containing the deployment"`
+	Namespace  string `json:"namespace,omitempty" jsonschema:"Namespace containing the deployment (auto-resolved if caller belongs to exactly one enclave)"`
 	Deployment string `json:"deployment" jsonschema:"Name of the deployment to restart"`
 }
 
@@ -132,13 +132,18 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 			OpenWorldHint:   boolPtr(true),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfPodsParams) (*mcp.CallToolResult, WfPodsResult, error) {
-		if err := guard.CheckNamespace(params.Namespace); err != nil {
-			return nil, WfPodsResult{}, err
-		}
 		deployer := auth.DeployerFromContext(ctx)
 		if err := requireDeployer(deployer, eval); err != nil {
 			return nil, WfPodsResult{}, err
 		}
+		ns, nsErr := resolveNamespace(ctx, client, params.Namespace, deployer)
+		if nsErr != nil {
+			return nil, WfPodsResult{}, nsErr
+		}
+		if err := guard.CheckNamespace(ns); err != nil {
+			return nil, WfPodsResult{}, err
+		}
+		params.Namespace = ns
 		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
 			return nil, WfPodsResult{}, err
 		}
@@ -157,9 +162,6 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 			OpenWorldHint:   boolPtr(true),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfLogsParams) (*mcp.CallToolResult, WfLogsResult, error) {
-		if err := guard.CheckNamespace(params.Namespace); err != nil {
-			return nil, WfLogsResult{}, err
-		}
 		if err := guard.CheckName(params.Pod); err != nil {
 			return nil, WfLogsResult{}, err
 		}
@@ -167,6 +169,14 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 		if err := requireDeployer(deployer, eval); err != nil {
 			return nil, WfLogsResult{}, err
 		}
+		ns, nsErr := resolveNamespace(ctx, client, params.Namespace, deployer)
+		if nsErr != nil {
+			return nil, WfLogsResult{}, nsErr
+		}
+		if err := guard.CheckNamespace(ns); err != nil {
+			return nil, WfLogsResult{}, err
+		}
+		params.Namespace = ns
 		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
 			return nil, WfLogsResult{}, err
 		}
@@ -185,13 +195,18 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 			OpenWorldHint:   boolPtr(true),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfEventsParams) (*mcp.CallToolResult, WfEventsResult, error) {
-		if err := guard.CheckNamespace(params.Namespace); err != nil {
-			return nil, WfEventsResult{}, err
-		}
 		deployer := auth.DeployerFromContext(ctx)
 		if err := requireDeployer(deployer, eval); err != nil {
 			return nil, WfEventsResult{}, err
 		}
+		ns, nsErr := resolveNamespace(ctx, client, params.Namespace, deployer)
+		if nsErr != nil {
+			return nil, WfEventsResult{}, nsErr
+		}
+		if err := guard.CheckNamespace(ns); err != nil {
+			return nil, WfEventsResult{}, err
+		}
+		params.Namespace = ns
 		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
 			return nil, WfEventsResult{}, err
 		}
@@ -210,13 +225,18 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 			OpenWorldHint:   boolPtr(true),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfJobsParams) (*mcp.CallToolResult, WfJobsResult, error) {
-		if err := guard.CheckNamespace(params.Namespace); err != nil {
-			return nil, WfJobsResult{}, err
-		}
 		deployer := auth.DeployerFromContext(ctx)
 		if err := requireDeployer(deployer, eval); err != nil {
 			return nil, WfJobsResult{}, err
 		}
+		ns, nsErr := resolveNamespace(ctx, client, params.Namespace, deployer)
+		if nsErr != nil {
+			return nil, WfJobsResult{}, nsErr
+		}
+		if err := guard.CheckNamespace(ns); err != nil {
+			return nil, WfJobsResult{}, err
+		}
+		params.Namespace = ns
 		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
 			return nil, WfJobsResult{}, err
 		}
@@ -235,9 +255,6 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 			OpenWorldHint:   boolPtr(true),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfRestartParams) (*mcp.CallToolResult, WfRestartResult, error) {
-		if err := guard.CheckNamespace(params.Namespace); err != nil {
-			return nil, WfRestartResult{}, err
-		}
 		if err := guard.CheckName(params.Deployment); err != nil {
 			return nil, WfRestartResult{}, err
 		}
@@ -245,9 +262,27 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 		if err := requireDeployer(deployer, eval); err != nil {
 			return nil, WfRestartResult{}, err
 		}
+		ns, nsErr := resolveNamespace(ctx, client, params.Namespace, deployer)
+		if nsErr != nil {
+			return nil, WfRestartResult{}, nsErr
+		}
+		if err := guard.CheckNamespace(ns); err != nil {
+			return nil, WfRestartResult{}, err
+		}
+		params.Namespace = ns
 		dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Deployment, metav1.GetOptions{})
 		if getErr == nil {
-			if d := eval.Check(deployer, dep.Annotations, authz.Execute); !d.Allowed {
+			nsAnn, nsAnnErr := fetchNamespaceAnnotations(ctx, client, params.Namespace)
+			if nsAnnErr != nil {
+				return nil, WfRestartResult{}, nsAnnErr
+			}
+			// Block restart on frozen enclaves.
+			if authz.IsEnclave(nsAnn) {
+				if info := authz.ReadEnclaveInfo(nsAnn); info.Status == "frozen" {
+					return nil, WfRestartResult{}, fmt.Errorf("enclave %q is frozen: new deployments and updates are blocked", info.Enclave)
+				}
+			}
+			if d := checkAuthz(eval, deployer, nsAnn, dep.Annotations, authz.Execute); !d.Allowed {
 				return nil, WfRestartResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 			}
 		} else if !apierrors.IsNotFound(getErr) {

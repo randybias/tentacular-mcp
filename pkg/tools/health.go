@@ -9,6 +9,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/randybias/tentacular-mcp/pkg/auth"
+	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
@@ -74,7 +76,7 @@ type HealthClusterSummaryResult struct {
 	TotalPods      int    `json:"total_pods"`
 }
 
-func registerHealthTools(srv *mcp.Server, client *k8s.Client) {
+func registerHealthTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "health_nodes",
 		Description: "List nodes with readiness, capacity, allocatable resources, kubelet version, and unhealthy conditions.",
@@ -102,6 +104,10 @@ func registerHealthTools(srv *mcp.Server, client *k8s.Client) {
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params HealthNsUsageParams) (*mcp.CallToolResult, HealthNsUsageResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
+			return nil, HealthNsUsageResult{}, err
+		}
+		deployer := auth.DeployerFromContext(ctx)
+		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
 			return nil, HealthNsUsageResult{}, err
 		}
 		result, err := handleHealthNsUsage(ctx, client, params)

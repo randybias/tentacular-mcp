@@ -367,3 +367,17 @@ func quoteSubjects(subjects []string) string {
 
 // Close is a no-op since we don't hold a persistent connection.
 func (*NATSRegistrar) Close() {}
+
+// EnsureEnclave provisions the enclave-level NATS account if it does not
+// already exist. Phase 0 stub: no-op placeholder. Full implementation in Phase 1.
+func (*NATSRegistrar) EnsureEnclave(_ context.Context, id EnclaveIdentity) error {
+	slog.Info("exoskeleton: nats EnsureEnclave (stub)", "enclave", id.Enclave, "account", id.NATSAcct)
+	return nil
+}
+
+// CleanupEnclave removes the enclave-level NATS account.
+// Phase 0 stub: no-op placeholder. Full implementation in Phase 1.
+func (*NATSRegistrar) CleanupEnclave(_ context.Context, id EnclaveIdentity) error {
+	slog.Info("exoskeleton: nats CleanupEnclave (stub)", "enclave", id.Enclave, "account", id.NATSAcct)
+	return nil
+}

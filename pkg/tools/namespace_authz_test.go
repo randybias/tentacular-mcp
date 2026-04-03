@@ -1,7 +1,6 @@
 // Tests for namespace-level authorization in MCP tools.
 //
 // Covers:
-//   - handleNsCreate: owner annotation stamping (owner-sub, group, mode, created-at)
 //   - checkNamespaceAuthz: bearer bypass, nil deployer, pre-authz ns, owner/group/others
 //   - Namespace Read check on wf_pods, wf_logs, wf_events, wf_jobs, wf_health_ns
 //   - Namespace Write check on wf_apply CREATE path
@@ -15,6 +14,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
 
 	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
@@ -23,30 +24,39 @@ import (
 
 // --- helper constructors ---
 
+func newNsTestClient() *k8s.Client {
+	return &k8s.Client{
+		Clientset: fake.NewClientset(),
+		Config:    &rest.Config{Host: "https://test-cluster:6443"},
+	}
+}
+
 func nsEval() *authz.Evaluator {
 	return authz.NewEvaluator(authz.DefaultMode)
 }
 
-func oidcDeployerNs(sub, email string, groups ...string) *exoskeleton.DeployerInfo {
+func oidcDeployerNs(sub, email string) *exoskeleton.DeployerInfo { //nolint:unparam
 	return &exoskeleton.DeployerInfo{
 		Subject:  sub,
 		Email:    email,
 		Provider: "keycloak",
-		Groups:   groups,
 	}
 }
 
-// nsWithAuthz creates a managed namespace with authz annotations.
-func nsWithAuthz(t *testing.T, client *k8s.Client, name, ownerEmail, group, mode string) {
+// nsWithAuthz creates a managed enclave namespace with authz annotations.
+// The memberEmail parameter (previously group) is an email address added to AnnotationEnclaveMembers.
+// Pass an empty string for memberEmail when no member is needed.
+func nsWithAuthz(t *testing.T, client *k8s.Client, name, ownerEmail, memberEmail, mode string) {
 	t.Helper()
 	ctx := context.Background()
 	ann := map[string]string{}
 	if ownerEmail != "" {
-		ann[authz.AnnotationOwner] = ownerEmail
+		ann[authz.AnnotationEnclave] = ownerEmail // non-empty = enclave
+		ann[authz.AnnotationEnclaveOwner] = ownerEmail
 		ann[authz.AnnotationOwnerSub] = "sub-" + ownerEmail // audit only
 	}
-	if group != "" {
-		ann[authz.AnnotationGroup] = group
+	if memberEmail != "" {
+		ann[authz.AnnotationEnclaveMembers] = memberEmail
 	}
 	if mode != "" {
 		ann[authz.AnnotationMode] = mode
@@ -66,112 +76,7 @@ func nsWithAuthz(t *testing.T, client *k8s.Client, name, ownerEmail, group, mode
 	}
 }
 
-// --- Test 1: handleNsCreate annotation stamping ---
-
-func TestNsCreate_StampsOwnerAnnotations(t *testing.T) {
-	client := newNsTestClient()
-	ctx := context.Background()
-
-	deployer := &exoskeleton.DeployerInfo{
-		Subject:     "sub-alice",
-		Email:       "alice@example.com",
-		DisplayName: "Alice",
-		Provider:    "keycloak",
-	}
-
-	_, err := handleNsCreate(ctx, client, nsEval(), NsCreateParams{
-		Name:        "alice-ns",
-		QuotaPreset: "small",
-	}, deployer)
-	if err != nil {
-		t.Fatalf("handleNsCreate: %v", err)
-	}
-
-	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, "alice-ns", metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get namespace: %v", err)
-	}
-
-	ann := ns.Annotations
-	if ann == nil {
-		t.Fatal("expected annotations to be set on namespace")
-	}
-	if ann[authz.AnnotationOwnerSub] != "sub-alice" {
-		t.Errorf("owner-sub = %q, want %q", ann[authz.AnnotationOwnerSub], "sub-alice")
-	}
-	if ann[authz.AnnotationOwnerEmail] != "alice@example.com" {
-		t.Errorf("owner-email = %q, want %q", ann[authz.AnnotationOwnerEmail], "alice@example.com")
-	}
-	if ann[authz.AnnotationOwnerName] != "Alice" {
-		t.Errorf("owner-name = %q, want %q", ann[authz.AnnotationOwnerName], "Alice")
-	}
-	if ann[authz.AnnotationMode] == "" {
-		t.Error("expected mode annotation to be set")
-	}
-}
-
-func TestNsCreate_StampsGroup(t *testing.T) {
-	client := newNsTestClient()
-	ctx := context.Background()
-
-	deployer := oidcDeployerNs("sub-bob", "bob@example.com")
-
-	_, err := handleNsCreate(ctx, client, nsEval(), NsCreateParams{
-		Name:        "bob-ns",
-		QuotaPreset: "small",
-		Group:       "platform-team",
-	}, deployer)
-	if err != nil {
-		t.Fatalf("handleNsCreate: %v", err)
-	}
-
-	ns, _ := client.Clientset.CoreV1().Namespaces().Get(ctx, "bob-ns", metav1.GetOptions{})
-	if ns.Annotations[authz.AnnotationGroup] != "platform-team" {
-		t.Errorf("group = %q, want %q", ns.Annotations[authz.AnnotationGroup], "platform-team")
-	}
-}
-
-func TestNsCreate_StampsSharePresetMode(t *testing.T) {
-	client := newNsTestClient()
-	ctx := context.Background()
-
-	deployer := oidcDeployerNs("sub-carol", "carol@example.com")
-
-	_, err := handleNsCreate(ctx, client, nsEval(), NsCreateParams{
-		Name:        "carol-ns",
-		QuotaPreset: "small",
-		Share:       "group-read",
-	}, deployer)
-	if err != nil {
-		t.Fatalf("handleNsCreate: %v", err)
-	}
-
-	ns, _ := client.Clientset.CoreV1().Namespaces().Get(ctx, "carol-ns", metav1.GetOptions{})
-	if ns.Annotations[authz.AnnotationMode] != "rwxr-x---" {
-		t.Errorf("mode = %q, want rwxr-x---", ns.Annotations[authz.AnnotationMode])
-	}
-}
-
-func TestNsCreate_NilDeployer_NoAnnotations(t *testing.T) {
-	client := newNsTestClient()
-	ctx := context.Background()
-
-	_, err := handleNsCreate(ctx, client, nsEval(), NsCreateParams{
-		Name:        "anon-ns",
-		QuotaPreset: "small",
-	}, nil)
-	if err != nil {
-		t.Fatalf("handleNsCreate: %v", err)
-	}
-
-	ns, _ := client.Clientset.CoreV1().Namespaces().Get(ctx, "anon-ns", metav1.GetOptions{})
-	// With nil deployer, no authz annotations should be stamped.
-	if ns.Annotations != nil && ns.Annotations[authz.AnnotationOwnerSub] != "" {
-		t.Errorf("expected no owner-sub annotation with nil deployer, got %q", ns.Annotations[authz.AnnotationOwnerSub])
-	}
-}
-
-// --- Test 2: checkNamespaceAuthz helper ---
+// --- Test 1: checkNamespaceAuthz helper ---
 
 func TestCheckNamespaceAuthz_BearerToken_Bypass(t *testing.T) {
 	client := newNsTestClient()
@@ -288,9 +193,9 @@ func TestCheckNamespaceAuthz_GroupMember_Allowed(t *testing.T) {
 	client := newNsTestClient()
 	ctx := context.Background()
 
-	nsWithAuthz(t, client, "group-ns", "owner@example.com", "platform", "rwxr-x---")
+	nsWithAuthz(t, client, "group-ns", "owner@example.com", "member@example.com", "rwxr-x---")
 
-	member := oidcDeployerNs("sub-member", "member@example.com", "platform")
+	member := oidcDeployerNs("sub-member", "member@example.com")
 	eval := nsEval()
 
 	err := checkNamespaceAuthz(ctx, client, "group-ns", member, eval, authz.Read)
@@ -303,9 +208,9 @@ func TestCheckNamespaceAuthz_Stranger_Denied(t *testing.T) {
 	client := newNsTestClient()
 	ctx := context.Background()
 
-	nsWithAuthz(t, client, "private-ns", "owner@example.com", "platform", "rwx------")
+	nsWithAuthz(t, client, "private-ns", "owner@example.com", "", "rwx------")
 
-	stranger := oidcDeployerNs("sub-stranger", "s@example.com", "other-team")
+	stranger := oidcDeployerNs("sub-stranger", "s@example.com")
 	eval := nsEval()
 
 	err := checkNamespaceAuthz(ctx, client, "private-ns", stranger, eval, authz.Read)
@@ -344,7 +249,7 @@ func TestCheckNamespaceAuthz_Write_StrangerDenied(t *testing.T) {
 	}
 }
 
-// --- Test 3: Namespace Read check on wf_pods/logs/events/jobs ---
+// --- Test 2: Namespace Read check on wf_pods/logs/events/jobs ---
 
 func TestWfPods_NsAuthzDenied(t *testing.T) {
 	// wf_pods requires namespace Read. Stranger on private ns should get permission denied.
@@ -368,9 +273,9 @@ func TestWfEvents_NsAuthzAllowsGroupMember(t *testing.T) {
 	client := newNsTestClient()
 	ctx := context.Background()
 
-	nsWithAuthz(t, client, "events-ns", "owner@example.com", "dev-team", "rwxr-x---")
+	nsWithAuthz(t, client, "events-ns", "owner@example.com", "m@example.com", "rwxr-x---")
 
-	member := oidcDeployerNs("sub-member", "m@example.com", "dev-team")
+	member := oidcDeployerNs("sub-member", "m@example.com")
 	eval := nsEval()
 
 	err := checkNamespaceAuthz(ctx, client, "events-ns", member, eval, authz.Read)
@@ -379,7 +284,7 @@ func TestWfEvents_NsAuthzAllowsGroupMember(t *testing.T) {
 	}
 }
 
-// --- Test 4: Namespace Write check on wf_apply CREATE path ---
+// --- Test 3: Namespace Write check on wf_apply CREATE path ---
 
 func TestWfApply_NsWriteCheck_AllowsOwner(t *testing.T) {
 	client := newNsTestClient()
@@ -427,7 +332,7 @@ func TestWfApply_NsWriteCheck_AllowsPublicWrite(t *testing.T) {
 	}
 }
 
-// --- Test 5: Namespace Read filter on wf_list ---
+// --- Test 4: Namespace Read filter on wf_list ---
 
 func TestWfList_NsReadFilter_HidesPrivateNs(t *testing.T) {
 	// When listing with a specific namespace, checkNamespaceAuthz gates access.
@@ -465,9 +370,9 @@ func TestWfList_NsReadFilter_AllowsGroupMember(t *testing.T) {
 	client := newWfTestClient()
 	ctx := context.Background()
 
-	nsWithAuthz(t, client, "group-list-ns", "owner@example.com", "dev-team", "rwxr-x---")
+	nsWithAuthz(t, client, "group-list-ns", "owner@example.com", "m@example.com", "rwxr-x---")
 
-	member := oidcDeployerNs("sub-member", "m@example.com", "dev-team")
+	member := oidcDeployerNs("sub-member", "m@example.com")
 	eval := nsEval()
 
 	_, err := handleWfList(ctx, client, WfListParams{Namespace: "group-list-ns"}, member, eval)
@@ -501,7 +406,7 @@ func TestWfList_CrossNs_FiltersInaccessibleNamespaces(t *testing.T) {
 	}
 }
 
-// --- Test 6: wf_health_ns Namespace Read check ---
+// --- Test 5: wf_health_ns Namespace Read check ---
 
 func TestWfHealthNs_NsAuthzDenied(t *testing.T) {
 	client := newWfHealthTestClient()

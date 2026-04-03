@@ -5,6 +5,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/randybias/tentacular-mcp/pkg/auth"
+	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
@@ -26,7 +28,7 @@ type ClusterProfileParams struct {
 	Namespace string `json:"namespace,omitempty" jsonschema:"Optional namespace to include quota and limit range details"`
 }
 
-func registerClusterOpsTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exoskeleton.Controller) {
+func registerClusterOpsTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exoskeleton.Controller, eval *authz.Evaluator) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "cluster_preflight",
 		Description: "Run preflight checks for a namespace: API reachability, namespace existence, RBAC, and gVisor availability.",
@@ -39,6 +41,10 @@ func registerClusterOpsTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exosk
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params ClusterPreflightParams) (*mcp.CallToolResult, ClusterPreflightResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
+			return nil, ClusterPreflightResult{}, err
+		}
+		deployer := auth.DeployerFromContext(ctx)
+		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
 			return nil, ClusterPreflightResult{}, err
 		}
 		result, err := handleClusterPreflight(ctx, client, params)

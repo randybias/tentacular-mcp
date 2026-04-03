@@ -346,3 +346,17 @@ func buildS3Policy(bucket, prefix string) s3PolicyDoc {
 		},
 	}
 }
+
+// EnsureEnclave provisions the enclave-level RustFS bucket if it does not
+// already exist. Phase 0 stub: no-op placeholder. Full implementation in Phase 1.
+func (*RustFSRegistrar) EnsureEnclave(_ context.Context, id EnclaveIdentity) error {
+	slog.Info("exoskeleton: rustfs EnsureEnclave (stub)", "enclave", id.Enclave, "bucket", id.S3Bucket)
+	return nil
+}
+
+// CleanupEnclave removes the enclave-level RustFS/S3 bucket.
+// Phase 0 stub: no-op placeholder. Full implementation in Phase 1.
+func (*RustFSRegistrar) CleanupEnclave(_ context.Context, id EnclaveIdentity) error {
+	slog.Info("exoskeleton: rustfs CleanupEnclave (stub)", "enclave", id.Enclave, "bucket", id.S3Bucket)
+	return nil
+}

@@ -63,8 +63,7 @@ var knownGVRs = []schema.GroupVersionResource{
 type WorkflowApplyParams struct {
 	Namespace string           `json:"namespace" jsonschema:"Target namespace for the workflow"`
 	Name      string           `json:"name" jsonschema:"Deployment name for tracking resources"`
-	Group     string           `json:"group,omitempty" jsonschema:"IdP group assigned to this workflow (overrides server default)"`
-	Share     string           `json:"share,omitempty" jsonschema:"Permission preset name: private, group-read, group-run, group-edit, public-read"`
+	Mode      string           `json:"mode,omitempty" jsonschema:"Raw permission mode string (e.g. rwxrwx---). Defaults to enclave default mode."`
 	Manifests []map[string]any `json:"manifests" jsonschema:"List of Kubernetes manifest objects to apply"`
 }
 
@@ -155,24 +154,41 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 			return nil, WorkflowApplyResult{}, err
 		}
 
-		// Resolve Share preset to a mode string before touching manifests.
-		var mode string
-		if params.Share != "" {
-			m, ok := authz.PresetFromName(params.Share)
-			if !ok {
-				return nil, WorkflowApplyResult{}, fmt.Errorf("unknown share preset %q; valid presets: %s", params.Share, authz.ValidPresetNames())
-			}
-			mode = m.String()
-		} else if eval != nil {
-			mode = eval.DefaultMode.String()
-		} else {
-			mode = authz.DefaultMode.String()
-		}
-
+		// Resolve mode: explicit Mode param takes precedence, otherwise use enclave
+		// default for enclave namespaces or server default for others.
 		// Extract deployer identity from request context (set by auth middleware).
 		deployer := auth.DeployerFromContext(ctx)
 		if err := requireDeployer(deployer, eval); err != nil {
 			return nil, WorkflowApplyResult{}, err
+		}
+
+		// Fetch namespace annotations once — needed for dual-path authz and for
+		// DefaultEnclaveMode selection on new enclave deploys.
+		nsAnn, nsAnnErr := fetchNamespaceAnnotations(ctx, client, params.Namespace)
+		if nsAnnErr != nil {
+			return nil, WorkflowApplyResult{}, nsAnnErr
+		}
+
+		// Block deployments and updates on frozen enclaves.
+		if authz.IsEnclave(nsAnn) {
+			if info := authz.ReadEnclaveInfo(nsAnn); info.Status == "frozen" {
+				return nil, WorkflowApplyResult{}, fmt.Errorf("enclave %q is frozen: new deployments and updates are blocked", info.Enclave)
+			}
+		}
+
+		var mode string
+		if params.Mode != "" {
+			m, parseErr := authz.ParseMode(params.Mode)
+			if parseErr != nil {
+				return nil, WorkflowApplyResult{}, fmt.Errorf("invalid mode %q: %w", params.Mode, parseErr)
+			}
+			mode = m.String()
+		} else if authz.IsEnclave(nsAnn) {
+			mode = authz.DefaultEnclaveMode.String()
+		} else if eval != nil {
+			mode = eval.DefaultMode.String()
+		} else {
+			mode = authz.DefaultMode.String()
 		}
 
 		// Authz check for UPDATE path: fetch existing Deployment annotations.
@@ -185,7 +201,7 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 			// Deployment exists — this is an update.
 			isUpdate = true
 			existingAnnotations = existing.Annotations
-			if d := eval.Check(deployer, existing.Annotations, authz.Write); !d.Allowed {
+			if d := checkAuthz(eval, deployer, nsAnn, existing.Annotations, authz.Write); !d.Allowed {
 				return nil, WorkflowApplyResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 			}
 		} else if apierrors.IsNotFound(getErr) {
@@ -198,6 +214,12 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 			return nil, WorkflowApplyResult{}, fmt.Errorf("check deployment %q: %w", params.Name, getErr)
 		}
 		if exoCtrl != nil {
+			// For enclave namespaces, ensure enclave-level services are provisioned
+			// before registering per-tentacle resources.
+			if err := ensureEnclaveServicesIfNeeded(ctx, client, exoCtrl, params.Namespace, params.Manifests); err != nil {
+				return nil, WorkflowApplyResult{}, err
+			}
+
 			processed, exoErr := exoCtrl.ProcessManifests(ctx, params.Namespace, params.Name, params.Manifests)
 			if exoErr != nil {
 				return nil, WorkflowApplyResult{}, fmt.Errorf("exoskeleton: %w", exoErr)
@@ -213,7 +235,7 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 			}
 			params.Manifests = exoCtrl.AnnotateDeployer(params.Manifests, exoskeleton.AnnotateDeployerParams{
 				Deployer:            annotateDeployer,
-				Group:               params.Group,
+				Group:               "",
 				Mode:                mode,
 				IsUpdate:            isUpdate,
 				ExistingAnnotations: existingAnnotations,
@@ -267,7 +289,11 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 		}
 		dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
 		if getErr == nil {
-			if d := eval.Check(deployer, dep.Annotations, authz.Write); !d.Allowed {
+			nsAnn, nsAnnErr := fetchNamespaceAnnotations(ctx, client, params.Namespace)
+			if nsAnnErr != nil {
+				return nil, WorkflowRemoveResult{}, nsAnnErr
+			}
+			if d := checkAuthz(eval, deployer, nsAnn, dep.Annotations, authz.Write); !d.Allowed {
 				return nil, WorkflowRemoveResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 			}
 		} else if !apierrors.IsNotFound(getErr) {
@@ -314,7 +340,11 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 		}
 		dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
 		if getErr == nil {
-			if d := eval.Check(deployer, dep.Annotations, authz.Read); !d.Allowed {
+			nsAnn, nsAnnErr := fetchNamespaceAnnotations(ctx, client, params.Namespace)
+			if nsAnnErr != nil {
+				return nil, WorkflowStatusResult{}, nsAnnErr
+			}
+			if d := checkAuthz(eval, deployer, nsAnn, dep.Annotations, authz.Read); !d.Allowed {
 				return nil, WorkflowStatusResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 			}
 		} else if !apierrors.IsNotFound(getErr) {
@@ -787,6 +817,30 @@ func extractModuleDeps(manifests []map[string]any) []k8s.ModuleDep {
 		return deps
 	}
 	return nil
+}
+
+// ensureEnclaveServicesIfNeeded checks if the target namespace is an enclave and,
+// if so, calls EnsureEnclaveServices with the services required by the manifests.
+// For non-enclave namespaces this is a no-op.
+func ensureEnclaveServicesIfNeeded(ctx context.Context, client *k8s.Client, exoCtrl *exoskeleton.Controller, namespace string, manifests []map[string]any) error {
+	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("get namespace %q: %w", namespace, err)
+	}
+
+	if !authz.IsEnclave(ns.Annotations) {
+		return nil
+	}
+
+	// Extract contract dependencies from manifests and map to exo service names.
+	contractDeps := exoskeleton.DetectExoDepsSlice(manifests)
+	depMap := make(map[string]any, len(contractDeps))
+	for _, d := range contractDeps {
+		depMap[d] = nil
+	}
+	requiredServices := exoskeleton.ExoServicesFromDeps(depMap)
+
+	return exoCtrl.EnsureEnclaveServices(ctx, namespace, requiredServices)
 }
 
 // syncCronSchedule checks the deployed Deployment for a cron schedule annotation

@@ -32,7 +32,7 @@ var wfHealthProbe = func(name, namespace string, detail bool) (string, error) {
 
 // WfHealthParams are the parameters for wf_health.
 type WfHealthParams struct {
-	Namespace string `json:"namespace" jsonschema:"Workflow namespace"`
+	Namespace string `json:"namespace,omitempty" jsonschema:"Workflow namespace (auto-resolved if caller belongs to exactly one enclave)"`
 	Name      string `json:"name" jsonschema:"Deployment name"`
 	Detail    bool   `json:"detail,omitempty" jsonschema:"Include execution telemetry from health endpoint (default false)"`
 }
@@ -49,7 +49,7 @@ type WfHealthResult struct {
 
 // WfHealthNsParams are the parameters for wf_health_ns.
 type WfHealthNsParams struct {
-	Namespace string `json:"namespace" jsonschema:"Namespace to scan"`
+	Namespace string `json:"namespace,omitempty" jsonschema:"Namespace to scan (auto-resolved if caller belongs to exactly one enclave)"`
 	Limit     int    `json:"limit,omitempty" jsonschema:"Max workflows to check (default 20)"`
 }
 
@@ -88,13 +88,18 @@ func registerWfHealthTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 			OpenWorldHint:   boolPtr(true),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfHealthParams) (*mcp.CallToolResult, WfHealthResult, error) {
-		if err := guard.CheckNamespace(params.Namespace); err != nil {
-			return nil, WfHealthResult{}, err
-		}
 		deployer := auth.DeployerFromContext(ctx)
 		if err := requireDeployer(deployer, eval); err != nil {
 			return nil, WfHealthResult{}, err
 		}
+		ns, nsErr := resolveNamespace(ctx, client, params.Namespace, deployer)
+		if nsErr != nil {
+			return nil, WfHealthResult{}, nsErr
+		}
+		if err := guard.CheckNamespace(ns); err != nil {
+			return nil, WfHealthResult{}, err
+		}
+		params.Namespace = ns
 		result, err := handleWfHealth(ctx, client, params, deployer, eval)
 		return nil, result, err
 	})
@@ -110,13 +115,18 @@ func registerWfHealthTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 			OpenWorldHint:   boolPtr(true),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfHealthNsParams) (*mcp.CallToolResult, WfHealthNsResult, error) {
-		if err := guard.CheckNamespace(params.Namespace); err != nil {
-			return nil, WfHealthNsResult{}, err
-		}
 		deployer := auth.DeployerFromContext(ctx)
 		if err := requireDeployer(deployer, eval); err != nil {
 			return nil, WfHealthNsResult{}, err
 		}
+		ns, nsErr := resolveNamespace(ctx, client, params.Namespace, deployer)
+		if nsErr != nil {
+			return nil, WfHealthNsResult{}, nsErr
+		}
+		if err := guard.CheckNamespace(ns); err != nil {
+			return nil, WfHealthNsResult{}, err
+		}
+		params.Namespace = ns
 		result, err := handleWfHealthNs(ctx, client, params, deployer, eval)
 		return nil, result, err
 	})
@@ -132,7 +142,11 @@ func handleWfHealth(ctx context.Context, client *k8s.Client, params WfHealthPara
 		return WfHealthResult{}, fmt.Errorf("get deployment %q in namespace %q: %w", params.Name, params.Namespace, err)
 	}
 
-	if d := eval.Check(deployer, dep.Annotations, authz.Read); !d.Allowed {
+	nsAnn, nsAnnErr := fetchNamespaceAnnotations(ctx, client, params.Namespace)
+	if nsAnnErr != nil {
+		return WfHealthResult{}, nsAnnErr
+	}
+	if d := checkAuthz(eval, deployer, nsAnn, dep.Annotations, authz.Read); !d.Allowed {
 		return WfHealthResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 	}
 
@@ -198,10 +212,16 @@ func handleWfHealthNs(ctx context.Context, client *k8s.Client, params WfHealthNs
 		return WfHealthNsResult{}, fmt.Errorf("list deployments in namespace %q: %w", params.Namespace, err)
 	}
 
+	// Fetch namespace annotations once for tentacle-level authz filtering.
+	nsAnn, nsAnnErr := fetchNamespaceAnnotations(ctx, client, params.Namespace)
+	if nsAnnErr != nil {
+		return WfHealthNsResult{}, nsAnnErr
+	}
+
 	// Filter to only deployments the caller can read before applying the limit.
 	visible := depList.Items[:0]
 	for _, dep := range depList.Items {
-		if d := eval.Check(deployer, dep.Annotations, authz.Read); d.Allowed {
+		if checkAuthz(eval, deployer, nsAnn, dep.Annotations, authz.Read).Allowed {
 			visible = append(visible, dep)
 		}
 	}

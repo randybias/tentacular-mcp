@@ -56,7 +56,17 @@ func registerRunTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator
 		}
 		dep, getErr := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
 		if getErr == nil {
-			if d := eval.Check(deployer, dep.Annotations, authz.Execute); !d.Allowed {
+			nsAnn, nsAnnErr := fetchNamespaceAnnotations(ctx, client, params.Namespace)
+			if nsAnnErr != nil {
+				return nil, WfRunResult{}, nsAnnErr
+			}
+			// Block execution on frozen enclaves.
+			if authz.IsEnclave(nsAnn) {
+				if info := authz.ReadEnclaveInfo(nsAnn); info.Status == "frozen" {
+					return nil, WfRunResult{}, fmt.Errorf("enclave %q is frozen: workflow execution is blocked on frozen enclaves", info.Enclave)
+				}
+			}
+			if d := checkAuthz(eval, deployer, nsAnn, dep.Annotations, authz.Execute); !d.Allowed {
 				return nil, WfRunResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 			}
 		} else if !apierrors.IsNotFound(getErr) {

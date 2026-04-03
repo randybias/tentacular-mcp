@@ -80,9 +80,11 @@ func TestPresetName_AllPresets(t *testing.T) {
 		mode Mode
 	}{
 		{"private", privateMode},
-		{"group-read", groupReadMode},
+		// group-read shares bits with member-read; member-read takes precedence.
+		{"member-read", groupReadMode},
 		{"group-run", groupRunMode},
-		{"group-edit", groupEditMode},
+		// group-edit shares bits with member-edit; member-edit takes precedence.
+		{"member-edit", groupEditMode},
 		{"public-read", publicReadMode},
 	}
 	for _, tt := range tests {
@@ -120,8 +122,10 @@ func TestDefaultMode_IsGroupRead(t *testing.T) {
 	if DefaultMode != want {
 		t.Errorf("DefaultMode = %v, want group-read (%v)", DefaultMode.String(), want.String())
 	}
-	if PresetName(DefaultMode) != "group-read" {
-		t.Errorf("DefaultMode preset name = %q, want 'group-read'", PresetName(DefaultMode))
+	// DefaultMode bits are rwxr-x---. member-read has the same bits and
+	// takes precedence over group-read in the reverse-lookup priority.
+	if PresetName(DefaultMode) != "member-read" {
+		t.Errorf("DefaultMode preset name = %q, want 'member-read'", PresetName(DefaultMode))
 	}
 }
 
@@ -190,6 +194,87 @@ func TestPreset_GroupEdit_GroupFull(t *testing.T) {
 	}
 	if m.OtherRead() || m.OtherWrite() || m.OtherExecute() {
 		t.Error("expected no other access for group-edit")
+	}
+}
+
+// Spec: member-read (rwxr-x---): owner full, members read+run, others none.
+func TestPreset_MemberRead(t *testing.T) {
+	m, ok := PresetFromName("member-read")
+	if !ok {
+		t.Fatal("expected member-read preset to exist")
+	}
+	if !m.OwnerRead() || !m.OwnerWrite() || !m.OwnerExecute() {
+		t.Error("expected full owner access for member-read")
+	}
+	if !m.GroupRead() || m.GroupWrite() || !m.GroupExecute() {
+		t.Errorf("expected group r-x for member-read, got %v", m.String())
+	}
+	if m.OtherRead() || m.OtherWrite() || m.OtherExecute() {
+		t.Error("expected no other access for member-read")
+	}
+}
+
+// Spec: member-edit (rwxrwx---): owner full, members full, others none.
+// This is the default for new enclaves.
+func TestPreset_MemberEdit_MemberFull(t *testing.T) {
+	m, ok := PresetFromName("member-edit")
+	if !ok {
+		t.Fatal("expected member-edit preset to exist")
+	}
+	if !m.OwnerRead() || !m.OwnerWrite() || !m.OwnerExecute() {
+		t.Error("expected full owner access for member-edit")
+	}
+	if !m.GroupRead() || !m.GroupWrite() || !m.GroupExecute() {
+		t.Errorf("expected group rwx for member-edit, got %v", m.String())
+	}
+	if m.OtherRead() || m.OtherWrite() || m.OtherExecute() {
+		t.Error("expected no other access for member-edit")
+	}
+}
+
+// Spec: open-read (rwxrwxr--): owner full, members full, others read-only.
+func TestPreset_OpenRead_OtherReadOnly(t *testing.T) {
+	m, ok := PresetFromName("open-read")
+	if !ok {
+		t.Fatal("expected open-read preset to exist")
+	}
+	if !m.OwnerRead() || !m.OwnerWrite() || !m.OwnerExecute() {
+		t.Error("expected full owner access for open-read")
+	}
+	if !m.GroupRead() || !m.GroupWrite() || !m.GroupExecute() {
+		t.Errorf("expected group rwx for open-read, got %v", m.String())
+	}
+	if !m.OtherRead() || m.OtherWrite() || m.OtherExecute() {
+		t.Errorf("expected other r-- for open-read, got %v", m.String())
+	}
+}
+
+// Spec: open-run (rwxrwxr-x): owner full, members full, others read+run.
+func TestPreset_OpenRun_OtherReadAndExecute(t *testing.T) {
+	m, ok := PresetFromName("open-run")
+	if !ok {
+		t.Fatal("expected open-run preset to exist")
+	}
+	if !m.OwnerRead() || !m.OwnerWrite() || !m.OwnerExecute() {
+		t.Error("expected full owner access for open-run")
+	}
+	if !m.GroupRead() || !m.GroupWrite() || !m.GroupExecute() {
+		t.Errorf("expected group rwx for open-run, got %v", m.String())
+	}
+	if !m.OtherRead() || m.OtherWrite() || !m.OtherExecute() {
+		t.Errorf("expected other r-x for open-run, got %v", m.String())
+	}
+}
+
+// Spec: DefaultEnclaveMode is member-edit.
+func TestDefaultEnclaveMode_IsMemberEdit(t *testing.T) {
+	want := ModeOwnerRead | ModeOwnerWrite | ModeOwnerExecute |
+		ModeGroupRead | ModeGroupWrite | ModeGroupExecute
+	if DefaultEnclaveMode != want {
+		t.Errorf("DefaultEnclaveMode = %v, want member-edit (%v)", DefaultEnclaveMode.String(), want.String())
+	}
+	if PresetName(DefaultEnclaveMode) != "member-edit" {
+		t.Errorf("DefaultEnclaveMode preset name = %q, want 'member-edit'", PresetName(DefaultEnclaveMode))
 	}
 }
 
