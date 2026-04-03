@@ -19,6 +19,13 @@ import (
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
 
+// validQuotaPresets is the set of recognized quota preset names for enclave provisioning.
+var validQuotaPresets = map[string]bool{
+	"small":  true,
+	"medium": true,
+	"large":  true,
+}
+
 // annotationEnclaveQuotaPreset stores the quota preset on the enclave namespace annotation.
 const annotationEnclaveQuotaPreset = "tentacular.io/enclave-quota-preset"
 
@@ -144,6 +151,15 @@ func registerEnclaveTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exoskele
 		if err := requireDeployer(deployer, eval); err != nil {
 			return nil, EnclaveProvisionResult{}, err
 		}
+		// C2: For OIDC callers, force owner identity to the caller's own credentials.
+		// Bearer-token callers (platform operators) may specify arbitrary owner.
+		if deployer != nil && deployer.Provider != "bearer-token" {
+			if deployer.Email == "" {
+				return nil, EnclaveProvisionResult{}, errors.New("permission denied: OIDC caller has no email claim; cannot provision enclave")
+			}
+			params.OwnerEmail = deployer.Email
+			params.OwnerSub = deployer.Subject
+		}
 		result, err := handleEnclaveProvision(ctx, client, exoCtrl, params)
 		return nil, result, err
 	})
@@ -166,7 +182,7 @@ func registerEnclaveTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exoskele
 		if err := requireDeployer(deployer, eval); err != nil {
 			return nil, EnclaveInfoResult{}, err
 		}
-		result, err := handleEnclaveInfo(ctx, client, exoCtrl, params)
+		result, err := handleEnclaveInfo(ctx, client, exoCtrl, params, deployer)
 		return nil, result, err
 	})
 
@@ -184,6 +200,11 @@ func registerEnclaveTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exoskele
 		deployer := auth.DeployerFromContext(ctx)
 		if err := requireDeployer(deployer, eval); err != nil {
 			return nil, EnclaveListResult{}, err
+		}
+		// H3: For OIDC callers, force the caller_email filter to their own identity.
+		// This prevents OIDC users from listing all enclaves by omitting the filter.
+		if deployer != nil && deployer.Provider != "bearer-token" {
+			params.CallerEmail = deployer.Email
 		}
 		result, err := handleEnclaveList(ctx, client, params)
 		return nil, result, err
@@ -207,7 +228,7 @@ func registerEnclaveTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exoskele
 		if err := requireDeployer(deployer, eval); err != nil {
 			return nil, EnclaveSyncResult{}, err
 		}
-		result, err := handleEnclaveSync(ctx, client, params)
+		result, err := handleEnclaveSync(ctx, client, params, deployer)
 		return nil, result, err
 	})
 
@@ -241,6 +262,11 @@ func handleEnclaveProvision(ctx context.Context, client *k8s.Client, exoCtrl *ex
 		preset = "medium"
 	}
 
+	// M3: Validate quota preset before any resource creation.
+	if !validQuotaPresets[preset] {
+		return EnclaveProvisionResult{}, fmt.Errorf("invalid quota_preset %q; valid values: small, medium, large", preset)
+	}
+
 	// Validate members before creating anything.
 	allMembers := params.Members
 	if allMembers == nil {
@@ -255,6 +281,14 @@ func handleEnclaveProvision(ctx context.Context, client *k8s.Client, exoCtrl *ex
 		return EnclaveProvisionResult{}, err
 	}
 	created := []string{"namespace/" + params.Name}
+
+	// M4: Deferred cleanup — if any step after namespace creation fails, delete the namespace.
+	nsCleanupNeeded := true
+	defer func() {
+		if nsCleanupNeeded {
+			_ = k8s.DeleteNamespace(ctx, client, params.Name)
+		}
+	}()
 
 	// Stamp enclave annotations.
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -274,7 +308,6 @@ func handleEnclaveProvision(ctx context.Context, client *k8s.Client, exoCtrl *ex
 
 	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, params.Name, metav1.GetOptions{})
 	if err != nil {
-		_ = k8s.DeleteNamespace(ctx, client, params.Name)
 		return EnclaveProvisionResult{}, fmt.Errorf("namespace created but failed to fetch for annotation: %w", err)
 	}
 	if ns.Annotations == nil {
@@ -286,7 +319,6 @@ func handleEnclaveProvision(ctx context.Context, client *k8s.Client, exoCtrl *ex
 	// Store quota preset in a dedicated annotation for later retrieval by enclave_info.
 	ns.Annotations[annotationEnclaveQuotaPreset] = preset
 	if _, err := client.Clientset.CoreV1().Namespaces().Update(ctx, ns, metav1.UpdateOptions{}); err != nil {
-		_ = k8s.DeleteNamespace(ctx, client, params.Name)
 		return EnclaveProvisionResult{}, fmt.Errorf("namespace created but failed to annotate with enclave metadata: %w", err)
 	}
 	created = append(created, "annotation/enclave-metadata")
@@ -332,14 +364,16 @@ func handleEnclaveProvision(ctx context.Context, client *k8s.Client, exoCtrl *ex
 	created = append(created, "rolebinding/tentacular-workflow")
 
 	// Provision exoskeleton services (Postgres + RustFS) — always for enclaves.
-	// If this fails, clean up the namespace and return an error (spec: cleanup on partial failure).
+	// If this fails, the deferred cleanup will delete the namespace.
 	if exoCtrl != nil {
 		if err := exoCtrl.EnsureEnclaveServices(ctx, params.Name, enclaveRequiredServices); err != nil {
-			_ = k8s.DeleteNamespace(ctx, client, params.Name)
 			return EnclaveProvisionResult{}, fmt.Errorf("enclave provisioned but exoskeleton services failed (namespace deleted): %w", err)
 		}
 		created = append(created, "exoskeleton/postgres", "exoskeleton/rustfs")
 	}
+
+	// All steps succeeded — disable the deferred cleanup.
+	nsCleanupNeeded = false
 
 	return EnclaveProvisionResult{
 		Name:             params.Name,
@@ -351,7 +385,7 @@ func handleEnclaveProvision(ctx context.Context, client *k8s.Client, exoCtrl *ex
 	}, nil
 }
 
-func handleEnclaveInfo(ctx context.Context, client *k8s.Client, exoCtrl *exoskeleton.Controller, params EnclaveInfoParams) (EnclaveInfoResult, error) {
+func handleEnclaveInfo(ctx context.Context, client *k8s.Client, exoCtrl *exoskeleton.Controller, params EnclaveInfoParams, deployer *exoskeleton.DeployerInfo) (EnclaveInfoResult, error) {
 	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, params.Name, metav1.GetOptions{})
 	if err != nil {
 		return EnclaveInfoResult{}, fmt.Errorf("get namespace %q: %w", params.Name, err)
@@ -367,6 +401,13 @@ func handleEnclaveInfo(ctx context.Context, client *k8s.Client, exoCtrl *exoskel
 	}
 
 	info := authz.ReadEnclaveInfo(ann)
+
+	// H3: Only the enclave owner, members, or bearer-token callers may view enclave details.
+	if deployer != nil && deployer.Provider != "bearer-token" {
+		if !isEnclaveParticipant(info, deployer.Email) {
+			return EnclaveInfoResult{}, fmt.Errorf("permission denied: caller is not the enclave owner or a member of %q", params.Name)
+		}
+	}
 
 	// Count tentacle deployments.
 	deps, err := client.Clientset.AppsV1().Deployments(params.Name).List(ctx, metav1.ListOptions{})
@@ -452,7 +493,7 @@ func isEnclaveParticipant(info authz.EnclaveInfo, email string) bool {
 	return false
 }
 
-func handleEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveSyncParams) (EnclaveSyncResult, error) {
+func handleEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveSyncParams, deployer *exoskeleton.DeployerInfo) (EnclaveSyncResult, error) {
 	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, params.Name, metav1.GetOptions{})
 	if err != nil {
 		return EnclaveSyncResult{}, fmt.Errorf("get namespace %q: %w", params.Name, err)
@@ -468,6 +509,19 @@ func handleEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveSy
 	}
 
 	info := authz.ReadEnclaveInfo(ann)
+
+	// C1: Ownership transfer, member management, and freeze/unfreeze are owner-only.
+	// Bearer-token callers bypass this check (platform operators).
+	isOwnerOp := params.NewOwner != "" || len(params.AddMembers) > 0 || len(params.RemoveMembers) > 0 || params.NewStatus != ""
+	if isOwnerOp && deployer != nil && deployer.Provider != "bearer-token" {
+		if deployer.Email == "" {
+			return EnclaveSyncResult{}, errors.New("permission denied: OIDC caller has no email claim")
+		}
+		if deployer.Email != info.Owner {
+			return EnclaveSyncResult{}, fmt.Errorf("permission denied: only the enclave owner (%s) may modify enclave %q", info.Owner, params.Name)
+		}
+	}
+
 	updated := []string{}
 
 	// Handle member additions.
@@ -611,8 +665,13 @@ func handleEnclaveDeprovision(ctx context.Context, client *k8s.Client, exoCtrl *
 
 	info := authz.ReadEnclaveInfo(ann)
 
-	// Caller must be the enclave owner (when deployer info is available).
-	if deployer != nil && deployer.Provider != "bearer-token" && deployer.Email != "" {
+	// H1: Caller must be the enclave owner (when deployer info is available).
+	// Bearer-token callers bypass the check (platform operators).
+	// OIDC callers with no email are denied — fail closed, never fail open.
+	if deployer != nil && deployer.Provider != "bearer-token" {
+		if deployer.Email == "" {
+			return EnclaveDeprovisionResult{}, errors.New("permission denied: OIDC caller has no email claim; cannot verify enclave ownership")
+		}
 		if deployer.Email != info.Owner {
 			return EnclaveDeprovisionResult{}, fmt.Errorf("permission denied: only the enclave owner (%s) may deprovision enclave %q", info.Owner, params.Name)
 		}

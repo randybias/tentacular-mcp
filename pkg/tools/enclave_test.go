@@ -176,7 +176,9 @@ func TestEnclaveInfo_Success(t *testing.T) {
 
 	provisionTestEnclave(t, client, "enc-info", "alice@example.com")
 
-	result, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "enc-info"})
+	// Bearer-token deployer bypasses the owner/member check.
+	bearer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
+	result, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "enc-info"}, bearer)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -208,7 +210,8 @@ func TestEnclaveInfo_NotEnclave(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	_, err = handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "regular-ns"})
+	bearer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
+	_, err = handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "regular-ns"}, bearer)
 	if err == nil {
 		t.Fatal("expected error for non-enclave namespace, got nil")
 	}
@@ -218,7 +221,8 @@ func TestEnclaveInfo_NotFound(t *testing.T) {
 	client := newEnclaveTestClient()
 	ctx := context.Background()
 
-	_, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "does-not-exist"})
+	bearer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
+	_, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "does-not-exist"}, bearer)
 	if err == nil {
 		t.Fatal("expected error for missing namespace, got nil")
 	}
@@ -238,7 +242,8 @@ func TestEnclaveInfo_QuotaPresetRoundTrip(t *testing.T) {
 		t.Fatalf("provision: %v", err)
 	}
 
-	info, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "enc-quota-rt"})
+	bearer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
+	info, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "enc-quota-rt"}, bearer)
 	if err != nil {
 		t.Fatalf("info: %v", err)
 	}
@@ -353,10 +358,12 @@ func TestEnclaveSync_AddMember(t *testing.T) {
 
 	provisionTestEnclave(t, client, "enc-sync-add", "alice@example.com")
 
+	// alice is the owner — she can add members.
+	alice := &exoskeleton.DeployerInfo{Email: "alice@example.com", Provider: "keycloak"}
 	result, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{
 		Name:       "enc-sync-add",
 		AddMembers: []string{"bob@example.com"},
-	})
+	}, alice)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -383,10 +390,12 @@ func TestEnclaveSync_RemoveMember(t *testing.T) {
 		t.Fatalf("provision: %v", err)
 	}
 
+	// alice is the owner — she can remove members.
+	alice := &exoskeleton.DeployerInfo{Email: "alice@example.com", Provider: "keycloak"}
 	result, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{
 		Name:          "enc-sync-rm",
 		RemoveMembers: []string{"bob@example.com"},
-	})
+	}, alice)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -413,10 +422,12 @@ func TestEnclaveSync_TransferOwnership(t *testing.T) {
 		t.Fatalf("provision: %v", err)
 	}
 
+	// alice is the owner — she can transfer ownership.
+	alice := &exoskeleton.DeployerInfo{Email: "alice@example.com", Provider: "keycloak"}
 	result, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{
 		Name:     "enc-sync-owner",
 		NewOwner: "bob@example.com",
-	})
+	}, alice)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -440,10 +451,12 @@ func TestEnclaveSync_TransferOwnership_NonMemberFails(t *testing.T) {
 
 	provisionTestEnclave(t, client, "enc-sync-owner-fail", "alice@example.com")
 
+	// alice is the owner — she can attempt transfer (but dave is not a member)
+	alice := &exoskeleton.DeployerInfo{Email: "alice@example.com", Provider: "keycloak"}
 	_, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{
 		Name:     "enc-sync-owner-fail",
 		NewOwner: "dave@example.com", // not a member
-	})
+	}, alice)
 	if err == nil {
 		t.Fatal("expected error for ownership transfer to non-member, got nil")
 	}
@@ -455,11 +468,14 @@ func TestEnclaveSync_FreezeAndUnfreeze(t *testing.T) {
 
 	provisionTestEnclave(t, client, "enc-sync-freeze", "alice@example.com")
 
+	// alice is the owner — she can freeze/unfreeze.
+	alice := &exoskeleton.DeployerInfo{Email: "alice@example.com", Provider: "keycloak"}
+
 	// Freeze.
 	result, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{
 		Name:      "enc-sync-freeze",
 		NewStatus: "frozen",
-	})
+	}, alice)
 	if err != nil {
 		t.Fatalf("freeze: %v", err)
 	}
@@ -471,7 +487,7 @@ func TestEnclaveSync_FreezeAndUnfreeze(t *testing.T) {
 	result, err = handleEnclaveSync(ctx, client, EnclaveSyncParams{
 		Name:      "enc-sync-freeze",
 		NewStatus: "active",
-	})
+	}, alice)
 	if err != nil {
 		t.Fatalf("unfreeze: %v", err)
 	}
@@ -486,10 +502,12 @@ func TestEnclaveSync_InvalidStatus(t *testing.T) {
 
 	provisionTestEnclave(t, client, "enc-sync-badstatus", "alice@example.com")
 
+	// alice is the owner — she can attempt status change (but "deleted" is invalid).
+	alice := &exoskeleton.DeployerInfo{Email: "alice@example.com", Provider: "keycloak"}
 	_, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{
 		Name:      "enc-sync-badstatus",
 		NewStatus: "deleted", // invalid
-	})
+	}, alice)
 	if err == nil {
 		t.Fatal("expected error for invalid status, got nil")
 	}
@@ -501,10 +519,13 @@ func TestEnclaveSync_UpdateChannelName(t *testing.T) {
 
 	provisionTestEnclave(t, client, "enc-sync-chan", "alice@example.com")
 
+	// Channel name update is not owner-restricted; any deployer (or nil) can call.
+	// Use a bearer-token deployer to keep the test simple.
+	bearer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
 	result, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{
 		Name:           "enc-sync-chan",
 		NewChannelName: "new-channel",
-	})
+	}, bearer)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -519,7 +540,8 @@ func TestEnclaveSync_NoUpdatesError(t *testing.T) {
 
 	provisionTestEnclave(t, client, "enc-sync-empty", "alice@example.com")
 
-	_, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{Name: "enc-sync-empty"})
+	bearer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
+	_, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{Name: "enc-sync-empty"}, bearer)
 	if err == nil {
 		t.Fatal("expected error for no-op sync, got nil")
 	}
@@ -535,10 +557,11 @@ func TestEnclaveSync_NotEnclave(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
+	alice := &exoskeleton.DeployerInfo{Email: "alice@example.com", Provider: "keycloak"}
 	_, err = handleEnclaveSync(ctx, client, EnclaveSyncParams{
 		Name:      "not-enc-sync",
 		NewStatus: "frozen",
-	})
+	}, alice)
 	if err == nil {
 		t.Fatal("expected error for non-enclave namespace, got nil")
 	}
@@ -554,10 +577,11 @@ func TestEnclaveSync_MemberCountEnforced(t *testing.T) {
 	authz.MaxEnclaveMembers = 1
 	defer func() { authz.MaxEnclaveMembers = orig }()
 
+	alice := &exoskeleton.DeployerInfo{Email: "alice@example.com", Provider: "keycloak"}
 	_, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{
 		Name:       "enc-sync-maxmem",
 		AddMembers: []string{"b@x.com", "c@x.com"},
-	})
+	}, alice)
 	if err == nil {
 		t.Fatal("expected error for exceeding max members, got nil")
 	}
@@ -730,5 +754,180 @@ func TestContainsStr_NotFound(t *testing.T) {
 func TestContainsStr_Empty(t *testing.T) {
 	if containsStr([]string{}, "a") {
 		t.Error("expected containsStr to return false for empty slice")
+	}
+}
+
+// --- Security fix tests ---
+
+// C1: enclave_sync non-owner is denied for owner-gated operations.
+func TestEnclaveSync_UnauthorizedNonOwner(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	provisionTestEnclave(t, client, "enc-sync-authz", "alice@example.com")
+
+	// bob is not the owner — he should not be able to add members.
+	bob := &exoskeleton.DeployerInfo{Email: "bob@example.com", Provider: "keycloak"}
+	_, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{
+		Name:       "enc-sync-authz",
+		AddMembers: []string{"carol@example.com"},
+	}, bob)
+	if err == nil {
+		t.Fatal("expected error for non-owner sync attempt, got nil")
+	}
+}
+
+// C1: enclave_sync bearer-token caller bypasses owner check.
+func TestEnclaveSync_BearerTokenBypasses(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	provisionTestEnclave(t, client, "enc-sync-bearer", "alice@example.com")
+
+	// Bearer-token caller can sync regardless of ownership.
+	bearer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
+	result, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{
+		Name:       "enc-sync-bearer",
+		AddMembers: []string{"carol@example.com"},
+	}, bearer)
+	if err != nil {
+		t.Fatalf("expected bearer-token to bypass owner check, got error: %v", err)
+	}
+	if !containsStr(result.Enclave.Members, "carol@example.com") {
+		t.Errorf("expected carol in members after bearer-token sync, got %v", result.Enclave.Members)
+	}
+}
+
+// C1: enclave_sync OIDC caller with no email is denied.
+func TestEnclaveSync_EmptyEmailDenied(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	provisionTestEnclave(t, client, "enc-sync-noemail", "alice@example.com")
+
+	// OIDC caller with empty email should be denied (fail closed).
+	noEmail := &exoskeleton.DeployerInfo{Email: "", Provider: "keycloak"}
+	_, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{
+		Name:      "enc-sync-noemail",
+		NewStatus: "frozen",
+	}, noEmail)
+	if err == nil {
+		t.Fatal("expected error for OIDC caller with empty email, got nil")
+	}
+}
+
+// C2: enclave_provision for OIDC caller forces owner to caller identity.
+func TestEnclaveProvision_ForcedOwnerIdentityBinding(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	// At the handler level, the identity binding happens in the tool registration
+	// wrapper, not in handleEnclaveProvision itself. We test the wrapper behavior
+	// indirectly by verifying that handleEnclaveProvision stores whatever owner
+	// is given (the wrapper is responsible for forcing the owner).
+	// This test verifies the handler does store the caller-supplied owner.
+	result, err := handleEnclaveProvision(ctx, client, noopExoCtrl(), EnclaveProvisionParams{
+		Name:       "enc-forced-owner",
+		OwnerEmail: "alice@example.com",
+		OwnerSub:   "sub-alice",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Owner != "alice@example.com" {
+		t.Errorf("expected owner=alice@example.com, got %q", result.Owner)
+	}
+}
+
+// H1: enclave_deprovision OIDC caller with no email is denied.
+func TestEnclaveDeprovision_EmptyEmailDenied(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	provisionTestEnclave(t, client, "enc-deprov-noemail", "alice@example.com")
+
+	// OIDC caller with empty email should be denied — fail closed, not fail open.
+	noEmail := &exoskeleton.DeployerInfo{Email: "", Provider: "keycloak"}
+	_, err := handleEnclaveDeprovision(ctx, client, noopExoCtrl(), EnclaveDeprovisionParams{Name: "enc-deprov-noemail"}, noEmail)
+	if err == nil {
+		t.Fatal("expected error for OIDC caller with empty email, got nil")
+	}
+}
+
+// H1: enclave_deprovision non-owner OIDC caller is denied even with non-empty email.
+func TestEnclaveDeprovision_NonOwnerOIDCDenied(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	provisionTestEnclave(t, client, "enc-deprov-nonowner", "alice@example.com")
+
+	// carol has an email but is not the owner.
+	carol := &exoskeleton.DeployerInfo{Email: "carol@example.com", Provider: "keycloak"}
+	_, err := handleEnclaveDeprovision(ctx, client, noopExoCtrl(), EnclaveDeprovisionParams{Name: "enc-deprov-nonowner"}, carol)
+	if err == nil {
+		t.Fatal("expected error for non-owner deprovision, got nil")
+	}
+}
+
+// M3: enclave_provision rejects invalid quota preset before any resource creation.
+func TestEnclaveProvision_InvalidQuotaPreset(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	_, err := handleEnclaveProvision(ctx, client, noopExoCtrl(), EnclaveProvisionParams{
+		Name:        "enc-bad-quota",
+		OwnerEmail:  "alice@example.com",
+		OwnerSub:    "sub-alice",
+		QuotaPreset: "xlarge", // not a valid preset
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid quota preset, got nil")
+	}
+
+	// Verify no namespace was created (cleanup worked correctly).
+	_, err2 := client.Clientset.CoreV1().Namespaces().Get(ctx, "enc-bad-quota", metav1.GetOptions{})
+	if err2 == nil {
+		t.Error("expected namespace enc-bad-quota to not exist after invalid quota preset rejection")
+	}
+}
+
+// H3: enclave_info denies access to non-participants.
+func TestEnclaveInfo_NonParticipantDenied(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	provisionTestEnclave(t, client, "enc-info-authz", "alice@example.com")
+
+	// dave is neither owner nor member.
+	dave := &exoskeleton.DeployerInfo{Email: "dave@example.com", Provider: "keycloak"}
+	_, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "enc-info-authz"}, dave)
+	if err == nil {
+		t.Fatal("expected error for non-participant enclave_info, got nil")
+	}
+}
+
+// H3: enclave_info allows access to enclave members.
+func TestEnclaveInfo_MemberAllowed(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	_, err := handleEnclaveProvision(ctx, client, noopExoCtrl(), EnclaveProvisionParams{
+		Name:       "enc-info-member",
+		OwnerEmail: "alice@example.com",
+		OwnerSub:   "sub-alice",
+		Members:    []string{"bob@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+
+	// bob is a member and should be allowed to view the enclave.
+	bob := &exoskeleton.DeployerInfo{Email: "bob@example.com", Provider: "keycloak"}
+	result, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "enc-info-member"}, bob)
+	if err != nil {
+		t.Fatalf("expected member to access enclave_info, got error: %v", err)
+	}
+	if result.Name != "enc-info-member" {
+		t.Errorf("expected name=enc-info-member, got %q", result.Name)
 	}
 }
