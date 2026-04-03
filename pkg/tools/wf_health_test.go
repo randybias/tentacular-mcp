@@ -14,6 +14,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 
+	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
@@ -44,8 +45,8 @@ func createOwnedNamespace(ctx context.Context, client *k8s.Client, name, ownerSu
 	createOwnedNamespaceWithMode(ctx, client, name, ownerSub, "rwxr-x---")
 }
 
-// createOwnedNamespaceWithMode creates a tentacular-managed namespace with specific mode.
-func createOwnedNamespaceWithMode(ctx context.Context, client *k8s.Client, name, ownerSub, mode string) {
+// createOwnedNamespaceWithMode creates a tentacular-managed enclave namespace with specific mode.
+func createOwnedNamespaceWithMode(ctx context.Context, client *k8s.Client, name, ownerEmail, mode string) {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
@@ -53,9 +54,11 @@ func createOwnedNamespaceWithMode(ctx context.Context, client *k8s.Client, name,
 				k8s.ManagedByLabel: k8s.ManagedByValue,
 			},
 			Annotations: map[string]string{
-				"tentacular.io/owner":     ownerSub,
-				"tentacular.io/owner-sub": ownerSub,
-				"tentacular.io/mode":      mode,
+				authz.AnnotationEnclave:      ownerEmail, // non-empty = enclave
+				authz.AnnotationEnclaveOwner: ownerEmail,
+				authz.AnnotationOwner:        ownerEmail,
+				authz.AnnotationOwnerSub:     ownerEmail,
+				authz.AnnotationMode:         mode,
 			},
 		},
 	}

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
@@ -66,101 +64,6 @@ type ExoListEntry struct {
 // ExoListResult is the result of exo_list.
 type ExoListResult struct {
 	Registrations []ExoListEntry `json:"registrations"`
-}
-
-func registerExoskeletonTools(srv *mcp.Server, client *k8s.Client, ctrl *exoskeleton.Controller) {
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "exo_status",
-		Description: "Return exoskeleton feature status including which backing services are available.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "Exoskeleton Service Status",
-			ReadOnlyHint:    true,
-			DestructiveHint: boolPtr(false),
-			IdempotentHint:  true,
-			OpenWorldHint:   boolPtr(true),
-		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, params ExoStatusParams) (*mcp.CallToolResult, ExoStatusResult, error) {
-		if ctrl == nil {
-			return nil, ExoStatusResult{Enabled: false, Services: []ExoStatusServiceInfo{}}, nil
-		}
-		services := buildServiceInfoList(ctrl)
-		return nil, ExoStatusResult{
-			Enabled:           ctrl.Enabled(),
-			CleanupOnUndeploy: ctrl.CleanupOnUndeploy(),
-			PostgresAvailable: ctrl.PostgresAvailable(),
-			NATSAvailable:     ctrl.NATSAvailable(),
-			RustFSAvailable:   ctrl.RustFSAvailable(),
-			SPIREAvailable:    ctrl.SPIREAvailable(),
-			NATSSpiffeEnabled: ctrl.NATSSpiffeEnabled(),
-			AuthEnabled:       ctrl.AuthEnabled(),
-			AuthIssuer:        ctrl.AuthIssuer(),
-			Services:          services,
-		}, nil
-	})
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "exo_registration",
-		Description: "Return exoskeleton registration details (Secret contents) for a workflow deployment.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "Workflow Exo Registration",
-			ReadOnlyHint:    true,
-			DestructiveHint: boolPtr(false),
-			IdempotentHint:  true,
-			OpenWorldHint:   boolPtr(true),
-		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, params ExoRegistrationParams) (*mcp.CallToolResult, ExoRegistrationResult, error) {
-		if err := guard.CheckNamespace(params.Namespace); err != nil {
-			return nil, ExoRegistrationResult{}, err
-		}
-		if err := guard.CheckName(params.Name); err != nil {
-			return nil, ExoRegistrationResult{}, err
-		}
-
-		secretName := exoskeleton.ExoskeletonSecretPrefix + params.Name
-		secret, err := client.Clientset.CoreV1().Secrets(params.Namespace).Get(ctx, secretName, metav1.GetOptions{})
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return nil, ExoRegistrationResult{
-					Found:     false,
-					Namespace: params.Namespace,
-					Name:      params.Name,
-				}, nil
-			}
-			return nil, ExoRegistrationResult{}, fmt.Errorf("get exoskeleton secret: %w", err)
-		}
-
-		data := make(map[string]string)
-		for k, v := range secret.Data {
-			// Redact password and secret key values.
-			if isSecretKey(k) {
-				data[k] = "***REDACTED***"
-			} else {
-				data[k] = string(v)
-			}
-		}
-
-		return nil, ExoRegistrationResult{
-			Found:     true,
-			Namespace: params.Namespace,
-			Name:      params.Name,
-			Data:      data,
-		}, nil
-	})
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "exo_list",
-		Description: "List all workflows with exoskeleton registrations by scanning Secrets with the exoskeleton label across all namespaces.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "List Exo Registrations",
-			ReadOnlyHint:    true,
-			DestructiveHint: boolPtr(false),
-			IdempotentHint:  true,
-			OpenWorldHint:   boolPtr(true),
-		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, params ExoListParams) (*mcp.CallToolResult, ExoListResult, error) {
-		result, err := handleExoList(ctx, client)
-		return nil, result, err
-	})
 }
 
 // buildServiceInfoList returns a slice of ExoStatusServiceInfo for each

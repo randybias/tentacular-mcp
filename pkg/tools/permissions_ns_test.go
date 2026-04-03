@@ -19,16 +19,20 @@ func nsPermTestClient() *k8s.Client {
 	return newNsTestClient()
 }
 
-// seedNamespaceForPerms creates a managed namespace with ownership annotations for permissions tests.
+// seedNamespaceForPerms creates a managed enclave namespace with ownership annotations for permissions tests.
+// The group parameter is kept for API compatibility but is stored as AnnotationGroup (for ns_permissions_get to return).
+// Enclave annotations are always set so that CheckEnclave passes.
 func seedNamespaceForPerms(t *testing.T, client *k8s.Client, name, ownerSub, ownerEmail, group, mode string) {
 	t.Helper()
 	ctx := context.Background()
 	ann := map[string]string{
-		authz.AnnotationOwner:      ownerEmail,
-		authz.AnnotationOwnerSub:   ownerSub,
-		authz.AnnotationOwnerEmail: ownerEmail,
-		authz.AnnotationGroup:      group,
-		authz.AnnotationMode:       mode,
+		authz.AnnotationEnclave:      ownerEmail, // non-empty = enclave
+		authz.AnnotationEnclaveOwner: ownerEmail,
+		authz.AnnotationOwner:        ownerEmail,
+		authz.AnnotationOwnerSub:     ownerSub,
+		authz.AnnotationOwnerEmail:   ownerEmail,
+		authz.AnnotationGroup:        group,
+		authz.AnnotationMode:         mode,
 	}
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{

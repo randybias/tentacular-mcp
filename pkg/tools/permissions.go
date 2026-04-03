@@ -6,14 +6,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/randybias/tentacular-mcp/pkg/auth"
 	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
-	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
 
@@ -96,121 +93,17 @@ type NsPermissionsSetResult struct {
 	DefaultMode  string `json:"default_mode,omitempty"`
 }
 
-func registerPermissionsTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "permissions_get",
-		Description: "Get the ownership and permission settings for a workflow deployment, including owner identity, assigned group, and permission mode.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "Get Workflow Permissions",
-			ReadOnlyHint:    true,
-			DestructiveHint: boolPtr(false),
-			IdempotentHint:  true,
-			OpenWorldHint:   boolPtr(true),
-		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, params PermissionsGetParams) (*mcp.CallToolResult, PermissionsGetResult, error) {
-		if err := guard.CheckNamespace(params.Namespace); err != nil {
-			return nil, PermissionsGetResult{}, err
-		}
-		if err := guard.CheckName(params.Name); err != nil {
-			return nil, PermissionsGetResult{}, err
-		}
-		deployer := auth.DeployerFromContext(ctx)
-		if err := requireDeployer(deployer, eval); err != nil {
-			return nil, PermissionsGetResult{}, err
-		}
-		result, err := handlePermissionsGet(ctx, client, params, deployer, eval)
-		return nil, result, err
-	})
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "permissions_set",
-		Description: "Update the group or permission mode for a workflow deployment. Only the owner or a bearer-token caller can change permissions. At least one of group or share must be provided.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "Set Workflow Permissions",
-			ReadOnlyHint:    false,
-			DestructiveHint: boolPtr(false),
-			IdempotentHint:  true,
-			OpenWorldHint:   boolPtr(true),
-		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, params PermissionsSetParams) (*mcp.CallToolResult, PermissionsSetResult, error) {
-		if err := guard.CheckNamespace(params.Namespace); err != nil {
-			return nil, PermissionsSetResult{}, err
-		}
-		if err := guard.CheckName(params.Name); err != nil {
-			return nil, PermissionsSetResult{}, err
-		}
-		if params.Mode != "" && params.Share != "" {
-			return nil, PermissionsSetResult{}, errors.New("mode and share are mutually exclusive; provide one or the other")
-		}
-		if params.Group == "" && params.Share == "" && params.Mode == "" {
-			return nil, PermissionsSetResult{}, errors.New("at least one of group, share, or mode must be provided")
-		}
-		deployer := auth.DeployerFromContext(ctx)
-		if err := requireDeployer(deployer, eval); err != nil {
-			return nil, PermissionsSetResult{}, err
-		}
-		result, err := handlePermissionsSet(ctx, client, params, deployer, eval)
-		return nil, result, err
-	})
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "ns_permissions_get",
-		Description: "Get namespace-level ownership and permission settings, including defaults for new workflows.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "Get Namespace Permissions",
-			ReadOnlyHint:    true,
-			DestructiveHint: boolPtr(false),
-			IdempotentHint:  true,
-			OpenWorldHint:   boolPtr(true),
-		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, params NsPermissionsGetParams) (*mcp.CallToolResult, NsPermissionsGetResult, error) {
-		if err := guard.CheckNamespace(params.Namespace); err != nil {
-			return nil, NsPermissionsGetResult{}, err
-		}
-		deployer := auth.DeployerFromContext(ctx)
-		if err := requireDeployer(deployer, eval); err != nil {
-			return nil, NsPermissionsGetResult{}, err
-		}
-		result, err := handleNsPermissionsGet(ctx, client, params, deployer, eval)
-		return nil, result, err
-	})
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "ns_permissions_set",
-		Description: "Update namespace-level permissions, including ownership, group, mode, and defaults for new workflows. Only the owner or a bearer-token caller can change permissions.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "Set Namespace Permissions",
-			ReadOnlyHint:    false,
-			DestructiveHint: boolPtr(false),
-			IdempotentHint:  true,
-			OpenWorldHint:   boolPtr(true),
-		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, params NsPermissionsSetParams) (*mcp.CallToolResult, NsPermissionsSetResult, error) {
-		if err := guard.CheckNamespace(params.Namespace); err != nil {
-			return nil, NsPermissionsSetResult{}, err
-		}
-		if params.Group == "" && params.Mode == "" && params.Share == "" && params.DefaultGroup == "" && params.DefaultShare == "" {
-			return nil, NsPermissionsSetResult{}, errors.New("at least one of group, mode, share, default_group, or default_share must be provided")
-		}
-		if params.Mode != "" && params.Share != "" {
-			return nil, NsPermissionsSetResult{}, errors.New("mode and share are mutually exclusive; provide one or the other")
-		}
-		deployer := auth.DeployerFromContext(ctx)
-		if err := requireDeployer(deployer, eval); err != nil {
-			return nil, NsPermissionsSetResult{}, err
-		}
-		result, err := handleNsPermissionsSet(ctx, client, params, deployer, eval)
-		return nil, result, err
-	})
-}
-
 func handlePermissionsGet(ctx context.Context, client *k8s.Client, params PermissionsGetParams, deployer *exoskeleton.DeployerInfo, eval *authz.Evaluator) (PermissionsGetResult, error) {
 	dep, err := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
 	if err != nil {
 		return PermissionsGetResult{}, wrapGetError(params.Name, params.Namespace, err)
 	}
 
-	if d := eval.Check(deployer, dep.Annotations, authz.Read); !d.Allowed {
+	nsAnn, nsAnnErr := fetchNamespaceAnnotations(ctx, client, params.Namespace)
+	if nsAnnErr != nil {
+		return PermissionsGetResult{}, nsAnnErr
+	}
+	if d := checkAuthz(eval, deployer, nsAnn, dep.Annotations, authz.Read); !d.Allowed {
 		return PermissionsGetResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 	}
 
@@ -230,82 +123,6 @@ func handlePermissionsGet(ctx context.Context, client *k8s.Client, params Permis
 		Mode:         ownerInfo.Mode.String(),
 		Preset:       ownerInfo.PresetName,
 		AuthProvider: ownerInfo.AuthProvider,
-	}, nil
-}
-
-func handlePermissionsSet(ctx context.Context, client *k8s.Client, params PermissionsSetParams, deployer *exoskeleton.DeployerInfo, eval *authz.Evaluator) (PermissionsSetResult, error) {
-	dep, err := client.Clientset.AppsV1().Deployments(params.Namespace).Get(ctx, params.Name, metav1.GetOptions{})
-	if err != nil {
-		return PermissionsSetResult{}, wrapGetError(params.Name, params.Namespace, err)
-	}
-
-	ann := dep.Annotations
-	if ann == nil {
-		ann = map[string]string{}
-	}
-	ownerInfo := authz.ReadOwnerInfo(ann)
-
-	// permissions_set is owner-only: only the original owner (or bearer-token) may
-	// change group/mode. Generic Write permission is not sufficient — this prevents
-	// group members from hijacking ownership metadata.
-	if eval != nil && eval.Enabled && deployer != nil && deployer.Provider != "bearer-token" {
-		owner := ann[authz.AnnotationOwner]
-		if owner != "" && deployer.Email != owner {
-			return PermissionsSetResult{}, errors.New("permission denied: only the owner may change permissions")
-		}
-	}
-
-	// Determine new group value.
-	newGroup := ownerInfo.Group
-	if params.Group != "" {
-		newGroup = params.Group
-	}
-
-	// Determine new mode value: Mode (raw string) takes precedence over Share (preset name).
-	newMode := ownerInfo.Mode
-	switch {
-	case params.Mode != "":
-		m, parseErr := authz.ParseMode(params.Mode)
-		if parseErr != nil {
-			return PermissionsSetResult{}, fmt.Errorf("invalid mode %q: %w", params.Mode, parseErr)
-		}
-		newMode = m
-	case params.Share != "":
-		m, ok := authz.PresetFromName(params.Share)
-		if !ok {
-			return PermissionsSetResult{}, fmt.Errorf("unknown share preset %q; valid presets: %s", params.Share, authz.ValidPresetNames())
-		}
-		newMode = m
-	}
-
-	// Patch the Deployment annotations via typed API (MergePatchType), same as wf_restart.
-	patchAnnotations := map[string]any{
-		"metadata": map[string]any{
-			"annotations": map[string]any{
-				authz.AnnotationGroup: newGroup,
-				authz.AnnotationMode:  newMode.String(),
-			},
-		},
-	}
-
-	patchBody, err := json.Marshal(patchAnnotations)
-	if err != nil {
-		return PermissionsSetResult{}, fmt.Errorf("marshal permissions patch: %w", err)
-	}
-
-	_, err = client.Clientset.AppsV1().Deployments(params.Namespace).Patch(
-		ctx, params.Name, types.MergePatchType, patchBody, metav1.PatchOptions{},
-	)
-	if err != nil {
-		return PermissionsSetResult{}, fmt.Errorf("patch deployment %q permissions: %w", params.Name, err)
-	}
-
-	return PermissionsSetResult{
-		Namespace: params.Namespace,
-		Name:      params.Name,
-		Group:     newGroup,
-		Mode:      newMode.String(),
-		Preset:    authz.PresetName(newMode),
 	}, nil
 }
 

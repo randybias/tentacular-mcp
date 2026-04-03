@@ -1,8 +1,6 @@
 package authz
 
 import (
-	"slices"
-
 	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 )
 
@@ -54,58 +52,14 @@ func NewEvaluator(defaultMode Mode) *Evaluator {
 }
 
 // Check evaluates whether the deployer may perform action on the resource
-// described by annotations.
+// described by annotations. This method is retained for backward compatibility
+// with handler code that pre-dates the enclave model; it delegates to
+// CheckEnclave. Callers that have namespace annotations available should
+// prefer CheckTentacle directly.
 //
-// Rules (evaluated in order):
-//  1. Evaluator nil or disabled → Allow
-//  2. Bearer-token deployer → Allow (full trust, no OIDC identity)
-//  3. No owner annotation → Deny (unowned resource, must be adopted first)
-//  4. Owner match (deployer.Email == owner) → check owner bits
-//  5. Group match (resource group in deployer.Groups) → check group bits
-//  6. Otherwise → check other bits
+// Deprecated: use CheckEnclave or CheckTentacle for new code.
 func (e *Evaluator) Check(deployer *exoskeleton.DeployerInfo, annotations map[string]string, action Action) Decision {
-	if e == nil || !e.Enabled {
-		return Allow
-	}
-
-	// Rule 1: no deployer identity (shouldn't happen in practice, but be safe).
-	if deployer == nil {
-		return Deny("no deployer identity in request context")
-	}
-
-	// Rule 2: bearer-token is full-trust.
-	if deployer.Provider == "bearer-token" {
-		return Allow
-	}
-
-	// Rule 3: no owner annotation means unowned resource — deny access.
-	// Use bearer-token or tntc admin adopt to stamp ownership.
-	owner := annotations[AnnotationOwner]
-	if owner == "" {
-		return Deny("resource has no owner; use bearer-token or admin tools to set ownership")
-	}
-
-	// Resolve mode, falling back to server default.
-	mode := e.DefaultMode
-	if raw, ok := annotations[AnnotationMode]; ok && raw != "" {
-		if m, err := ParseMode(raw); err == nil {
-			mode = m
-		}
-	}
-
-	// Rule 4: owner match (email-based).
-	if deployer.Email == owner {
-		return checkBits(mode, action, true, false)
-	}
-
-	// Rule 5: group match.
-	resourceGroup := annotations[AnnotationGroup]
-	if resourceGroup != "" && slices.Contains(deployer.Groups, resourceGroup) {
-		return checkBits(mode, action, false, true)
-	}
-
-	// Rule 6: other bits.
-	return checkBits(mode, action, false, false)
+	return e.CheckEnclave(deployer, annotations, action)
 }
 
 // CheckEnclave evaluates whether the deployer may perform action on the enclave

@@ -67,33 +67,35 @@ type WfListResult struct {
 
 // WfDescribeParams are the parameters for wf_describe.
 type WfDescribeParams struct {
-	Namespace string `json:"namespace" jsonschema:"Namespace of the workflow"`
+	Namespace string `json:"namespace,omitempty" jsonschema:"Namespace of the workflow (auto-resolved if caller belongs to exactly one enclave)"`
 	Name      string `json:"name" jsonschema:"Workflow name"`
 }
 
 // WfDescribeResult is the result of wf_describe.
 type WfDescribeResult struct {
-	Annotations   map[string]string `json:"annotations,omitempty"`
-	DeployedVia   string            `json:"deployed_via,omitempty"`
-	Age           string            `json:"age"`
-	Owner         string            `json:"owner,omitempty"`
-	OwnerName     string            `json:"owner_name,omitempty"`
-	Group         string            `json:"group,omitempty"`
-	Mode          string            `json:"mode,omitempty"`
-	Preset        string            `json:"preset,omitempty"`
-	Namespace     string            `json:"namespace"`
-	Environment   string            `json:"environment,omitempty"`
-	DeployedBy    string            `json:"deployed_by,omitempty"`
-	Name          string            `json:"name"`
-	Version       string            `json:"version"`
-	Image         string            `json:"image"`
-	DeployedAt    string            `json:"deployed_at,omitempty"`
-	Nodes         []string          `json:"nodes,omitempty"`
-	Triggers      []string          `json:"triggers,omitempty"`
-	Tags          []string          `json:"tags,omitempty"`
-	ReadyReplicas int32             `json:"ready_replicas"`
-	Replicas      int32             `json:"replicas"`
-	Ready         bool              `json:"ready"`
+	Annotations    map[string]string `json:"annotations,omitempty"`
+	DeployedVia    string            `json:"deployed_via,omitempty"`
+	Age            string            `json:"age"`
+	Owner          string            `json:"owner,omitempty"`
+	OwnerName      string            `json:"owner_name,omitempty"`
+	Group          string            `json:"group,omitempty"`
+	Mode           string            `json:"mode,omitempty"`
+	Preset         string            `json:"preset,omitempty"`
+	Namespace      string            `json:"namespace"`
+	Environment    string            `json:"environment,omitempty"`
+	DeployedBy     string            `json:"deployed_by,omitempty"`
+	Name           string            `json:"name"`
+	Version        string            `json:"version"`
+	Image          string            `json:"image"`
+	DeployedAt     string            `json:"deployed_at,omitempty"`
+	EnclaveOwner   string            `json:"enclave_owner,omitempty"`
+	Nodes          []string          `json:"nodes,omitempty"`
+	Triggers       []string          `json:"triggers,omitempty"`
+	Tags           []string          `json:"tags,omitempty"`
+	EnclaveMembers []string          `json:"enclave_members,omitempty"`
+	ReadyReplicas  int32             `json:"ready_replicas"`
+	Replicas       int32             `json:"replicas"`
+	Ready          bool              `json:"ready"`
 }
 
 func registerDiscoverTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
@@ -132,9 +134,6 @@ func registerDiscoverTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 			OpenWorldHint:   boolPtr(true),
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params WfDescribeParams) (*mcp.CallToolResult, WfDescribeResult, error) {
-		if err := guard.CheckNamespace(params.Namespace); err != nil {
-			return nil, WfDescribeResult{}, err
-		}
 		if err := guard.CheckName(params.Name); err != nil {
 			return nil, WfDescribeResult{}, err
 		}
@@ -142,6 +141,14 @@ func registerDiscoverTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 		if err := requireDeployer(deployer, eval); err != nil {
 			return nil, WfDescribeResult{}, err
 		}
+		ns, nsErr := resolveNamespace(ctx, client, params.Namespace, deployer)
+		if nsErr != nil {
+			return nil, WfDescribeResult{}, nsErr
+		}
+		if err := guard.CheckNamespace(ns); err != nil {
+			return nil, WfDescribeResult{}, err
+		}
+		params.Namespace = ns
 		result, err := handleWfDescribe(ctx, client, params, deployer, eval)
 		return nil, result, err
 	})
@@ -163,9 +170,8 @@ func isSystemNamespace(ns string, annotations map[string]string) bool {
 func handleWfList(ctx context.Context, client *k8s.Client, params WfListParams, deployer *exoskeleton.DeployerInfo, eval *authz.Evaluator) (WfListResult, error) {
 	ns := params.Namespace
 
-	// Build a cache of namespace annotations used for authz routing and system
-	// namespace filtering. When listing a specific namespace, pre-populate the
-	// cache entry so the per-deployment loop can use it for dual-path authz.
+	// Build a cache of namespace annotations for authz and system namespace filtering.
+	// When listing a specific namespace, pre-populate the cache and check Read permission.
 	nsAnnotations := map[string]map[string]string{}
 	if ns != "" {
 		// Single-namespace listing: pre-fetch annotations and check Read permission.
@@ -174,13 +180,8 @@ func handleWfList(ctx context.Context, client *k8s.Client, params WfListParams, 
 			return WfListResult{}, nsAnnErr
 		}
 		nsAnnotations[ns] = nsAnn
-		// Check namespace-level Read permission using dual-path evaluator.
-		var nsDecision authz.Decision
-		if authz.IsEnclave(nsAnn) {
-			nsDecision = eval.CheckEnclave(deployer, nsAnn, authz.Read)
-		} else {
-			nsDecision = eval.Check(deployer, nsAnn, authz.Read)
-		}
+		// Check namespace-level Read permission (enclave model).
+		nsDecision := eval.CheckEnclave(deployer, nsAnn, authz.Read)
 		if !nsDecision.Allowed {
 			return WfListResult{}, fmt.Errorf("permission denied: %s", nsDecision.Reason)
 		}
@@ -209,19 +210,13 @@ func handleWfList(ctx context.Context, client *k8s.Client, params WfListParams, 
 		}
 
 		// Namespace-level authz filter: when listing across all namespaces, skip
-		// namespaces where the caller lacks Read permission.
+		// namespaces where the caller lacks Read permission (enclave model).
 		if ns == "" {
 			nsAnn := nsAnnotations[dep.Namespace]
 			if nsAnn == nil {
 				nsAnn = map[string]string{}
 			}
-			var nsDecision authz.Decision
-			if authz.IsEnclave(nsAnn) {
-				nsDecision = eval.CheckEnclave(deployer, nsAnn, authz.Read)
-			} else {
-				nsDecision = eval.Check(deployer, nsAnn, authz.Read)
-			}
-			if !nsDecision.Allowed {
+			if !eval.CheckEnclave(deployer, nsAnn, authz.Read).Allowed {
 				continue
 			}
 		}
@@ -303,27 +298,30 @@ func handleWfDescribe(ctx context.Context, client *k8s.Client, params WfDescribe
 
 	ownerInfo := authz.ReadOwnerInfo(ann)
 	age := time.Since(dep.CreationTimestamp.Time).Round(time.Second).String()
+	enclaveInfo := authz.ReadEnclaveInfo(nsAnn)
 
 	result := WfDescribeResult{
-		Name:          dep.Name,
-		Namespace:     dep.Namespace,
-		Version:       dep.Labels[k8s.VersionLabel],
-		Owner:         ownerInfo.OwnerEmail,
-		OwnerName:     ownerInfo.OwnerName,
-		Group:         ownerInfo.Group,
-		Mode:          ownerInfo.Mode.String(),
-		Preset:        ownerInfo.PresetName,
-		Tags:          tags,
-		Environment:   authz.GetAnnotation(ann, "tentacular.io/environment"),
-		DeployedBy:    authz.GetAnnotation(ann, "tentacular.io/deployed-by"),
-		DeployedVia:   authz.GetAnnotation(ann, "tentacular.io/deployed-via"),
-		DeployedAt:    authz.GetAnnotation(ann, "tentacular.io/deployed-at"),
-		Ready:         dep.Status.ReadyReplicas >= 1,
-		Replicas:      replicaCount(dep.Spec.Replicas),
-		ReadyReplicas: dep.Status.ReadyReplicas,
-		Image:         image,
-		Age:           age,
-		Annotations:   tentacularAnn,
+		Name:           dep.Name,
+		Namespace:      dep.Namespace,
+		Version:        dep.Labels[k8s.VersionLabel],
+		Owner:          ownerInfo.OwnerEmail,
+		OwnerName:      ownerInfo.OwnerName,
+		Group:          ownerInfo.Group,
+		Mode:           ownerInfo.Mode.String(),
+		Preset:         ownerInfo.PresetName,
+		Tags:           tags,
+		Environment:    authz.GetAnnotation(ann, "tentacular.io/environment"),
+		DeployedBy:     authz.GetAnnotation(ann, "tentacular.io/deployed-by"),
+		DeployedVia:    authz.GetAnnotation(ann, "tentacular.io/deployed-via"),
+		DeployedAt:     authz.GetAnnotation(ann, "tentacular.io/deployed-at"),
+		Ready:          dep.Status.ReadyReplicas >= 1,
+		Replicas:       replicaCount(dep.Spec.Replicas),
+		ReadyReplicas:  dep.Status.ReadyReplicas,
+		Image:          image,
+		Age:            age,
+		Annotations:    tentacularAnn,
+		EnclaveOwner:   enclaveInfo.Owner,
+		EnclaveMembers: enclaveInfo.Members,
 	}
 
 	// Attempt to enrich from the workflow ConfigMap (best-effort, non-fatal)

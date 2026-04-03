@@ -63,8 +63,7 @@ var knownGVRs = []schema.GroupVersionResource{
 type WorkflowApplyParams struct {
 	Namespace string           `json:"namespace" jsonschema:"Target namespace for the workflow"`
 	Name      string           `json:"name" jsonschema:"Deployment name for tracking resources"`
-	Group     string           `json:"group,omitempty" jsonschema:"IdP group assigned to this workflow (overrides server default)"`
-	Share     string           `json:"share,omitempty" jsonschema:"Permission preset name: private, group-read, group-run, group-edit, public-read"`
+	Mode      string           `json:"mode,omitempty" jsonschema:"Raw permission mode string (e.g. rwxrwx---). Defaults to enclave default mode."`
 	Manifests []map[string]any `json:"manifests" jsonschema:"List of Kubernetes manifest objects to apply"`
 }
 
@@ -155,20 +154,8 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 			return nil, WorkflowApplyResult{}, err
 		}
 
-		// Resolve Share preset to a mode string before touching manifests.
-		var mode string
-		if params.Share != "" {
-			m, ok := authz.PresetFromName(params.Share)
-			if !ok {
-				return nil, WorkflowApplyResult{}, fmt.Errorf("unknown share preset %q; valid presets: %s", params.Share, authz.ValidPresetNames())
-			}
-			mode = m.String()
-		} else if eval != nil {
-			mode = eval.DefaultMode.String()
-		} else {
-			mode = authz.DefaultMode.String()
-		}
-
+		// Resolve mode: explicit Mode param takes precedence, otherwise use enclave
+		// default for enclave namespaces or server default for others.
 		// Extract deployer identity from request context (set by auth middleware).
 		deployer := auth.DeployerFromContext(ctx)
 		if err := requireDeployer(deployer, eval); err != nil {
@@ -182,10 +169,19 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 			return nil, WorkflowApplyResult{}, nsAnnErr
 		}
 
-		// For new deploys in enclave namespaces, use DefaultEnclaveMode when no
-		// explicit --share/--mode was specified.
-		if params.Share == "" && authz.IsEnclave(nsAnn) {
+		var mode string
+		if params.Mode != "" {
+			m, parseErr := authz.ParseMode(params.Mode)
+			if parseErr != nil {
+				return nil, WorkflowApplyResult{}, fmt.Errorf("invalid mode %q: %w", params.Mode, parseErr)
+			}
+			mode = m.String()
+		} else if authz.IsEnclave(nsAnn) {
 			mode = authz.DefaultEnclaveMode.String()
+		} else if eval != nil {
+			mode = eval.DefaultMode.String()
+		} else {
+			mode = authz.DefaultMode.String()
 		}
 
 		// Authz check for UPDATE path: fetch existing Deployment annotations.
@@ -232,7 +228,7 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 			}
 			params.Manifests = exoCtrl.AnnotateDeployer(params.Manifests, exoskeleton.AnnotateDeployerParams{
 				Deployer:            annotateDeployer,
-				Group:               params.Group,
+				Group:               "",
 				Mode:                mode,
 				IsUpdate:            isUpdate,
 				ExistingAnnotations: existingAnnotations,

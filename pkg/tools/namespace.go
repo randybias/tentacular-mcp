@@ -9,15 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/randybias/tentacular-mcp/pkg/auth"
 	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
-	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
 
@@ -106,121 +103,6 @@ type NsListItem struct {
 // NsListResult is the result of ns_list.
 type NsListResult struct {
 	Namespaces []NsListItem `json:"namespaces"`
-}
-
-func registerNamespaceTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "ns_create",
-		Description: "Create a new managed namespace with network policies, resource quotas, and workflow RBAC.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "Create Managed Namespace",
-			ReadOnlyHint:    false,
-			DestructiveHint: boolPtr(false),
-			IdempotentHint:  false,
-			OpenWorldHint:   boolPtr(true),
-		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, params NsCreateParams) (*mcp.CallToolResult, NsCreateResult, error) {
-		if err := guard.CheckNamespace(params.Name); err != nil {
-			return nil, NsCreateResult{}, err
-		}
-		if params.Mode != "" && params.Share != "" {
-			return nil, NsCreateResult{}, errors.New("mode and share are mutually exclusive; provide one or the other")
-		}
-		deployer := auth.DeployerFromContext(ctx)
-		if err := requireDeployer(deployer, eval); err != nil {
-			return nil, NsCreateResult{}, err
-		}
-		result, err := handleNsCreate(ctx, client, eval, params, deployer)
-		return nil, result, err
-	})
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "ns_delete",
-		Description: "Delete a managed namespace. Only namespaces with the tentacular managed-by label can be deleted.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "Delete Managed Namespace",
-			ReadOnlyHint:    false,
-			DestructiveHint: boolPtr(true),
-			IdempotentHint:  true,
-			OpenWorldHint:   boolPtr(true),
-		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, params NsDeleteParams) (*mcp.CallToolResult, NsDeleteResult, error) {
-		if err := guard.CheckNamespace(params.Name); err != nil {
-			return nil, NsDeleteResult{}, err
-		}
-		deployer := auth.DeployerFromContext(ctx)
-		if err := requireDeployer(deployer, eval); err != nil {
-			return nil, NsDeleteResult{}, err
-		}
-		result, err := handleNsDelete(ctx, client, eval, params, deployer)
-		return nil, result, err
-	})
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "ns_get",
-		Description: "Get details for a namespace including labels, status, quota summary, and limit range summary.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "Get Namespace Details",
-			ReadOnlyHint:    true,
-			DestructiveHint: boolPtr(false),
-			IdempotentHint:  true,
-			OpenWorldHint:   boolPtr(true),
-		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, params NsGetParams) (*mcp.CallToolResult, NsGetResult, error) {
-		if err := guard.CheckNamespace(params.Name); err != nil {
-			return nil, NsGetResult{}, err
-		}
-		deployer := auth.DeployerFromContext(ctx)
-		if err := requireDeployer(deployer, eval); err != nil {
-			return nil, NsGetResult{}, err
-		}
-		result, err := handleNsGet(ctx, client, eval, params, deployer)
-		return nil, result, err
-	})
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "ns_list",
-		Description: "List all namespaces managed by tentacular.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "List Managed Namespaces",
-			ReadOnlyHint:    true,
-			DestructiveHint: boolPtr(false),
-			IdempotentHint:  true,
-			OpenWorldHint:   boolPtr(true),
-		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, params NsListParams) (*mcp.CallToolResult, NsListResult, error) {
-		deployer := auth.DeployerFromContext(ctx)
-		if err := requireDeployer(deployer, eval); err != nil {
-			return nil, NsListResult{}, err
-		}
-		result, err := handleNsList(ctx, client, eval, deployer)
-		return nil, result, err
-	})
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "ns_update",
-		Description: "Update labels, annotations, resource quota preset, or permissions on a managed namespace.",
-		Annotations: &mcp.ToolAnnotations{
-			Title:           "Update Namespace Metadata",
-			ReadOnlyHint:    false,
-			DestructiveHint: boolPtr(false),
-			IdempotentHint:  true,
-			OpenWorldHint:   boolPtr(true),
-		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, params NsUpdateParams) (*mcp.CallToolResult, NsUpdateResult, error) {
-		if err := guard.CheckNamespace(params.Name); err != nil {
-			return nil, NsUpdateResult{}, err
-		}
-		if params.Mode != "" && params.Share != "" {
-			return nil, NsUpdateResult{}, errors.New("mode and share are mutually exclusive; provide one or the other")
-		}
-		deployer := auth.DeployerFromContext(ctx)
-		if err := requireDeployer(deployer, eval); err != nil {
-			return nil, NsUpdateResult{}, err
-		}
-		result, err := handleNsUpdate(ctx, client, eval, params, deployer)
-		return nil, result, err
-	})
 }
 
 func handleNsCreate(ctx context.Context, client *k8s.Client, eval *authz.Evaluator, params NsCreateParams, deployer *exoskeleton.DeployerInfo) (NsCreateResult, error) {
@@ -346,7 +228,7 @@ func handleNsDelete(ctx context.Context, client *k8s.Client, eval *authz.Evaluat
 	if ann == nil {
 		ann = map[string]string{}
 	}
-	if d := eval.Check(deployer, ann, authz.Write); !d.Allowed {
+	if d := eval.CheckEnclave(deployer, ann, authz.Write); !d.Allowed {
 		subject := ""
 		if deployer != nil {
 			subject = deployer.Subject
@@ -365,7 +247,7 @@ func handleNsDelete(ctx context.Context, client *k8s.Client, eval *authz.Evaluat
 	return NsDeleteResult{Name: params.Name, Deleted: true}, nil
 }
 
-func handleNsGet(ctx context.Context, client *k8s.Client, eval *authz.Evaluator, params NsGetParams, deployer *exoskeleton.DeployerInfo) (NsGetResult, error) {
+func handleNsGet(ctx context.Context, client *k8s.Client, eval *authz.Evaluator, params NsGetParams, deployer *exoskeleton.DeployerInfo) (NsGetResult, error) { //nolint:unparam
 	ns, err := k8s.GetNamespace(ctx, client, params.Name)
 	if err != nil {
 		return NsGetResult{}, err
@@ -377,7 +259,7 @@ func handleNsGet(ctx context.Context, client *k8s.Client, eval *authz.Evaluator,
 		if ann == nil {
 			ann = map[string]string{}
 		}
-		if d := eval.Check(deployer, ann, authz.Read); !d.Allowed {
+		if d := eval.CheckEnclave(deployer, ann, authz.Read); !d.Allowed {
 			subject := ""
 			if deployer != nil {
 				subject = deployer.Subject
@@ -448,7 +330,7 @@ func handleNsGet(ctx context.Context, client *k8s.Client, eval *authz.Evaluator,
 	return result, nil
 }
 
-func handleNsUpdate(ctx context.Context, client *k8s.Client, eval *authz.Evaluator, params NsUpdateParams, deployer *exoskeleton.DeployerInfo) (NsUpdateResult, error) {
+func handleNsUpdate(ctx context.Context, client *k8s.Client, eval *authz.Evaluator, params NsUpdateParams, deployer *exoskeleton.DeployerInfo) (NsUpdateResult, error) { //nolint:unparam
 	if err := k8s.CheckManagedNamespace(ctx, client, params.Name); err != nil {
 		return NsUpdateResult{}, err
 	}
@@ -597,7 +479,7 @@ func handleNsList(ctx context.Context, client *k8s.Client, eval *authz.Evaluator
 		if ann == nil {
 			ann = map[string]string{}
 		}
-		if d := eval.Check(deployer, ann, authz.Read); !d.Allowed {
+		if d := eval.CheckEnclave(deployer, ann, authz.Read); !d.Allowed {
 			continue
 		}
 

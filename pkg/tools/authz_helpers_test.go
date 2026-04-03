@@ -40,11 +40,13 @@ func oidcDeployerAuth(sub, email string) *exoskeleton.DeployerInfo {
 	}
 }
 
-// makeLegacyNsAnn returns namespace annotations for a legacy (non-enclave) namespace.
-func makeLegacyNsAnn(owner, mode string) map[string]string {
+// makeNsAnn returns namespace annotations for an enclave namespace with the given owner and mode.
+// This replaces the legacy makeLegacyNsAnn helper — all namespaces are now enclaves.
+func makeNsAnn(owner, mode string) map[string]string {
 	return map[string]string{
-		authz.AnnotationOwner: owner,
-		authz.AnnotationMode:  mode,
+		authz.AnnotationEnclave:      owner, // non-empty = enclave
+		authz.AnnotationEnclaveOwner: owner,
+		authz.AnnotationMode:         mode,
 	}
 }
 
@@ -76,47 +78,47 @@ func makeTentacleAnn(owner, mode string) map[string]string {
 // --- checkAuthz: nil evaluator ---
 
 func TestCheckAuthz_NilEval_AlwaysAllows(t *testing.T) {
-	d := checkAuthz(nil, oidcDeployerAuth("sub", "a@example.com"), makeLegacyNsAnn("b@example.com", "rwx------"), nil, authz.Read)
+	d := checkAuthz(nil, oidcDeployerAuth("sub", "a@example.com"), makeNsAnn("b@example.com", "rwx------"), nil, authz.Read)
 	if !d.Allowed {
 		t.Errorf("nil evaluator should allow all, got: %s", d.Reason)
 	}
 }
 
-// --- checkAuthz: legacy path (non-enclave namespace) ---
+// --- checkAuthz: enclave owner allowed ---
 
-func TestCheckAuthz_Legacy_OwnerAllowed(t *testing.T) {
+func TestCheckAuthz_OwnerAllowed(t *testing.T) {
 	eval := enclaveEval()
 	deployer := oidcDeployerAuth("sub-alice", "alice@example.com")
-	nsAnn := makeLegacyNsAnn("alice@example.com", "rwx------")
+	nsAnn := makeNsAnn("alice@example.com", "rwx------")
 	resAnn := makeTentacleAnn("alice@example.com", "rwx------")
 
 	d := checkAuthz(eval, deployer, nsAnn, resAnn, authz.Read)
 	if !d.Allowed {
-		t.Errorf("owner should be allowed on legacy namespace: %s", d.Reason)
+		t.Errorf("enclave owner should be allowed: %s", d.Reason)
 	}
 }
 
-func TestCheckAuthz_Legacy_StrangerDenied(t *testing.T) {
+func TestCheckAuthz_StrangerDenied(t *testing.T) {
 	eval := enclaveEval()
 	deployer := oidcDeployerAuth("sub-bob", "bob@example.com")
-	nsAnn := makeLegacyNsAnn("alice@example.com", "rwx------")
+	nsAnn := makeNsAnn("alice@example.com", "rwx------")
 	resAnn := makeTentacleAnn("alice@example.com", "rwx------")
 
 	d := checkAuthz(eval, deployer, nsAnn, resAnn, authz.Read)
 	if d.Allowed {
-		t.Error("stranger should be denied on private legacy resource")
+		t.Error("stranger should be denied on private enclave resource")
 	}
 }
 
-func TestCheckAuthz_Legacy_BearerBypass(t *testing.T) {
+func TestCheckAuthz_BearerBypass(t *testing.T) {
 	eval := enclaveEval()
 	deployer := bearerInfo()
-	nsAnn := makeLegacyNsAnn("alice@example.com", "rwx------")
+	nsAnn := makeNsAnn("alice@example.com", "rwx------")
 	resAnn := makeTentacleAnn("alice@example.com", "rwx------")
 
 	d := checkAuthz(eval, deployer, nsAnn, resAnn, authz.Read)
 	if !d.Allowed {
-		t.Errorf("bearer-token should bypass legacy authz: %s", d.Reason)
+		t.Errorf("bearer-token should bypass authz: %s", d.Reason)
 	}
 }
 
@@ -186,36 +188,21 @@ func TestCheckAuthz_Enclave_ExecuteAllowedForMember(t *testing.T) {
 	}
 }
 
-// TestCheckAuthz_DualPath_RoutingByNsAnnotation verifies that the path taken
-// depends solely on whether the namespace has the enclave annotation.
-// The test uses a public-read resource (rwxrwxrwx) so that on the legacy path
-// the stranger is allowed via "other" bits. On the enclave path, CheckTentacle
-// first checks enclave membership — the stranger is not a member and the
-// enclave mode (rwxrwx---) has no "other" bits, so the stranger is denied.
-func TestCheckAuthz_DualPath_RoutingByNsAnnotation(t *testing.T) {
+// TestCheckAuthz_NonEnclaveNs_Denied verifies that namespaces without the enclave
+// annotation are denied. All namespaces are expected to be enclaves.
+func TestCheckAuthz_NonEnclaveNs_Denied(t *testing.T) {
 	eval := enclaveEval()
-	// Same deployer, same resource annotations — different result based on ns.
-	deployer := oidcDeployerAuth("sub-stranger", "stranger@example.com")
-	// Public resource: other bits are r-x, so legacy stranger can read.
-	resAnn := makeTentacleAnn("owner@example.com", "rwxrwxr-x")
-
-	// Legacy namespace: Check uses resource annotations directly.
-	// Stranger is in "other" category; mode rwxrwxr-x → other.read = 'r' → allow.
-	legacyNs := map[string]string{
+	deployer := oidcDeployerAuth("sub-owner", "owner@example.com")
+	// Namespace without enclave annotation — should be denied.
+	nonEnclaveNs := map[string]string{
 		authz.AnnotationOwner: "owner@example.com",
 		authz.AnnotationMode:  "rwxrwxr-x",
 	}
-	dLegacy := checkAuthz(eval, deployer, legacyNs, resAnn, authz.Read)
-	if !dLegacy.Allowed {
-		t.Errorf("legacy path: stranger should be allowed on rwxrwxr-x: %s", dLegacy.Reason)
-	}
+	resAnn := makeTentacleAnn("owner@example.com", "rwxrwxr-x")
 
-	// Enclave namespace: CheckTentacle checks enclave membership first.
-	// Enclave mode is rwxrwx--- (no other bits), so stranger denied at enclave layer.
-	enclaveNs := makeEnclaveNsAnn("my-enclave", "owner@example.com", "member@example.com")
-	dEnclave := checkAuthz(eval, deployer, enclaveNs, resAnn, authz.Read)
-	if dEnclave.Allowed {
-		t.Error("enclave path: non-member stranger should be denied even though resource has other-read bits")
+	d := checkAuthz(eval, deployer, nonEnclaveNs, resAnn, authz.Read)
+	if d.Allowed {
+		t.Error("non-enclave namespace should be denied: only enclave namespaces are supported")
 	}
 }
 
@@ -242,19 +229,18 @@ func TestCheckAuthz_Enclave_PublicReadMode(t *testing.T) {
 	}
 }
 
-// TestCheckAuthz_Legacy_PublicWriteMode verifies a public-write legacy namespace
-// (mode rwxrwxrwx) allows non-owners to write.
-// This test uses a different mode to satisfy unparam.
-func TestCheckAuthz_Legacy_PublicWriteMode(t *testing.T) {
+// TestCheckAuthz_PublicWriteMode verifies a public-write enclave namespace
+// (mode rwxrwxrwx) allows non-members to write.
+func TestCheckAuthz_PublicWriteMode(t *testing.T) {
 	eval := enclaveEval()
 	deployer := oidcDeployerAuth("sub-pub2", "pub2@example.com")
 
-	nsAnn := makeLegacyNsAnn("admin@example.com", "rwxrwxrwx")
+	nsAnn := makeNsAnn("admin@example.com", "rwxrwxrwx")
 	resAnn := makeTentacleAnn("admin@example.com", "rwxrwxrwx")
 
 	d := checkAuthz(eval, deployer, nsAnn, resAnn, authz.Write)
 	if !d.Allowed {
-		t.Errorf("non-owner should be allowed to write on public-write resource: %s", d.Reason)
+		t.Errorf("non-member should be allowed to write on public-write enclave: %s", d.Reason)
 	}
 }
 

@@ -23,12 +23,19 @@ func bearerDeployer() *exoskeleton.DeployerInfo {
 	}
 }
 
-func annsWith(ownerEmail, group, modeStr string) map[string]string {
-	return map[string]string{
-		AnnotationOwner: ownerEmail,
-		AnnotationGroup: group,
-		AnnotationMode:  modeStr,
+// annsWith creates enclave-style annotations for use in Check/CheckEnclave tests.
+// The "group" parameter is interpreted as a single member email for enclave member matching.
+// To include multiple members, set members directly via AnnotationEnclaveMembers.
+func annsWith(ownerEmail, memberEmail, modeStr string) map[string]string {
+	ann := map[string]string{
+		AnnotationEnclave:      ownerEmail, // non-empty marks it as an enclave
+		AnnotationEnclaveOwner: ownerEmail,
+		AnnotationMode:         modeStr,
 	}
+	if memberEmail != "" {
+		ann[AnnotationEnclaveMembers] = memberEmail
+	}
+	return ann
 }
 
 func TestEvaluator_NilEvaluator_AlwaysAllow(t *testing.T) {
@@ -110,117 +117,137 @@ func TestEvaluator_UnownedResource_BearerToken_Allow(t *testing.T) {
 	}
 }
 
-// --- Owner scope tests ---
+// --- Tentacle owner scope tests ---
+//
+// CheckEnclave treats the enclave owner as a superuser (bypass all bits).
+// Per-tentacle owner permission bit enforcement is done by CheckTentacle.
+// These tests use CheckTentacle with a deployer who is the tentacle owner
+// but NOT the enclave owner.
+
+func enclaveAnnWith(tentacleOwnerEmail, mode string) (enclave, tentacle map[string]string) { //nolint:unparam
+	enclave = map[string]string{
+		AnnotationEnclave:        "test-enclave",
+		AnnotationEnclaveOwner:   "admin@example.com",
+		AnnotationEnclaveMembers: tentacleOwnerEmail, // must pass enclave layer check
+		AnnotationMode:           "rwxrwx---",        // members have full access at enclave layer
+	}
+	tentacle = map[string]string{
+		AnnotationOwner: tentacleOwnerEmail,
+		AnnotationMode:  mode,
+	}
+	return enclave, tentacle
+}
 
 func TestEvaluator_Owner_Read_OwnerReadSet_Allow(t *testing.T) {
 	e := NewEvaluator(DefaultMode)
-	ann := annsWith("a@example.com", "", "r--------")
-	d := e.Check(oidcDeployer("sub-owner", "a@example.com"), ann, Read)
+	encAnn, tentAnn := enclaveAnnWith("a@example.com", "r--------")
+	d := e.CheckTentacle(oidcDeployer("sub-owner", "a@example.com"), encAnn, tentAnn, Read)
 	if !d.Allowed {
-		t.Errorf("owner with read bit should be allowed: %s", d.Reason)
+		t.Errorf("tentacle owner with read bit should be allowed: %s", d.Reason)
 	}
 }
 
 func TestEvaluator_Owner_Read_OwnerReadUnset_Deny(t *testing.T) {
 	e := NewEvaluator(DefaultMode)
-	ann := annsWith("a@example.com", "", "---------")
-	d := e.Check(oidcDeployer("sub-owner", "a@example.com"), ann, Read)
+	encAnn, tentAnn := enclaveAnnWith("a@example.com", "---------")
+	d := e.CheckTentacle(oidcDeployer("sub-owner", "a@example.com"), encAnn, tentAnn, Read)
 	if d.Allowed {
-		t.Error("owner without read bit should be denied")
+		t.Error("tentacle owner without read bit should be denied")
 	}
 }
 
 func TestEvaluator_Owner_Write_OwnerWriteSet_Allow(t *testing.T) {
 	e := NewEvaluator(DefaultMode)
-	ann := annsWith("a@example.com", "", "-w-------")
-	d := e.Check(oidcDeployer("sub-owner", "a@example.com"), ann, Write)
+	encAnn, tentAnn := enclaveAnnWith("a@example.com", "-w-------")
+	d := e.CheckTentacle(oidcDeployer("sub-owner", "a@example.com"), encAnn, tentAnn, Write)
 	if !d.Allowed {
-		t.Errorf("owner with write bit should be allowed: %s", d.Reason)
+		t.Errorf("tentacle owner with write bit should be allowed: %s", d.Reason)
 	}
 }
 
 func TestEvaluator_Owner_Write_OwnerWriteUnset_Deny(t *testing.T) {
 	e := NewEvaluator(DefaultMode)
-	ann := annsWith("a@example.com", "", "---------")
-	d := e.Check(oidcDeployer("sub-owner", "a@example.com"), ann, Write)
+	encAnn, tentAnn := enclaveAnnWith("a@example.com", "---------")
+	d := e.CheckTentacle(oidcDeployer("sub-owner", "a@example.com"), encAnn, tentAnn, Write)
 	if d.Allowed {
-		t.Error("owner without write bit should be denied")
+		t.Error("tentacle owner without write bit should be denied")
 	}
 }
 
 func TestEvaluator_Owner_Execute_OwnerExecuteSet_Allow(t *testing.T) {
 	e := NewEvaluator(DefaultMode)
-	ann := annsWith("a@example.com", "", "--x------")
-	d := e.Check(oidcDeployer("sub-owner", "a@example.com"), ann, Execute)
+	encAnn, tentAnn := enclaveAnnWith("a@example.com", "--x------")
+	d := e.CheckTentacle(oidcDeployer("sub-owner", "a@example.com"), encAnn, tentAnn, Execute)
 	if !d.Allowed {
-		t.Errorf("owner with execute bit should be allowed: %s", d.Reason)
+		t.Errorf("tentacle owner with execute bit should be allowed: %s", d.Reason)
 	}
 }
 
 func TestEvaluator_Owner_Execute_OwnerExecuteUnset_Deny(t *testing.T) {
 	e := NewEvaluator(DefaultMode)
-	ann := annsWith("a@example.com", "", "---------")
-	d := e.Check(oidcDeployer("sub-owner", "a@example.com"), ann, Execute)
+	encAnn, tentAnn := enclaveAnnWith("a@example.com", "---------")
+	d := e.CheckTentacle(oidcDeployer("sub-owner", "a@example.com"), encAnn, tentAnn, Execute)
 	if d.Allowed {
-		t.Error("owner without execute bit should be denied")
+		t.Error("tentacle owner without execute bit should be denied")
 	}
 }
 
-// --- Group scope tests ---
+// --- Member scope tests (enclave model: group slot = member email list) ---
 
 func TestEvaluator_Group_Read_GroupReadSet_Allow(t *testing.T) {
 	e := NewEvaluator(DefaultMode)
-	ann := annsWith("owner@example.com", "platform", "---r-----")
-	d := e.Check(oidcDeployer("sub-other", "b@example.com", "platform"), ann, Read)
+	// member email "b@example.com" is in the members list
+	ann := annsWith("owner@example.com", "b@example.com", "---r-----")
+	d := e.Check(oidcDeployer("sub-other", "b@example.com"), ann, Read)
 	if !d.Allowed {
-		t.Errorf("group member with read bit should be allowed: %s", d.Reason)
+		t.Errorf("enclave member with read bit should be allowed: %s", d.Reason)
 	}
 }
 
 func TestEvaluator_Group_Read_GroupReadUnset_Deny(t *testing.T) {
 	e := NewEvaluator(DefaultMode)
-	ann := annsWith("owner@example.com", "platform", "---------")
-	d := e.Check(oidcDeployer("sub-other", "b@example.com", "platform"), ann, Read)
+	ann := annsWith("owner@example.com", "b@example.com", "---------")
+	d := e.Check(oidcDeployer("sub-other", "b@example.com"), ann, Read)
 	if d.Allowed {
-		t.Error("group member without read bit should be denied")
+		t.Error("enclave member without read bit should be denied")
 	}
 }
 
 func TestEvaluator_Group_Write_GroupWriteSet_Allow(t *testing.T) {
 	e := NewEvaluator(DefaultMode)
-	ann := annsWith("owner@example.com", "platform", "----w----")
-	d := e.Check(oidcDeployer("sub-other", "b@example.com", "platform"), ann, Write)
+	ann := annsWith("owner@example.com", "b@example.com", "----w----")
+	d := e.Check(oidcDeployer("sub-other", "b@example.com"), ann, Write)
 	if !d.Allowed {
-		t.Errorf("group member with write bit should be allowed: %s", d.Reason)
+		t.Errorf("enclave member with write bit should be allowed: %s", d.Reason)
 	}
 }
 
 func TestEvaluator_Group_Execute_GroupExecuteSet_Allow(t *testing.T) {
 	e := NewEvaluator(DefaultMode)
-	ann := annsWith("owner@example.com", "platform", "-----x---")
-	d := e.Check(oidcDeployer("sub-other", "b@example.com", "platform"), ann, Execute)
+	ann := annsWith("owner@example.com", "b@example.com", "-----x---")
+	d := e.Check(oidcDeployer("sub-other", "b@example.com"), ann, Execute)
 	if !d.Allowed {
-		t.Errorf("group member with execute bit should be allowed: %s", d.Reason)
+		t.Errorf("enclave member with execute bit should be allowed: %s", d.Reason)
 	}
 }
 
 func TestEvaluator_Group_NotMember_FallsToOther(t *testing.T) {
 	e := NewEvaluator(DefaultMode)
-	// Group has read but others don't. Non-member should be denied.
-	ann := annsWith("owner@example.com", "platform", "---r-----")
-	d := e.Check(oidcDeployer("sub-other", "b@example.com", "different-group"), ann, Read)
+	// Member list has c@example.com but caller is b@example.com — falls to other.
+	ann := annsWith("owner@example.com", "c@example.com", "---r-----")
+	d := e.Check(oidcDeployer("sub-other", "b@example.com"), ann, Read)
 	if d.Allowed {
-		t.Error("non-group-member should not get group permissions")
+		t.Error("non-member should not get member permissions")
 	}
 }
 
 func TestEvaluator_Group_EmptyGroupAnnotation_FallsToOther(t *testing.T) {
 	e := NewEvaluator(DefaultMode)
-	// Resource has group bits set but no group annotation — caller with groups can't match.
+	// Resource has group bits set but no members annotation — caller can't match as member.
 	ann := annsWith("owner@example.com", "", "---r-----")
-	d := e.Check(oidcDeployer("sub-other", "b@example.com", "platform"), ann, Read)
+	d := e.Check(oidcDeployer("sub-other", "b@example.com"), ann, Read)
 	if d.Allowed {
-		t.Error("empty group annotation should fall through to other bits (which are unset)")
+		t.Error("empty members annotation should fall through to other bits (which are unset)")
 	}
 }
 
@@ -264,23 +291,24 @@ func TestEvaluator_Other_Execute_OtherExecuteSet_Allow(t *testing.T) {
 
 // --- Default mode fallback ---
 
-func TestEvaluator_NoModeAnnotation_UsesDefaultMode(t *testing.T) {
-	// DefaultMode is group-read (rwxr-x---): owner full, group r+x, others none.
+func TestEvaluator_NoModeAnnotation_UsesDefaultEnclaveMode(t *testing.T) {
+	// DefaultEnclaveMode is used when no mode annotation is set on an enclave.
+	// DefaultEnclaveMode is rwxrwx--- (owner + members full, others none).
 	e := NewEvaluator(DefaultMode)
 	ann := map[string]string{
-		AnnotationOwner: "o@example.com",
-		AnnotationGroup: "mygroup",
-		// no mode annotation
+		AnnotationEnclave:      "test-enclave",
+		AnnotationEnclaveOwner: "o@example.com",
+		// no mode annotation — should fall back to DefaultEnclaveMode
 	}
-	// Owner read should be allowed.
-	d := e.Check(oidcDeployer("sub-owner", "o@example.com"), ann, Read)
+	// Enclave owner read should be allowed (superuser bypass).
+	d := e.CheckEnclave(oidcDeployer("sub-owner", "o@example.com"), ann, Read)
 	if !d.Allowed {
-		t.Errorf("owner read under default mode should be allowed: %s", d.Reason)
+		t.Errorf("enclave owner read under default mode should be allowed: %s", d.Reason)
 	}
-	// Other read should be denied (DefaultMode has no other bits).
-	d = e.Check(oidcDeployer("sub-other", "x@example.com"), ann, Read)
+	// Other read should be denied (DefaultEnclaveMode has no other bits).
+	d = e.CheckEnclave(oidcDeployer("sub-other", "x@example.com"), ann, Read)
 	if d.Allowed {
-		t.Error("other read under default mode should be denied")
+		t.Error("other read under default enclave mode should be denied")
 	}
 }
 

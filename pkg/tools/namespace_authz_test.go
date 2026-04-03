@@ -27,26 +27,28 @@ func nsEval() *authz.Evaluator {
 	return authz.NewEvaluator(authz.DefaultMode)
 }
 
-func oidcDeployerNs(sub, email string, groups ...string) *exoskeleton.DeployerInfo {
+func oidcDeployerNs(sub, email string) *exoskeleton.DeployerInfo { //nolint:unparam
 	return &exoskeleton.DeployerInfo{
 		Subject:  sub,
 		Email:    email,
 		Provider: "keycloak",
-		Groups:   groups,
 	}
 }
 
-// nsWithAuthz creates a managed namespace with authz annotations.
-func nsWithAuthz(t *testing.T, client *k8s.Client, name, ownerEmail, group, mode string) {
+// nsWithAuthz creates a managed enclave namespace with authz annotations.
+// The memberEmail parameter (previously group) is an email address added to AnnotationEnclaveMembers.
+// Pass an empty string for memberEmail when no member is needed.
+func nsWithAuthz(t *testing.T, client *k8s.Client, name, ownerEmail, memberEmail, mode string) {
 	t.Helper()
 	ctx := context.Background()
 	ann := map[string]string{}
 	if ownerEmail != "" {
-		ann[authz.AnnotationOwner] = ownerEmail
+		ann[authz.AnnotationEnclave] = ownerEmail // non-empty = enclave
+		ann[authz.AnnotationEnclaveOwner] = ownerEmail
 		ann[authz.AnnotationOwnerSub] = "sub-" + ownerEmail // audit only
 	}
-	if group != "" {
-		ann[authz.AnnotationGroup] = group
+	if memberEmail != "" {
+		ann[authz.AnnotationEnclaveMembers] = memberEmail
 	}
 	if mode != "" {
 		ann[authz.AnnotationMode] = mode
@@ -288,9 +290,9 @@ func TestCheckNamespaceAuthz_GroupMember_Allowed(t *testing.T) {
 	client := newNsTestClient()
 	ctx := context.Background()
 
-	nsWithAuthz(t, client, "group-ns", "owner@example.com", "platform", "rwxr-x---")
+	nsWithAuthz(t, client, "group-ns", "owner@example.com", "member@example.com", "rwxr-x---")
 
-	member := oidcDeployerNs("sub-member", "member@example.com", "platform")
+	member := oidcDeployerNs("sub-member", "member@example.com")
 	eval := nsEval()
 
 	err := checkNamespaceAuthz(ctx, client, "group-ns", member, eval, authz.Read)
@@ -303,9 +305,9 @@ func TestCheckNamespaceAuthz_Stranger_Denied(t *testing.T) {
 	client := newNsTestClient()
 	ctx := context.Background()
 
-	nsWithAuthz(t, client, "private-ns", "owner@example.com", "platform", "rwx------")
+	nsWithAuthz(t, client, "private-ns", "owner@example.com", "", "rwx------")
 
-	stranger := oidcDeployerNs("sub-stranger", "s@example.com", "other-team")
+	stranger := oidcDeployerNs("sub-stranger", "s@example.com")
 	eval := nsEval()
 
 	err := checkNamespaceAuthz(ctx, client, "private-ns", stranger, eval, authz.Read)
@@ -368,9 +370,9 @@ func TestWfEvents_NsAuthzAllowsGroupMember(t *testing.T) {
 	client := newNsTestClient()
 	ctx := context.Background()
 
-	nsWithAuthz(t, client, "events-ns", "owner@example.com", "dev-team", "rwxr-x---")
+	nsWithAuthz(t, client, "events-ns", "owner@example.com", "m@example.com", "rwxr-x---")
 
-	member := oidcDeployerNs("sub-member", "m@example.com", "dev-team")
+	member := oidcDeployerNs("sub-member", "m@example.com")
 	eval := nsEval()
 
 	err := checkNamespaceAuthz(ctx, client, "events-ns", member, eval, authz.Read)
@@ -465,9 +467,9 @@ func TestWfList_NsReadFilter_AllowsGroupMember(t *testing.T) {
 	client := newWfTestClient()
 	ctx := context.Background()
 
-	nsWithAuthz(t, client, "group-list-ns", "owner@example.com", "dev-team", "rwxr-x---")
+	nsWithAuthz(t, client, "group-list-ns", "owner@example.com", "m@example.com", "rwxr-x---")
 
-	member := oidcDeployerNs("sub-member", "m@example.com", "dev-team")
+	member := oidcDeployerNs("sub-member", "m@example.com")
 	eval := nsEval()
 
 	_, err := handleWfList(ctx, client, WfListParams{Namespace: "group-list-ns"}, member, eval)
