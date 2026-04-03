@@ -1080,9 +1080,9 @@ func TestEnclaveDeprovision_CallsCleanupEnclave(t *testing.T) {
 
 // trackingMockPG tracks CleanupEnclave calls for test 2.5.
 type trackingMockPG struct {
-	cleanupEnclaveCalls  int
-	ensureEnclaveCalls   int
-	registerCalls        int
+	cleanupEnclaveCalls int
+	ensureEnclaveCalls  int
+	registerCalls       int
 }
 
 func (m *trackingMockPG) Register(_ context.Context, _ exoskeleton.Identity) (*exoskeleton.PostgresCreds, error) {
@@ -1106,9 +1106,9 @@ func (*trackingMockPG) Close() {}
 
 // trackingMockRustFS tracks CleanupEnclave calls for test 2.5.
 type trackingMockRustFS struct {
-	cleanupEnclaveCalls  int
-	ensureEnclaveCalls   int
-	registerCalls        int
+	cleanupEnclaveCalls int
+	ensureEnclaveCalls  int
+	registerCalls       int
 }
 
 func (m *trackingMockRustFS) Register(_ context.Context, _ exoskeleton.Identity) (*exoskeleton.RustFSCreds, error) {
