@@ -413,7 +413,7 @@ func handleEnclaveProvision(ctx context.Context, client *k8s.Client, exoCtrl *ex
 	}, nil
 }
 
-func handleEnclaveInfo(ctx context.Context, client *k8s.Client, exoCtrl *exoskeleton.Controller, eval *authz.Evaluator, params EnclaveInfoParams, deployer *exoskeleton.DeployerInfo) (EnclaveInfoResult, error) {
+func handleEnclaveInfo(ctx context.Context, client *k8s.Client, exoCtrl *exoskeleton.Controller, _ *authz.Evaluator, params EnclaveInfoParams, deployer *exoskeleton.DeployerInfo) (EnclaveInfoResult, error) {
 	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, params.Name, metav1.GetOptions{})
 	if err != nil {
 		return EnclaveInfoResult{}, fmt.Errorf("get namespace %q: %w", params.Name, err)
@@ -430,11 +430,19 @@ func handleEnclaveInfo(ctx context.Context, client *k8s.Client, exoCtrl *exoskel
 
 	info := authz.ReadEnclaveInfo(ann)
 
-	// Only allow viewing enclave details if the caller is owner/member OR has
-	// read access via mode bits (e.g., "other" read on open-read/open-run enclaves).
+	// Only allow viewing enclave details if the caller is owner/member OR the
+	// enclave's mode grants "other" read access (open-read/open-run presets).
+	// We check mode bits directly rather than using the evaluator to avoid
+	// bearer-token bypass.
 	if deployer != nil && deployer.Provider != "bearer-token" {
 		if !isEnclaveParticipant(info, deployer.Email) {
-			if d := eval.CheckEnclave(deployer, ann, authz.Read); !d.Allowed {
+			mode := authz.DefaultEnclaveMode
+			if raw, ok := ann[authz.AnnotationMode]; ok && raw != "" {
+				if m, parseErr := authz.ParseMode(raw); parseErr == nil {
+					mode = m
+				}
+			}
+			if !mode.OtherRead() {
 				return EnclaveInfoResult{}, fmt.Errorf("permission denied: caller is not the enclave owner or a member of %q", params.Name)
 			}
 		}
@@ -470,7 +478,7 @@ func handleEnclaveInfo(ctx context.Context, client *k8s.Client, exoCtrl *exoskel
 	}, nil
 }
 
-func handleEnclaveList(ctx context.Context, client *k8s.Client, eval *authz.Evaluator, params EnclaveListParams, deployer *exoskeleton.DeployerInfo) (EnclaveListResult, error) {
+func handleEnclaveList(ctx context.Context, client *k8s.Client, _ *authz.Evaluator, params EnclaveListParams, _ *exoskeleton.DeployerInfo) (EnclaveListResult, error) {
 	namespaces, err := k8s.ListManagedNamespaces(ctx, client)
 	if err != nil {
 		return EnclaveListResult{}, err
@@ -492,10 +500,17 @@ func handleEnclaveList(ctx context.Context, client *k8s.Client, eval *authz.Eval
 
 		// For OIDC callers, include enclaves where the caller is owner/member
 		// OR where the enclave's mode grants "other" read access (open-read/open-run presets).
+		// We check mode bits directly from AnnotationMode rather than using the
+		// evaluator, to avoid bearer-token bypass when caller_email is a filter.
 		if params.CallerEmail != "" {
 			if !isEnclaveParticipant(info, params.CallerEmail) {
-				// Check if the enclave mode grants read to "other" via the evaluator.
-				if d := eval.CheckEnclave(deployer, ann, authz.Read); !d.Allowed {
+				mode := authz.DefaultEnclaveMode
+				if raw, ok := ann[authz.AnnotationMode]; ok && raw != "" {
+					if m, err := authz.ParseMode(raw); err == nil {
+						mode = m
+					}
+				}
+				if !mode.OtherRead() {
 					continue
 				}
 			}
