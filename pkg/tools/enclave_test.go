@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/randybias/tentacular-mcp/pkg/authz"
@@ -14,6 +15,25 @@ import (
 // newEnclaveTestClient returns a fresh fake k8s client for enclave tests.
 func newEnclaveTestClient() *k8s.Client {
 	return newNsTestClient()
+}
+
+// createManagedNs creates a tentacular-managed namespace that is NOT an enclave.
+// Used to verify that enclave handlers reject plain managed namespaces.
+func createManagedNs(t *testing.T, client *k8s.Client, name string) {
+	t.Helper()
+	ctx := context.Background()
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				k8s.ManagedByLabel: k8s.ManagedByValue,
+			},
+		},
+	}
+	_, err := client.Clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("setup createManagedNs %q: %v", name, err)
+	}
 }
 
 // noopExoCtrl returns an exoskeleton controller with exoskeleton disabled.
@@ -202,16 +222,10 @@ func TestEnclaveInfo_NotEnclave(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a regular managed namespace (not an enclave).
-	_, err := handleNsCreate(ctx, client, bearerEval(), NsCreateParams{
-		Name:        "regular-ns",
-		QuotaPreset: "small",
-	}, nil)
-	if err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	createManagedNs(t, client, "regular-ns")
 
 	bearer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
-	_, err = handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "regular-ns"}, bearer)
+	_, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "regular-ns"}, bearer)
 	if err == nil {
 		t.Fatal("expected error for non-enclave namespace, got nil")
 	}
@@ -275,10 +289,7 @@ func TestEnclaveList_MultipleEnclaves(t *testing.T) {
 	provisionTestEnclave(t, client, "enc-list-2", "bob@example.com")
 
 	// Also create a regular managed namespace to verify it's filtered out.
-	_, err := handleNsCreate(ctx, client, bearerEval(), NsCreateParams{Name: "not-an-enclave", QuotaPreset: "small"}, nil)
-	if err != nil {
-		t.Fatalf("setup regular ns: %v", err)
-	}
+	createManagedNs(t, client, "not-an-enclave")
 
 	result, err := handleEnclaveList(ctx, client, EnclaveListParams{})
 	if err != nil {
@@ -552,13 +563,10 @@ func TestEnclaveSync_NotEnclave(t *testing.T) {
 	ctx := context.Background()
 
 	// Regular managed namespace.
-	_, err := handleNsCreate(ctx, client, bearerEval(), NsCreateParams{Name: "not-enc-sync", QuotaPreset: "small"}, nil)
-	if err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	createManagedNs(t, client, "not-enc-sync")
 
 	alice := &exoskeleton.DeployerInfo{Email: "alice@example.com", Provider: "keycloak"}
-	_, err = handleEnclaveSync(ctx, client, EnclaveSyncParams{
+	_, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{
 		Name:      "not-enc-sync",
 		NewStatus: "frozen",
 	}, alice)
@@ -649,13 +657,10 @@ func TestEnclaveDeprovision_NotEnclave(t *testing.T) {
 	ctx := context.Background()
 
 	// Regular managed namespace.
-	_, err := handleNsCreate(ctx, client, bearerEval(), NsCreateParams{Name: "not-enc-deprov", QuotaPreset: "small"}, nil)
-	if err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	createManagedNs(t, client, "not-enc-deprov")
 
 	deployer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
-	_, err = handleEnclaveDeprovision(ctx, client, noopExoCtrl(), EnclaveDeprovisionParams{Name: "not-enc-deprov"}, deployer)
+	_, err := handleEnclaveDeprovision(ctx, client, noopExoCtrl(), EnclaveDeprovisionParams{Name: "not-enc-deprov"}, deployer)
 	if err == nil {
 		t.Fatal("expected error for non-enclave namespace, got nil")
 	}

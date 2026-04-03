@@ -138,117 +138,6 @@ func callToolExpectError(t *testing.T, session *mcp.ClientSession, name string, 
 	return "unknown error"
 }
 
-// --- E2E: Namespace lifecycle ---
-
-func TestE2E_NsCreateGetListDelete(t *testing.T) {
-	session, client, cleanup := e2eEnv(t)
-	defer cleanup()
-
-	nsName := "tnt-e2e-ns-crud"
-	cleanupNs(t, client, nsName)
-
-	// ns_create
-	text := callTool(t, session, "ns_create", map[string]any{
-		"name":         nsName,
-		"quota_preset": "medium",
-	})
-	var createResult struct {
-		Name             string   `json:"name"`
-		Status           string   `json:"status"`
-		QuotaPreset      string   `json:"quota_preset"`
-		ResourcesCreated []string `json:"resources_created"`
-	}
-	if err := json.Unmarshal([]byte(text), &createResult); err != nil {
-		t.Fatalf("unmarshal ns_create result: %v", err)
-	}
-	if createResult.Name != nsName {
-		t.Errorf("ns_create name: got %q, want %q", createResult.Name, nsName)
-	}
-	if createResult.Status != "Active" {
-		t.Errorf("ns_create status: got %q, want %q", createResult.Status, "Active")
-	}
-	if createResult.QuotaPreset != "medium" {
-		t.Errorf("ns_create quota_preset: got %q, want %q", createResult.QuotaPreset, "medium")
-	}
-	if len(createResult.ResourcesCreated) == 0 {
-		t.Error("ns_create: expected non-empty resources_created")
-	}
-	t.Logf("ns_create resources_created: %v", createResult.ResourcesCreated)
-
-	// ns_get
-	text = callTool(t, session, "ns_get", map[string]any{"name": nsName})
-	var getResult struct {
-		Name    string `json:"name"`
-		Managed bool   `json:"managed"`
-		Quota   *struct {
-			CPULimit string `json:"cpuLimit"`
-			MemLimit string `json:"memLimit"`
-			PodLimit int    `json:"podLimit"`
-		} `json:"quota"`
-		LimitRange *struct {
-			DefaultCPURequest string `json:"defaultCPURequest"`
-		} `json:"limitRange"`
-	}
-	if err := json.Unmarshal([]byte(text), &getResult); err != nil {
-		t.Fatalf("unmarshal ns_get result: %v", err)
-	}
-	if !getResult.Managed {
-		t.Error("ns_get: expected managed=true")
-	}
-	if getResult.Quota == nil {
-		t.Error("ns_get: expected quota to be populated")
-	} else if getResult.Quota.CPULimit != "4" {
-		t.Errorf("ns_get quota CPU: got %q, want 4", getResult.Quota.CPULimit)
-	}
-
-	// ns_list
-	text = callTool(t, session, "ns_list", map[string]any{})
-	var listResult struct {
-		Namespaces []struct {
-			Name string `json:"name"`
-		} `json:"namespaces"`
-	}
-	if err := json.Unmarshal([]byte(text), &listResult); err != nil {
-		t.Fatalf("unmarshal ns_list result: %v", err)
-	}
-	found := false
-	for _, ns := range listResult.Namespaces {
-		if ns.Name == nsName {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("ns_list: %s not found in managed namespaces", nsName)
-	}
-
-	// ns_delete
-	text = callTool(t, session, "ns_delete", map[string]any{"name": nsName})
-	var deleteResult struct {
-		Name    string `json:"name"`
-		Deleted bool   `json:"deleted"`
-	}
-	if err := json.Unmarshal([]byte(text), &deleteResult); err != nil {
-		t.Fatalf("unmarshal ns_delete result: %v", err)
-	}
-	if !deleteResult.Deleted {
-		t.Error("ns_delete: expected deleted=true")
-	}
-}
-
-// --- E2E: Guard rejects tentacular-system ---
-
-func TestE2E_NsCreateRejectsProtectedNamespace(t *testing.T) {
-	session, _, cleanup := e2eEnv(t)
-	defer cleanup()
-
-	errText := callToolExpectError(t, session, "ns_create", map[string]any{
-		"name":         "tentacular-system",
-		"quota_preset": "small",
-	})
-	t.Logf("guard rejection: %s", errText)
-}
-
 // --- E2E: Credentials ---
 
 // --- E2E: Workflow introspection ---
@@ -260,8 +149,10 @@ func TestE2E_WorkflowPodsEventsJobs(t *testing.T) {
 	nsName := "tnt-e2e-wf"
 	cleanupNs(t, client, nsName)
 
-	callTool(t, session, "ns_create", map[string]any{
+	callTool(t, session, "enclave_provision", map[string]any{
 		"name":         nsName,
+		"owner_email":  "e2e@example.com",
+		"owner_sub":    "sub-e2e",
 		"quota_preset": "small",
 	})
 
@@ -313,8 +204,10 @@ func TestE2E_ClusterPreflightAndProfile(t *testing.T) {
 	nsName := "tnt-e2e-ops"
 	cleanupNs(t, client, nsName)
 
-	callTool(t, session, "ns_create", map[string]any{
+	callTool(t, session, "enclave_provision", map[string]any{
 		"name":         nsName,
+		"owner_email":  "e2e@example.com",
+		"owner_sub":    "sub-e2e",
 		"quota_preset": "medium",
 	})
 
@@ -410,8 +303,10 @@ func TestE2E_HealthNodesUsageSummary(t *testing.T) {
 	nsName := "tnt-e2e-health"
 	cleanupNs(t, client, nsName)
 
-	callTool(t, session, "ns_create", map[string]any{
+	callTool(t, session, "enclave_provision", map[string]any{
 		"name":         nsName,
+		"owner_email":  "e2e@example.com",
+		"owner_sub":    "sub-e2e",
 		"quota_preset": "medium",
 	})
 
@@ -464,8 +359,10 @@ func TestE2E_AuditRbacNetpolPsa(t *testing.T) {
 	nsName := "tnt-e2e-audit"
 	cleanupNs(t, client, nsName)
 
-	callTool(t, session, "ns_create", map[string]any{
+	callTool(t, session, "enclave_provision", map[string]any{
 		"name":         nsName,
+		"owner_email":  "e2e@example.com",
+		"owner_sub":    "sub-e2e",
 		"quota_preset": "small",
 	})
 
@@ -529,8 +426,10 @@ func TestE2E_WorkflowApplyStatusRemove(t *testing.T) {
 	nsName := "tnt-e2e-deploy"
 	cleanupNs(t, client, nsName)
 
-	callTool(t, session, "ns_create", map[string]any{
+	callTool(t, session, "enclave_provision", map[string]any{
 		"name":         nsName,
+		"owner_email":  "e2e@example.com",
+		"owner_sub":    "sub-e2e",
 		"quota_preset": "medium",
 	})
 
