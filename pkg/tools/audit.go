@@ -10,6 +10,8 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/randybias/tentacular-mcp/pkg/auth"
+	"github.com/randybias/tentacular-mcp/pkg/authz"
 	"github.com/randybias/tentacular-mcp/pkg/guard"
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
@@ -80,7 +82,7 @@ type AuditPsaResult struct {
 	Compliant bool              `json:"compliant"`
 }
 
-func registerAuditTools(srv *mcp.Server, client *k8s.Client) {
+func registerAuditTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "audit_rbac",
 		Description: "Audit RBAC in a namespace: scan for wildcard verbs/resources, sensitive access, escalation paths (bind/escalate/impersonate verbs), and ClusterRoleBindings targeting namespace service accounts. Returns findings with remediation suggestions.",
@@ -93,6 +95,10 @@ func registerAuditTools(srv *mcp.Server, client *k8s.Client) {
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params AuditRbacParams) (*mcp.CallToolResult, AuditRbacResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
+			return nil, AuditRbacResult{}, err
+		}
+		deployer := auth.DeployerFromContext(ctx)
+		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
 			return nil, AuditRbacResult{}, err
 		}
 		result, err := handleAuditRbac(ctx, client, params)
@@ -113,6 +119,10 @@ func registerAuditTools(srv *mcp.Server, client *k8s.Client) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
 			return nil, AuditNetpolResult{}, err
 		}
+		deployer := auth.DeployerFromContext(ctx)
+		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
+			return nil, AuditNetpolResult{}, err
+		}
 		result, err := handleAuditNetpol(ctx, client, params)
 		return nil, result, err
 	})
@@ -129,6 +139,10 @@ func registerAuditTools(srv *mcp.Server, client *k8s.Client) {
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, params AuditPsaParams) (*mcp.CallToolResult, AuditPsaResult, error) {
 		if err := guard.CheckNamespace(params.Namespace); err != nil {
+			return nil, AuditPsaResult{}, err
+		}
+		deployer := auth.DeployerFromContext(ctx)
+		if err := checkNamespaceAuthz(ctx, client, params.Namespace, deployer, eval, authz.Read); err != nil {
 			return nil, AuditPsaResult{}, err
 		}
 		result, err := handleAuditPsa(ctx, client, params)

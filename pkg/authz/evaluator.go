@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
@@ -228,5 +229,26 @@ func checkBits(mode Mode, action Action, isOwner, isGroup bool) Decision {
 	if allowed {
 		return Allow
 	}
-	return Deny("permission denied")
+
+	var principal string
+	switch {
+	case isOwner:
+		principal = "owner"
+	case isGroup:
+		principal = "member"
+	default:
+		principal = "other"
+	}
+	var actionStr string
+	switch action {
+	case Read:
+		actionStr = "read"
+	case Write:
+		actionStr = "write"
+	case Execute:
+		actionStr = "execute"
+	default:
+		actionStr = "unknown"
+	}
+	return Deny(fmt.Sprintf("permission denied: %s lacks %s access", principal, actionStr))
 }

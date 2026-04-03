@@ -50,6 +50,8 @@ func (m *mockPG) EnsureEnclave(_ context.Context, id EnclaveIdentity) error {
 	return m.ensureEnclaveErr
 }
 
+func (*mockPG) CleanupEnclave(_ context.Context, _ EnclaveIdentity) error { return nil }
+
 func (m *mockPG) Close() { m.closed = true }
 
 type mockNATS struct {
@@ -91,6 +93,8 @@ func (m *mockNATS) EnsureEnclave(_ context.Context, id EnclaveIdentity) error {
 	return m.ensureEnclaveErr
 }
 
+func (*mockNATS) CleanupEnclave(_ context.Context, _ EnclaveIdentity) error { return nil }
+
 func (m *mockNATS) Close() { m.closed = true }
 
 type mockRustFS struct {
@@ -131,6 +135,8 @@ func (m *mockRustFS) EnsureEnclave(_ context.Context, id EnclaveIdentity) error 
 	m.ensureEnclaveCalls = append(m.ensureEnclaveCalls, id)
 	return m.ensureEnclaveErr
 }
+
+func (*mockRustFS) CleanupEnclave(_ context.Context, _ EnclaveIdentity) error { return nil }
 
 func (m *mockRustFS) Close() { m.closed = true }
 

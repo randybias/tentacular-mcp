@@ -374,3 +374,10 @@ func (*NATSRegistrar) EnsureEnclave(_ context.Context, id EnclaveIdentity) error
 	slog.Info("exoskeleton: nats EnsureEnclave (stub)", "enclave", id.Enclave, "account", id.NATSAcct)
 	return nil
 }
+
+// CleanupEnclave removes the enclave-level NATS account.
+// Phase 0 stub: no-op placeholder. Full implementation in Phase 1.
+func (*NATSRegistrar) CleanupEnclave(_ context.Context, id EnclaveIdentity) error {
+	slog.Info("exoskeleton: nats CleanupEnclave (stub)", "enclave", id.Enclave, "account", id.NATSAcct)
+	return nil
+}

@@ -24,6 +24,9 @@ type PostgresRegistrarI interface {
 	// EnsureEnclave provisions the enclave-level Postgres database if it does
 	// not already exist. It is idempotent and safe to call on every deploy.
 	EnsureEnclave(ctx context.Context, id EnclaveIdentity) error
+	// CleanupEnclave drops the enclave-level Postgres database. Called during
+	// enclave deprovisioning after all tentacle-level schemas have been dropped.
+	CleanupEnclave(ctx context.Context, id EnclaveIdentity) error
 	Close()
 }
 
@@ -34,6 +37,9 @@ type NATSRegistrarI interface {
 	// EnsureEnclave provisions the enclave-level NATS account if it does not
 	// already exist. It is idempotent and safe to call on every deploy.
 	EnsureEnclave(ctx context.Context, id EnclaveIdentity) error
+	// CleanupEnclave removes the enclave-level NATS account. Called during
+	// enclave deprovisioning.
+	CleanupEnclave(ctx context.Context, id EnclaveIdentity) error
 	Close()
 }
 
@@ -44,6 +50,9 @@ type RustFSRegistrarI interface {
 	// EnsureEnclave provisions the enclave-level S3/RustFS bucket if it does
 	// not already exist. It is idempotent and safe to call on every deploy.
 	EnsureEnclave(ctx context.Context, id EnclaveIdentity) error
+	// CleanupEnclave removes the enclave-level S3/RustFS bucket. Called during
+	// enclave deprovisioning.
+	CleanupEnclave(ctx context.Context, id EnclaveIdentity) error
 	Close()
 }
 
@@ -298,6 +307,44 @@ func (r *CleanupReport) Summary() string {
 func (c *Controller) Cleanup(ctx context.Context, namespace, name string) error {
 	_, err := c.CleanupWithReport(ctx, namespace, name)
 	return err
+}
+
+// CleanupEnclave removes enclave-level exoskeleton resources (database, bucket, NATS account).
+// Called during enclave deprovisioning after all tentacle-level resources have been cleaned up.
+// Best-effort: logs warnings on individual service failures and returns an aggregate error.
+func (c *Controller) CleanupEnclave(ctx context.Context, enclaveName string) error {
+	if !c.cfg.Enabled {
+		return nil
+	}
+
+	id, err := CompileEnclaveIdentity(enclaveName)
+	if err != nil {
+		return fmt.Errorf("enclave identity: %w", err)
+	}
+
+	var errs []string
+	if c.pg != nil {
+		if err := c.pg.CleanupEnclave(ctx, id); err != nil {
+			errs = append(errs, fmt.Sprintf("postgres: %v", err))
+		}
+	}
+	if c.nats != nil {
+		if err := c.nats.CleanupEnclave(ctx, id); err != nil {
+			errs = append(errs, fmt.Sprintf("nats: %v", err))
+		}
+	}
+	if c.rustfs != nil {
+		if err := c.rustfs.CleanupEnclave(ctx, id); err != nil {
+			errs = append(errs, fmt.Sprintf("rustfs: %v", err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("enclave cleanup errors: %s", strings.Join(errs, "; "))
+	}
+
+	slog.Info("exoskeleton: enclave cleanup complete", "enclave", enclaveName)
+	return nil
 }
 
 // CleanupWithReport unregisters the tentacle from all enabled services and

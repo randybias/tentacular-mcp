@@ -28,7 +28,7 @@ func bearerDeployer() *exoskeleton.DeployerInfo {
 // To include multiple members, set members directly via AnnotationEnclaveMembers.
 func annsWith(ownerEmail, memberEmail, modeStr string) map[string]string {
 	ann := map[string]string{
-		AnnotationEnclave:      ownerEmail, // non-empty marks it as an enclave
+		AnnotationEnclave:      "test-enclave", // non-empty marks it as an enclave
 		AnnotationEnclaveOwner: ownerEmail,
 		AnnotationMode:         modeStr,
 	}

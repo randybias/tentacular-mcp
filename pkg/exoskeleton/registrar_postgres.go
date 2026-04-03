@@ -217,3 +217,10 @@ func (*PostgresRegistrar) EnsureEnclave(_ context.Context, id EnclaveIdentity) e
 	slog.Info("exoskeleton: postgres EnsureEnclave (stub)", "enclave", id.Enclave, "db", id.PgDB)
 	return nil
 }
+
+// CleanupEnclave drops the enclave-level Postgres database.
+// Phase 0 stub: no-op placeholder. Full implementation in Phase 1.
+func (*PostgresRegistrar) CleanupEnclave(_ context.Context, id EnclaveIdentity) error {
+	slog.Info("exoskeleton: postgres CleanupEnclave (stub)", "enclave", id.Enclave, "db", id.PgDB)
+	return nil
+}

@@ -2,15 +2,15 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/randybias/tentacular-mcp/pkg/auth"
 	"github.com/randybias/tentacular-mcp/pkg/authz"
@@ -32,6 +32,10 @@ const annotationEnclaveQuotaPreset = "tentacular.io/enclave-quota-preset"
 // enclaveRequiredServices lists the exoskeleton services always provisioned for enclaves.
 var enclaveRequiredServices = []string{"postgres", "rustfs"}
 
+// MaxEnclavesPerOwner is the maximum number of enclaves a single owner can provision.
+// Package-level var so it can be overridden by server config at startup.
+var MaxEnclavesPerOwner = 10
+
 // EnclaveProvisionParams are the parameters for enclave_provision.
 type EnclaveProvisionParams struct {
 	Name        string   `json:"name" jsonschema:"Name of the enclave (becomes the namespace name)"`
@@ -41,6 +45,7 @@ type EnclaveProvisionParams struct {
 	ChannelID   string   `json:"channel_id,omitempty" jsonschema:"Platform channel ID"`
 	ChannelName string   `json:"channel_name,omitempty" jsonschema:"Platform channel name"`
 	QuotaPreset string   `json:"quota_preset,omitempty" jsonschema:"Resource quota preset: small, medium, or large (default: medium)"`
+	DefaultMode string   `json:"default_mode,omitempty" jsonschema:"Default permission mode for new tentacles (9-char rwx string, e.g. rwxrwx---)"`
 	Members     []string `json:"members,omitempty" jsonschema:"Initial member email addresses (excludes owner)"`
 }
 
@@ -182,7 +187,7 @@ func registerEnclaveTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exoskele
 		if err := requireDeployer(deployer, eval); err != nil {
 			return nil, EnclaveInfoResult{}, err
 		}
-		result, err := handleEnclaveInfo(ctx, client, exoCtrl, params, deployer)
+		result, err := handleEnclaveInfo(ctx, client, exoCtrl, eval, params, deployer)
 		return nil, result, err
 	})
 
@@ -206,7 +211,7 @@ func registerEnclaveTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exoskele
 		if deployer != nil && deployer.Provider != "bearer-token" {
 			params.CallerEmail = deployer.Email
 		}
-		result, err := handleEnclaveList(ctx, client, params)
+		result, err := handleEnclaveList(ctx, client, eval, params, deployer)
 		return nil, result, err
 	})
 
@@ -276,16 +281,32 @@ func handleEnclaveProvision(ctx context.Context, client *k8s.Client, exoCtrl *ex
 		return EnclaveProvisionResult{}, err
 	}
 
+	// Rate limit: count existing enclaves owned by this email.
+	existingCount, countErr := countEnclavesOwnedBy(ctx, client, strings.ToLower(params.OwnerEmail))
+	if countErr != nil {
+		return EnclaveProvisionResult{}, fmt.Errorf("checking enclave count: %w", countErr)
+	}
+	if existingCount >= MaxEnclavesPerOwner {
+		return EnclaveProvisionResult{}, fmt.Errorf("owner %q already has %d enclaves (limit: %d)", params.OwnerEmail, existingCount, MaxEnclavesPerOwner)
+	}
+
 	// Create the namespace using the standard k8s helper (adds managed-by + PSA labels).
 	if err := k8s.CreateNamespace(ctx, client, params.Name); err != nil {
 		return EnclaveProvisionResult{}, err
 	}
 	created := []string{"namespace/" + params.Name}
 
-	// M4: Deferred cleanup — if any step after namespace creation fails, delete the namespace.
+	// Deferred cleanup — if any step after namespace creation fails, delete the namespace
+	// and clean up any partially-provisioned exoskeleton services.
 	nsCleanupNeeded := true
+	exoProvisioned := false
 	defer func() {
 		if nsCleanupNeeded {
+			if exoProvisioned && exoCtrl != nil {
+				if cleanErr := exoCtrl.CleanupEnclave(ctx, params.Name); cleanErr != nil {
+					slog.Warn("enclave_provision: exo cleanup during rollback failed", "enclave", params.Name, "error", cleanErr)
+				}
+			}
 			_ = k8s.DeleteNamespace(ctx, client, params.Name)
 		}
 	}()
@@ -300,10 +321,15 @@ func handleEnclaveProvision(ctx context.Context, client *k8s.Client, exoCtrl *ex
 		Platform:    params.Platform,
 		ChannelID:   params.ChannelID,
 		ChannelName: params.ChannelName,
+		DefaultMode: params.DefaultMode,
 		Status:      "active",
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
+	if err := authz.ValidateEnclaveInfo(info); err != nil {
+		return EnclaveProvisionResult{}, fmt.Errorf("invalid enclave info: %w", err)
+	}
+
 	enclaveAnnotations := authz.WriteEnclaveAnnotations(info)
 
 	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, params.Name, metav1.GetOptions{})
@@ -367,8 +393,10 @@ func handleEnclaveProvision(ctx context.Context, client *k8s.Client, exoCtrl *ex
 	// If this fails, the deferred cleanup will delete the namespace.
 	if exoCtrl != nil {
 		if err := exoCtrl.EnsureEnclaveServices(ctx, params.Name, enclaveRequiredServices); err != nil {
+			exoProvisioned = true // mark for cleanup in deferred rollback
 			return EnclaveProvisionResult{}, fmt.Errorf("enclave provisioned but exoskeleton services failed (namespace deleted): %w", err)
 		}
+		exoProvisioned = true
 		created = append(created, "exoskeleton/postgres", "exoskeleton/rustfs")
 	}
 
@@ -385,7 +413,7 @@ func handleEnclaveProvision(ctx context.Context, client *k8s.Client, exoCtrl *ex
 	}, nil
 }
 
-func handleEnclaveInfo(ctx context.Context, client *k8s.Client, exoCtrl *exoskeleton.Controller, params EnclaveInfoParams, deployer *exoskeleton.DeployerInfo) (EnclaveInfoResult, error) {
+func handleEnclaveInfo(ctx context.Context, client *k8s.Client, exoCtrl *exoskeleton.Controller, eval *authz.Evaluator, params EnclaveInfoParams, deployer *exoskeleton.DeployerInfo) (EnclaveInfoResult, error) {
 	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, params.Name, metav1.GetOptions{})
 	if err != nil {
 		return EnclaveInfoResult{}, fmt.Errorf("get namespace %q: %w", params.Name, err)
@@ -402,10 +430,13 @@ func handleEnclaveInfo(ctx context.Context, client *k8s.Client, exoCtrl *exoskel
 
 	info := authz.ReadEnclaveInfo(ann)
 
-	// H3: Only the enclave owner, members, or bearer-token callers may view enclave details.
+	// Only allow viewing enclave details if the caller is owner/member OR has
+	// read access via mode bits (e.g., "other" read on open-read/open-run enclaves).
 	if deployer != nil && deployer.Provider != "bearer-token" {
 		if !isEnclaveParticipant(info, deployer.Email) {
-			return EnclaveInfoResult{}, fmt.Errorf("permission denied: caller is not the enclave owner or a member of %q", params.Name)
+			if d := eval.CheckEnclave(deployer, ann, authz.Read); !d.Allowed {
+				return EnclaveInfoResult{}, fmt.Errorf("permission denied: caller is not the enclave owner or a member of %q", params.Name)
+			}
 		}
 	}
 
@@ -439,7 +470,7 @@ func handleEnclaveInfo(ctx context.Context, client *k8s.Client, exoCtrl *exoskel
 	}, nil
 }
 
-func handleEnclaveList(ctx context.Context, client *k8s.Client, params EnclaveListParams) (EnclaveListResult, error) {
+func handleEnclaveList(ctx context.Context, client *k8s.Client, eval *authz.Evaluator, params EnclaveListParams, deployer *exoskeleton.DeployerInfo) (EnclaveListResult, error) {
 	namespaces, err := k8s.ListManagedNamespaces(ctx, client)
 	if err != nil {
 		return EnclaveListResult{}, err
@@ -459,10 +490,14 @@ func handleEnclaveList(ctx context.Context, client *k8s.Client, params EnclaveLi
 
 		info := authz.ReadEnclaveInfo(ann)
 
-		// If caller_email filter is set, only include enclaves where caller is owner or member.
+		// For OIDC callers, include enclaves where the caller is owner/member
+		// OR where the enclave's mode grants "other" read access (open-read/open-run presets).
 		if params.CallerEmail != "" {
 			if !isEnclaveParticipant(info, params.CallerEmail) {
-				continue
+				// Check if the enclave mode grants read to "other" via the evaluator.
+				if d := eval.CheckEnclave(deployer, ann, authz.Read); !d.Allowed {
+					continue
+				}
 			}
 		}
 
@@ -481,22 +516,42 @@ func handleEnclaveList(ctx context.Context, client *k8s.Client, params EnclaveLi
 }
 
 // isEnclaveParticipant returns true if email is the owner or a member of info.
+// Email comparison is case-insensitive. info.Members are already lowercased by
+// ParseMembers, but info.Owner and the email parameter need normalization.
 func isEnclaveParticipant(info authz.EnclaveInfo, email string) bool {
-	if info.Owner == email {
+	emailLower := strings.ToLower(email)
+	if strings.ToLower(info.Owner) == emailLower {
 		return true
 	}
 	for _, m := range info.Members {
-		if m == email {
+		if m == emailLower {
 			return true
 		}
 	}
 	return false
 }
 
+// maxSyncRetries is the maximum number of retries for optimistic concurrency conflicts in enclave_sync.
+const maxSyncRetries = 3
+
 func handleEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveSyncParams, deployer *exoskeleton.DeployerInfo) (EnclaveSyncResult, error) {
+	for attempt := range maxSyncRetries {
+		result, conflict, err := attemptEnclaveSync(ctx, client, params, deployer)
+		if err != nil && conflict {
+			slog.Info("enclave_sync conflict, retrying", "enclave", params.Name, "attempt", attempt+1)
+			continue
+		}
+		return result, err
+	}
+	return EnclaveSyncResult{}, fmt.Errorf("enclave_sync: conflict persisted after %d retries for %q", maxSyncRetries, params.Name)
+}
+
+// attemptEnclaveSync performs a single read-modify-write cycle for enclave_sync.
+// Returns (result, isConflict, error). When isConflict is true the caller should retry.
+func attemptEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveSyncParams, deployer *exoskeleton.DeployerInfo) (EnclaveSyncResult, bool, error) {
 	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, params.Name, metav1.GetOptions{})
 	if err != nil {
-		return EnclaveSyncResult{}, fmt.Errorf("get namespace %q: %w", params.Name, err)
+		return EnclaveSyncResult{}, false, fmt.Errorf("get namespace %q: %w", params.Name, err)
 	}
 
 	ann := ns.Annotations
@@ -505,20 +560,20 @@ func handleEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveSy
 	}
 
 	if !authz.IsEnclave(ann) {
-		return EnclaveSyncResult{}, fmt.Errorf("namespace %q is not an enclave", params.Name)
+		return EnclaveSyncResult{}, false, fmt.Errorf("namespace %q is not an enclave", params.Name)
 	}
 
 	info := authz.ReadEnclaveInfo(ann)
 
-	// C1: Ownership transfer, member management, and freeze/unfreeze are owner-only.
+	// Ownership transfer, member management, and freeze/unfreeze are owner-only.
 	// Bearer-token callers bypass this check (platform operators).
 	isOwnerOp := params.NewOwner != "" || len(params.AddMembers) > 0 || len(params.RemoveMembers) > 0 || params.NewStatus != ""
 	if isOwnerOp && deployer != nil && deployer.Provider != "bearer-token" {
 		if deployer.Email == "" {
-			return EnclaveSyncResult{}, errors.New("permission denied: OIDC caller has no email claim")
+			return EnclaveSyncResult{}, false, errors.New("permission denied: OIDC caller has no email claim")
 		}
 		if deployer.Email != info.Owner {
-			return EnclaveSyncResult{}, fmt.Errorf("permission denied: only the enclave owner (%s) may modify enclave %q", info.Owner, params.Name)
+			return EnclaveSyncResult{}, false, fmt.Errorf("permission denied: only the enclave owner (%s) may modify enclave %q", info.Owner, params.Name)
 		}
 	}
 
@@ -537,7 +592,7 @@ func handleEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveSy
 			}
 		}
 		if validateErr := authz.ValidateMembers(info.Members); validateErr != nil {
-			return EnclaveSyncResult{}, validateErr
+			return EnclaveSyncResult{}, false, validateErr
 		}
 		updated = append(updated, "members")
 	}
@@ -563,11 +618,11 @@ func handleEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveSy
 	// Handle ownership transfer.
 	if params.NewOwner != "" {
 		if params.NewOwner == info.Owner {
-			return EnclaveSyncResult{}, fmt.Errorf("new_owner %q is already the enclave owner", params.NewOwner)
+			return EnclaveSyncResult{}, false, fmt.Errorf("new_owner %q is already the enclave owner", params.NewOwner)
 		}
 		// New owner must be a current member.
 		if !isEnclaveParticipant(info, params.NewOwner) {
-			return EnclaveSyncResult{}, fmt.Errorf("new_owner %q must be a current member before ownership transfer", params.NewOwner)
+			return EnclaveSyncResult{}, false, fmt.Errorf("new_owner %q must be a current member before ownership transfer", params.NewOwner)
 		}
 		// Move old owner to members, remove new owner from members.
 		newMembers := make([]string, 0, len(info.Members))
@@ -578,6 +633,10 @@ func handleEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveSy
 		}
 		newMembers = append(newMembers, info.Owner)
 		info.Owner = params.NewOwner
+		// M6: We don't know the new owner's OIDC subject at sync time.
+		// Clear OwnerSub; it will be re-populated on the new owner's next
+		// OIDC-authenticated action that stamps deployer identity.
+		info.OwnerSub = ""
 		info.Members = newMembers
 		updated = append(updated, "owner")
 	}
@@ -595,34 +654,30 @@ func handleEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveSy
 			info.Status = params.NewStatus
 			updated = append(updated, "status")
 		default:
-			return EnclaveSyncResult{}, fmt.Errorf("invalid status %q; valid values: active, frozen", params.NewStatus)
+			return EnclaveSyncResult{}, false, fmt.Errorf("invalid status %q; valid values: active, frozen", params.NewStatus)
 		}
 	}
 
 	if len(updated) == 0 {
-		return EnclaveSyncResult{}, errors.New("no updates specified; provide at least one of add_members, remove_members, new_owner, new_channel_name, or new_status")
+		return EnclaveSyncResult{}, false, errors.New("no updates specified; provide at least one of add_members, remove_members, new_owner, new_channel_name, or new_status")
 	}
 
 	// Write updated annotations.
 	info.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	newAnnotations := authz.WriteEnclaveAnnotations(info)
 
-	patchAnnotations := make(map[string]any, len(newAnnotations))
 	for k, v := range newAnnotations {
-		patchAnnotations[k] = v
+		ns.Annotations[k] = v
 	}
 
-	patchBody, err := json.Marshal(map[string]any{
-		"metadata": map[string]any{"annotations": patchAnnotations},
-	})
-	if err != nil {
-		return EnclaveSyncResult{}, fmt.Errorf("marshal enclave sync patch: %w", err)
-	}
-
-	if _, err := client.Clientset.CoreV1().Namespaces().Patch(
-		ctx, params.Name, types.MergePatchType, patchBody, metav1.PatchOptions{},
-	); err != nil {
-		return EnclaveSyncResult{}, fmt.Errorf("patch namespace %q enclave annotations: %w", params.Name, err)
+	// Use Update with the namespace's ResourceVersion for optimistic concurrency.
+	// If another write happened between our GET and this UPDATE, the API server
+	// returns a Conflict error and we retry from scratch.
+	if _, err := client.Clientset.CoreV1().Namespaces().Update(ctx, ns, metav1.UpdateOptions{}); err != nil {
+		if k8serrors.IsConflict(err) {
+			return EnclaveSyncResult{}, true, err
+		}
+		return EnclaveSyncResult{}, false, fmt.Errorf("update namespace %q enclave annotations: %w", params.Name, err)
 	}
 
 	slog.Info("enclave_sync applied", "enclave", params.Name, "updated", updated)
@@ -645,7 +700,7 @@ func handleEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveSy
 		Name:    params.Name,
 		Updated: updated,
 		Enclave: infoResult,
-	}, nil
+	}, false, nil
 }
 
 func handleEnclaveDeprovision(ctx context.Context, client *k8s.Client, exoCtrl *exoskeleton.Controller, params EnclaveDeprovisionParams, deployer *exoskeleton.DeployerInfo) (EnclaveDeprovisionResult, error) {
@@ -699,6 +754,13 @@ func handleEnclaveDeprovision(ctx context.Context, client *k8s.Client, exoCtrl *
 		}
 	}
 
+	// Clean up enclave-level exoskeleton resources (database, bucket, NATS account).
+	if exoCtrl != nil {
+		if cleanErr := exoCtrl.CleanupEnclave(ctx, params.Name); cleanErr != nil {
+			slog.Warn("enclave_deprovision: enclave-level exoskeleton cleanup failed", "enclave", params.Name, "error", cleanErr)
+		}
+	}
+
 	// Delete the namespace (cascades to all remaining resources).
 	if err := k8s.DeleteNamespace(ctx, client, params.Name); err != nil {
 		return EnclaveDeprovisionResult{}, err
@@ -725,6 +787,29 @@ func buildEnclaveExoServices(exoCtrl *exoskeleton.Controller) []EnclaveExoServic
 		{Name: "postgres", Available: exoCtrl.PostgresAvailable()},
 		{Name: "rustfs", Available: exoCtrl.RustFSAvailable()},
 	}
+}
+
+// countEnclavesOwnedBy counts the number of enclave namespaces owned by the given email.
+func countEnclavesOwnedBy(ctx context.Context, client *k8s.Client, ownerEmail string) (int, error) {
+	namespaces, err := k8s.ListManagedNamespaces(ctx, client)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, ns := range namespaces {
+		ann := ns.Annotations
+		if ann == nil {
+			continue
+		}
+		if !authz.IsEnclave(ann) {
+			continue
+		}
+		info := authz.ReadEnclaveInfo(ann)
+		if strings.ToLower(info.Owner) == ownerEmail {
+			count++
+		}
+	}
+	return count, nil
 }
 
 // containsStr returns true if s is in the slice.

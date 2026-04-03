@@ -42,6 +42,11 @@ func noopExoCtrl() *exoskeleton.Controller {
 	return exoskeleton.NewControllerWithDeps(cfg, nil, nil, nil, nil)
 }
 
+// testEval returns an enabled evaluator with default mode for tests.
+func testEval() *authz.Evaluator {
+	return authz.NewEvaluator(authz.DefaultMode)
+}
+
 // provisionTestEnclave is a helper that provisions a minimal enclave and fails the test on error.
 func provisionTestEnclave(t *testing.T, client *k8s.Client, name, owner string) EnclaveProvisionResult {
 	t.Helper()
@@ -198,7 +203,7 @@ func TestEnclaveInfo_Success(t *testing.T) {
 
 	// Bearer-token deployer bypasses the owner/member check.
 	bearer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
-	result, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "enc-info"}, bearer)
+	result, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), testEval(), EnclaveInfoParams{Name: "enc-info"}, bearer)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -225,7 +230,7 @@ func TestEnclaveInfo_NotEnclave(t *testing.T) {
 	createManagedNs(t, client, "regular-ns")
 
 	bearer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
-	_, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "regular-ns"}, bearer)
+	_, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), testEval(), EnclaveInfoParams{Name: "regular-ns"}, bearer)
 	if err == nil {
 		t.Fatal("expected error for non-enclave namespace, got nil")
 	}
@@ -236,7 +241,7 @@ func TestEnclaveInfo_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	bearer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
-	_, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "does-not-exist"}, bearer)
+	_, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), testEval(), EnclaveInfoParams{Name: "does-not-exist"}, bearer)
 	if err == nil {
 		t.Fatal("expected error for missing namespace, got nil")
 	}
@@ -257,7 +262,7 @@ func TestEnclaveInfo_QuotaPresetRoundTrip(t *testing.T) {
 	}
 
 	bearer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
-	info, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "enc-quota-rt"}, bearer)
+	info, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), testEval(), EnclaveInfoParams{Name: "enc-quota-rt"}, bearer)
 	if err != nil {
 		t.Fatalf("info: %v", err)
 	}
@@ -272,7 +277,7 @@ func TestEnclaveList_Empty(t *testing.T) {
 	client := newEnclaveTestClient()
 	ctx := context.Background()
 
-	result, err := handleEnclaveList(ctx, client, EnclaveListParams{})
+	result, err := handleEnclaveList(ctx, client, testEval(), EnclaveListParams{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -291,7 +296,7 @@ func TestEnclaveList_MultipleEnclaves(t *testing.T) {
 	// Also create a regular managed namespace to verify it's filtered out.
 	createManagedNs(t, client, "not-an-enclave")
 
-	result, err := handleEnclaveList(ctx, client, EnclaveListParams{})
+	result, err := handleEnclaveList(ctx, client, testEval(), EnclaveListParams{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -308,7 +313,7 @@ func TestEnclaveList_FilterByCallerEmail_Owner(t *testing.T) {
 	provisionTestEnclave(t, client, "enc-filter-2", "bob@example.com")
 
 	// Filter to alice's enclaves.
-	result, err := handleEnclaveList(ctx, client, EnclaveListParams{CallerEmail: "alice@example.com"})
+	result, err := handleEnclaveList(ctx, client, testEval(), EnclaveListParams{CallerEmail: "alice@example.com"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -336,7 +341,7 @@ func TestEnclaveList_FilterByCallerEmail_Member(t *testing.T) {
 	}
 
 	// Carol should see this enclave.
-	result, err := handleEnclaveList(ctx, client, EnclaveListParams{CallerEmail: "carol@example.com"})
+	result, err := handleEnclaveList(ctx, client, testEval(), EnclaveListParams{CallerEmail: "carol@example.com"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -352,7 +357,7 @@ func TestEnclaveList_FilterByCallerEmail_NoMatch(t *testing.T) {
 	provisionTestEnclave(t, client, "enc-nomatch", "alice@example.com")
 
 	// dave is neither owner nor member.
-	result, err := handleEnclaveList(ctx, client, EnclaveListParams{CallerEmail: "dave@example.com"})
+	result, err := handleEnclaveList(ctx, client, testEval(), EnclaveListParams{CallerEmail: "dave@example.com"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -905,7 +910,7 @@ func TestEnclaveInfo_NonParticipantDenied(t *testing.T) {
 
 	// dave is neither owner nor member.
 	dave := &exoskeleton.DeployerInfo{Email: "dave@example.com", Provider: "keycloak"}
-	_, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "enc-info-authz"}, dave)
+	_, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), testEval(), EnclaveInfoParams{Name: "enc-info-authz"}, dave)
 	if err == nil {
 		t.Fatal("expected error for non-participant enclave_info, got nil")
 	}
@@ -928,7 +933,7 @@ func TestEnclaveInfo_MemberAllowed(t *testing.T) {
 
 	// bob is a member and should be allowed to view the enclave.
 	bob := &exoskeleton.DeployerInfo{Email: "bob@example.com", Provider: "keycloak"}
-	result, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), EnclaveInfoParams{Name: "enc-info-member"}, bob)
+	result, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), testEval(), EnclaveInfoParams{Name: "enc-info-member"}, bob)
 	if err != nil {
 		t.Fatalf("expected member to access enclave_info, got error: %v", err)
 	}
