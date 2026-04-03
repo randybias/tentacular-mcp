@@ -12,14 +12,16 @@ import (
 // --- Mock registrars for interface-based testing ---
 
 type mockPG struct {
-	creds              *PostgresCreds
-	registerErr        error
-	unregisterErr      error
-	ensureEnclaveErr   error
-	registerCalls      []Identity
-	unregisterCalls    []Identity
-	ensureEnclaveCalls []EnclaveIdentity
-	closed             bool
+	creds               *PostgresCreds
+	registerErr         error
+	unregisterErr       error
+	ensureEnclaveErr    error
+	cleanupEnclaveErr   error
+	registerCalls       []Identity
+	unregisterCalls     []Identity
+	ensureEnclaveCalls  []EnclaveIdentity
+	cleanupEnclaveCalls []EnclaveIdentity
+	closed              bool
 }
 
 func newMockPG() *mockPG {
@@ -50,19 +52,24 @@ func (m *mockPG) EnsureEnclave(_ context.Context, id EnclaveIdentity) error {
 	return m.ensureEnclaveErr
 }
 
-func (*mockPG) CleanupEnclave(_ context.Context, _ EnclaveIdentity) error { return nil }
+func (m *mockPG) CleanupEnclave(_ context.Context, id EnclaveIdentity) error {
+	m.cleanupEnclaveCalls = append(m.cleanupEnclaveCalls, id)
+	return m.cleanupEnclaveErr
+}
 
 func (m *mockPG) Close() { m.closed = true }
 
 type mockNATS struct {
-	creds              *NATSCreds
-	registerErr        error
-	unregisterErr      error
-	ensureEnclaveErr   error
-	registerCalls      []Identity
-	unregisterCalls    []Identity
-	ensureEnclaveCalls []EnclaveIdentity
-	closed             bool
+	creds               *NATSCreds
+	registerErr         error
+	unregisterErr       error
+	ensureEnclaveErr    error
+	cleanupEnclaveErr   error
+	registerCalls       []Identity
+	unregisterCalls     []Identity
+	ensureEnclaveCalls  []EnclaveIdentity
+	cleanupEnclaveCalls []EnclaveIdentity
+	closed              bool
 }
 
 func newMockNATS() *mockNATS {
@@ -93,19 +100,24 @@ func (m *mockNATS) EnsureEnclave(_ context.Context, id EnclaveIdentity) error {
 	return m.ensureEnclaveErr
 }
 
-func (*mockNATS) CleanupEnclave(_ context.Context, _ EnclaveIdentity) error { return nil }
+func (m *mockNATS) CleanupEnclave(_ context.Context, id EnclaveIdentity) error {
+	m.cleanupEnclaveCalls = append(m.cleanupEnclaveCalls, id)
+	return m.cleanupEnclaveErr
+}
 
 func (m *mockNATS) Close() { m.closed = true }
 
 type mockRustFS struct {
-	creds              *RustFSCreds
-	registerErr        error
-	unregisterErr      error
-	ensureEnclaveErr   error
-	registerCalls      []Identity
-	unregisterCalls    []Identity
-	ensureEnclaveCalls []EnclaveIdentity
-	closed             bool
+	creds               *RustFSCreds
+	registerErr         error
+	unregisterErr       error
+	ensureEnclaveErr    error
+	cleanupEnclaveErr   error
+	registerCalls       []Identity
+	unregisterCalls     []Identity
+	ensureEnclaveCalls  []EnclaveIdentity
+	cleanupEnclaveCalls []EnclaveIdentity
+	closed              bool
 }
 
 func newMockRustFS() *mockRustFS {
@@ -136,7 +148,10 @@ func (m *mockRustFS) EnsureEnclave(_ context.Context, id EnclaveIdentity) error 
 	return m.ensureEnclaveErr
 }
 
-func (*mockRustFS) CleanupEnclave(_ context.Context, _ EnclaveIdentity) error { return nil }
+func (m *mockRustFS) CleanupEnclave(_ context.Context, id EnclaveIdentity) error {
+	m.cleanupEnclaveCalls = append(m.cleanupEnclaveCalls, id)
+	return m.cleanupEnclaveErr
+}
 
 func (m *mockRustFS) Close() { m.closed = true }
 
@@ -813,5 +828,71 @@ func TestServiceInfoPartialAuthConfig(t *testing.T) {
 	}
 	if info.Auth.Issuer != "" {
 		t.Errorf("expected empty issuer when auth not fully enabled, got %q", info.Auth.Issuer)
+	}
+}
+
+// --- CleanupEnclave tests (2.11) ---
+
+func TestCleanupEnclave_AllRegistrars(t *testing.T) {
+	cfg := &Config{Enabled: true}
+	pg := newMockPG()
+	nats := newMockNATS()
+	rustfs := newMockRustFS()
+	ctrl := NewControllerWithDeps(cfg, pg, nats, rustfs, nil)
+
+	err := ctrl.CleanupEnclave(context.Background(), "test-enclave")
+	if err != nil {
+		t.Fatalf("CleanupEnclave: %v", err)
+	}
+	if len(pg.cleanupEnclaveCalls) != 1 {
+		t.Errorf("expected 1 postgres CleanupEnclave call, got %d", len(pg.cleanupEnclaveCalls))
+	}
+	if len(nats.cleanupEnclaveCalls) != 1 {
+		t.Errorf("expected 1 nats CleanupEnclave call, got %d", len(nats.cleanupEnclaveCalls))
+	}
+	if len(rustfs.cleanupEnclaveCalls) != 1 {
+		t.Errorf("expected 1 rustfs CleanupEnclave call, got %d", len(rustfs.cleanupEnclaveCalls))
+	}
+	// Verify the enclave name was passed through.
+	if pg.cleanupEnclaveCalls[0].Enclave != "test-enclave" {
+		t.Errorf("expected enclave=test-enclave, got %q", pg.cleanupEnclaveCalls[0].Enclave)
+	}
+}
+
+func TestCleanupEnclave_Disabled(t *testing.T) {
+	cfg := &Config{Enabled: false}
+	pg := newMockPG()
+	ctrl := NewControllerWithDeps(cfg, pg, nil, nil, nil)
+
+	err := ctrl.CleanupEnclave(context.Background(), "test-enclave")
+	if err != nil {
+		t.Fatalf("CleanupEnclave on disabled controller: %v", err)
+	}
+	if len(pg.cleanupEnclaveCalls) != 0 {
+		t.Error("expected no CleanupEnclave calls on disabled controller")
+	}
+}
+
+func TestCleanupEnclave_PartialFailure(t *testing.T) {
+	cfg := &Config{Enabled: true}
+	pg := newMockPG()
+	pg.cleanupEnclaveErr = errors.New("pg cleanup failed")
+	nats := newMockNATS()
+	rustfs := newMockRustFS()
+	ctrl := NewControllerWithDeps(cfg, pg, nats, rustfs, nil)
+
+	err := ctrl.CleanupEnclave(context.Background(), "test-enclave")
+	if err == nil {
+		t.Fatal("expected error for partial failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "postgres") {
+		t.Errorf("expected postgres in error, got: %v", err)
+	}
+	// All registrars should still be called despite partial failure.
+	if len(nats.cleanupEnclaveCalls) != 1 {
+		t.Error("nats CleanupEnclave should still be called on partial failure")
+	}
+	if len(rustfs.cleanupEnclaveCalls) != 1 {
+		t.Error("rustfs CleanupEnclave should still be called on partial failure")
 	}
 }

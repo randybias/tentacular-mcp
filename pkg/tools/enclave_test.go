@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -913,6 +914,356 @@ func TestEnclaveInfo_NonParticipantDenied(t *testing.T) {
 	_, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), testEval(), EnclaveInfoParams{Name: "enc-info-authz"}, dave)
 	if err == nil {
 		t.Fatal("expected error for non-participant enclave_info, got nil")
+	}
+}
+
+// 2.1: isEnclaveParticipant email case normalization.
+func TestIsEnclaveParticipant_OwnerMixedCase(t *testing.T) {
+	info := authz.EnclaveInfo{Owner: "alice@example.com", Members: []string{"bob@example.com"}}
+	if !isEnclaveParticipant(info, "Alice@Example.COM") {
+		t.Error("expected owner match with mixed case email")
+	}
+}
+
+func TestIsEnclaveParticipant_MemberMixedCase(t *testing.T) {
+	info := authz.EnclaveInfo{Owner: "alice@example.com", Members: []string{"bob@example.com"}}
+	if !isEnclaveParticipant(info, "BOB@Example.COM") {
+		t.Error("expected member match with mixed case email")
+	}
+}
+
+func TestIsEnclaveParticipant_NonParticipantMixedCase(t *testing.T) {
+	info := authz.EnclaveInfo{Owner: "alice@example.com", Members: []string{"bob@example.com"}}
+	if isEnclaveParticipant(info, "Dave@Example.COM") {
+		t.Error("expected dave (non-participant) to NOT match even with mixed case")
+	}
+}
+
+// 2.2: handleEnclaveInfo — "other" read access via mode bits.
+func TestEnclaveInfo_OtherReadAccess_OpenReadMode(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	// Provision an enclave with open-read mode (rwxrwxr--).
+	_, err := handleEnclaveProvision(ctx, client, noopExoCtrl(), EnclaveProvisionParams{
+		Name:       "enc-info-openread",
+		OwnerEmail: "alice@example.com",
+		OwnerSub:   "sub-alice",
+	})
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+
+	// Manually set the mode to open-read on the namespace annotations.
+	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, "enc-info-openread", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get ns: %v", err)
+	}
+	ns.Annotations[authz.AnnotationMode] = "rwxrwxr--"
+	_, err = client.Clientset.CoreV1().Namespaces().Update(ctx, ns, metav1.UpdateOptions{})
+	if err != nil {
+		t.Fatalf("update ns: %v", err)
+	}
+
+	// Non-member OIDC deployer should be able to read.
+	dave := &exoskeleton.DeployerInfo{Email: "dave@example.com", Provider: "keycloak"}
+	result, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), testEval(), EnclaveInfoParams{Name: "enc-info-openread"}, dave)
+	if err != nil {
+		t.Fatalf("expected non-member to read open-read enclave, got error: %v", err)
+	}
+	if result.Name != "enc-info-openread" {
+		t.Errorf("expected name=enc-info-openread, got %q", result.Name)
+	}
+}
+
+func TestEnclaveInfo_OtherReadAccess_PrivateMode(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	// Provision an enclave with private mode (rwxrwx---).
+	_, err := handleEnclaveProvision(ctx, client, noopExoCtrl(), EnclaveProvisionParams{
+		Name:       "enc-info-private",
+		OwnerEmail: "alice@example.com",
+		OwnerSub:   "sub-alice",
+	})
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+
+	// Manually set the mode to private on the namespace annotations.
+	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, "enc-info-private", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get ns: %v", err)
+	}
+	ns.Annotations[authz.AnnotationMode] = "rwxrwx---"
+	_, err = client.Clientset.CoreV1().Namespaces().Update(ctx, ns, metav1.UpdateOptions{})
+	if err != nil {
+		t.Fatalf("update ns: %v", err)
+	}
+
+	// Non-member OIDC deployer should be denied.
+	dave := &exoskeleton.DeployerInfo{Email: "dave@example.com", Provider: "keycloak"}
+	_, err = handleEnclaveInfo(ctx, client, noopExoCtrl(), testEval(), EnclaveInfoParams{Name: "enc-info-private"}, dave)
+	if err == nil {
+		t.Fatal("expected error for non-member accessing private enclave, got nil")
+	}
+}
+
+// 2.3: handleEnclaveList — "other" read visibility.
+func TestEnclaveList_OtherReadVisibility(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	// Provision two enclaves.
+	provisionTestEnclave(t, client, "enc-list-private", "alice@example.com")
+	provisionTestEnclave(t, client, "enc-list-open", "bob@example.com")
+
+	// Set private mode on the first enclave.
+	ns1, _ := client.Clientset.CoreV1().Namespaces().Get(ctx, "enc-list-private", metav1.GetOptions{})
+	ns1.Annotations[authz.AnnotationMode] = "rwxrwx---"
+	_, _ = client.Clientset.CoreV1().Namespaces().Update(ctx, ns1, metav1.UpdateOptions{})
+
+	// Set open-read mode on the second enclave.
+	ns2, _ := client.Clientset.CoreV1().Namespaces().Get(ctx, "enc-list-open", metav1.GetOptions{})
+	ns2.Annotations[authz.AnnotationMode] = "rwxrwxr--"
+	_, _ = client.Clientset.CoreV1().Namespaces().Update(ctx, ns2, metav1.UpdateOptions{})
+
+	// Non-member OIDC deployer: should see only the open-read enclave.
+	dave := &exoskeleton.DeployerInfo{Email: "dave@example.com", Provider: "keycloak"}
+	result, err := handleEnclaveList(ctx, client, testEval(), EnclaveListParams{CallerEmail: "dave@example.com"}, dave)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Enclaves) != 1 {
+		t.Fatalf("expected 1 enclave visible to non-member, got %d", len(result.Enclaves))
+	}
+	if result.Enclaves[0].Name != "enc-list-open" {
+		t.Errorf("expected enc-list-open, got %q", result.Enclaves[0].Name)
+	}
+}
+
+// 2.5: handleEnclaveDeprovision — CleanupEnclave called on exo controller.
+func TestEnclaveDeprovision_CallsCleanupEnclave(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	// Create an exo controller with mock registrars that track CleanupEnclave calls.
+	pg := &trackingMockPG{}
+	rustfs := &trackingMockRustFS{}
+	cfg := &exoskeleton.Config{Enabled: true}
+	ctrl := exoskeleton.NewControllerWithDeps(cfg, pg, nil, rustfs, nil)
+
+	// Provision with the tracking controller (for EnsureEnclave calls).
+	_, err := handleEnclaveProvision(ctx, client, ctrl, EnclaveProvisionParams{
+		Name:       "enc-deprov-exo",
+		OwnerEmail: "alice@example.com",
+		OwnerSub:   "sub-alice",
+	})
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+
+	// Deprovision with bearer-token deployer.
+	deployer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
+	_, err = handleEnclaveDeprovision(ctx, client, ctrl, EnclaveDeprovisionParams{Name: "enc-deprov-exo"}, deployer)
+	if err != nil {
+		t.Fatalf("deprovision: %v", err)
+	}
+
+	if pg.cleanupEnclaveCalls == 0 {
+		t.Error("expected postgres CleanupEnclave to be called")
+	}
+	if rustfs.cleanupEnclaveCalls == 0 {
+		t.Error("expected rustfs CleanupEnclave to be called")
+	}
+}
+
+// trackingMockPG tracks CleanupEnclave calls for test 2.5.
+type trackingMockPG struct {
+	cleanupEnclaveCalls  int
+	ensureEnclaveCalls   int
+	registerCalls        int
+}
+
+func (m *trackingMockPG) Register(_ context.Context, _ exoskeleton.Identity) (*exoskeleton.PostgresCreds, error) {
+	m.registerCalls++
+	return &exoskeleton.PostgresCreds{Host: "pg.test", Port: "5432", Database: "testdb", User: "u", Password: "p", Schema: "s", Protocol: "postgresql"}, nil
+}
+
+func (*trackingMockPG) Unregister(_ context.Context, _ exoskeleton.Identity) error { return nil }
+
+func (m *trackingMockPG) EnsureEnclave(_ context.Context, _ exoskeleton.EnclaveIdentity) error {
+	m.ensureEnclaveCalls++
+	return nil
+}
+
+func (m *trackingMockPG) CleanupEnclave(_ context.Context, _ exoskeleton.EnclaveIdentity) error {
+	m.cleanupEnclaveCalls++
+	return nil
+}
+
+func (*trackingMockPG) Close() {}
+
+// trackingMockRustFS tracks CleanupEnclave calls for test 2.5.
+type trackingMockRustFS struct {
+	cleanupEnclaveCalls  int
+	ensureEnclaveCalls   int
+	registerCalls        int
+}
+
+func (m *trackingMockRustFS) Register(_ context.Context, _ exoskeleton.Identity) (*exoskeleton.RustFSCreds, error) {
+	m.registerCalls++
+	return &exoskeleton.RustFSCreds{Endpoint: "http://minio:9000", AccessKey: "ak", SecretKey: "sk", Bucket: "b", Prefix: "p/", Region: "us-east-1", Protocol: "s3"}, nil
+}
+
+func (*trackingMockRustFS) Unregister(_ context.Context, _ exoskeleton.Identity) error { return nil }
+
+func (m *trackingMockRustFS) EnsureEnclave(_ context.Context, _ exoskeleton.EnclaveIdentity) error {
+	m.ensureEnclaveCalls++
+	return nil
+}
+
+func (m *trackingMockRustFS) CleanupEnclave(_ context.Context, _ exoskeleton.EnclaveIdentity) error {
+	m.cleanupEnclaveCalls++
+	return nil
+}
+
+func (*trackingMockRustFS) Close() {}
+
+// 2.6: handleEnclaveProvision — rate limiting (MaxEnclavesPerOwner).
+func TestEnclaveProvision_RateLimitMaxEnclavesPerOwner(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	orig := MaxEnclavesPerOwner
+	MaxEnclavesPerOwner = 2
+	defer func() { MaxEnclavesPerOwner = orig }()
+
+	// Provision 2 enclaves for alice (at the limit).
+	for i := range 2 {
+		_, err := handleEnclaveProvision(ctx, client, noopExoCtrl(), EnclaveProvisionParams{
+			Name:       fmt.Sprintf("enc-rate-%d", i),
+			OwnerEmail: "alice@example.com",
+			OwnerSub:   "sub-alice",
+		})
+		if err != nil {
+			t.Fatalf("provision %d: %v", i, err)
+		}
+	}
+
+	// Third should fail.
+	_, err := handleEnclaveProvision(ctx, client, noopExoCtrl(), EnclaveProvisionParams{
+		Name:       "enc-rate-over",
+		OwnerEmail: "alice@example.com",
+		OwnerSub:   "sub-alice",
+	})
+	if err == nil {
+		t.Fatal("expected error for exceeding MaxEnclavesPerOwner, got nil")
+	}
+}
+
+// 2.7: handleEnclaveProvision — default_mode parameter round-trip.
+func TestEnclaveProvision_DefaultModeRoundTrip(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	_, err := handleEnclaveProvision(ctx, client, noopExoCtrl(), EnclaveProvisionParams{
+		Name:        "enc-defmode",
+		OwnerEmail:  "alice@example.com",
+		OwnerSub:    "sub-alice",
+		DefaultMode: "rwxr-x---",
+	})
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+
+	// Verify via enclave_info.
+	bearer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
+	info, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), testEval(), EnclaveInfoParams{Name: "enc-defmode"}, bearer)
+	if err != nil {
+		t.Fatalf("info: %v", err)
+	}
+
+	// Read the namespace annotations directly to verify default_mode was stored.
+	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, "enc-defmode", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get ns: %v", err)
+	}
+	if ns.Annotations[authz.AnnotationEnclaveDefaultMode] != "rwxr-x---" {
+		t.Errorf("expected default_mode annotation=rwxr-x---, got %q", ns.Annotations[authz.AnnotationEnclaveDefaultMode])
+	}
+	_ = info // info retrieved successfully
+}
+
+// 2.9: handleEnclaveSync — OwnerSub cleared on ownership transfer.
+func TestEnclaveSync_TransferOwnership_ClearsOwnerSub(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	_, err := handleEnclaveProvision(ctx, client, noopExoCtrl(), EnclaveProvisionParams{
+		Name:       "enc-sync-ownsub",
+		OwnerEmail: "alice@example.com",
+		OwnerSub:   "sub-alice",
+		Members:    []string{"bob@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+
+	// Transfer ownership from alice to bob.
+	alice := &exoskeleton.DeployerInfo{Email: "alice@example.com", Provider: "keycloak"}
+	result, err := handleEnclaveSync(ctx, client, EnclaveSyncParams{
+		Name:     "enc-sync-ownsub",
+		NewOwner: "bob@example.com",
+	}, alice)
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if result.Enclave.Owner != "bob@example.com" {
+		t.Fatalf("expected new owner=bob, got %q", result.Enclave.Owner)
+	}
+
+	// Verify OwnerSub is cleared in both the result and the stored annotations.
+	if result.Enclave.OwnerSub != "" {
+		t.Errorf("expected OwnerSub empty in result after transfer, got %q", result.Enclave.OwnerSub)
+	}
+
+	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, "enc-sync-ownsub", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get ns: %v", err)
+	}
+	if ns.Annotations[authz.AnnotationEnclaveOwnerSub] != "" {
+		t.Errorf("expected AnnotationEnclaveOwnerSub empty after transfer, got %q", ns.Annotations[authz.AnnotationEnclaveOwnerSub])
+	}
+}
+
+// 2.10: handleEnclaveProvision — ValidateEnclaveInfo rejection.
+func TestEnclaveProvision_InvalidOwnerEmail(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	_, err := handleEnclaveProvision(ctx, client, noopExoCtrl(), EnclaveProvisionParams{
+		Name:       "enc-badowner",
+		OwnerEmail: "alice-no-at",
+		OwnerSub:   "sub-alice",
+	})
+	if err == nil {
+		t.Fatal("expected error for owner email missing @, got nil")
+	}
+}
+
+func TestEnclaveProvision_InvalidPlatform(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	_, err := handleEnclaveProvision(ctx, client, noopExoCtrl(), EnclaveProvisionParams{
+		Name:       "enc-badplatform",
+		OwnerEmail: "alice@example.com",
+		OwnerSub:   "sub-alice",
+		Platform:   "teams", // invalid platform
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid platform, got nil")
 	}
 }
 

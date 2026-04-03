@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
@@ -571,6 +572,76 @@ func TestCheckEnclave_NonMember_OpenReadMode_Allow(t *testing.T) {
 	d := e.CheckEnclave(oidcDeployer("sub-v", "visitor@example.com"), ns, Read)
 	if !d.Allowed {
 		t.Errorf("non-member should be allowed read in open-read mode: %s", d.Reason)
+	}
+}
+
+// --- checkBits descriptive deny messages (2.12) ---
+// Tests use CheckTentacle to exercise per-principal deny messages.
+// The deployer is an enclave member (not owner) so the enclave layer passes,
+// and the tentacle layer produces the deny with the expected principal class.
+
+func TestCheckBits_DenyMessage_Owner(t *testing.T) {
+	e := NewEvaluator(DefaultMode)
+	// deployer is the tentacle owner AND enclave member, with mode "---------" on tentacle
+	encAnn, tentAnn := enclaveAnnWith("deployer@example.com", "---------")
+	d := e.CheckTentacle(oidcDeployer("sub-deployer", "deployer@example.com"), encAnn, tentAnn, Write)
+	if d.Allowed {
+		t.Fatal("expected deny")
+	}
+	if !strings.Contains(d.Reason, "owner") {
+		t.Errorf("expected 'owner' in reason, got %q", d.Reason)
+	}
+	if !strings.Contains(d.Reason, "write") {
+		t.Errorf("expected 'write' in reason, got %q", d.Reason)
+	}
+}
+
+func TestCheckBits_DenyMessage_Member(t *testing.T) {
+	e := NewEvaluator(DefaultMode)
+	// deployer is enclave member (not tentacle owner), tentacle has "---------"
+	encAnn := map[string]string{
+		AnnotationEnclave:        "test-enclave",
+		AnnotationEnclaveOwner:   "admin@example.com",
+		AnnotationEnclaveMembers: "bob@example.com",
+		AnnotationMode:           "rwxrwx---",
+	}
+	tentAnn := map[string]string{
+		AnnotationOwner: "other-deployer@example.com",
+		AnnotationMode:  "---------",
+	}
+	d := e.CheckTentacle(oidcDeployer("sub-bob", "bob@example.com"), encAnn, tentAnn, Read)
+	if d.Allowed {
+		t.Fatal("expected deny")
+	}
+	if !strings.Contains(d.Reason, "member") {
+		t.Errorf("expected 'member' in reason, got %q", d.Reason)
+	}
+	if !strings.Contains(d.Reason, "read") {
+		t.Errorf("expected 'read' in reason, got %q", d.Reason)
+	}
+}
+
+func TestCheckBits_DenyMessage_Other(t *testing.T) {
+	e := NewEvaluator(DefaultMode)
+	// deployer is non-member, enclave has open-read, tentacle has "---------"
+	encAnn := map[string]string{
+		AnnotationEnclave:      "test-enclave",
+		AnnotationEnclaveOwner: "admin@example.com",
+		AnnotationMode:         "rwxrwxr-x", // other can read/execute at enclave level
+	}
+	tentAnn := map[string]string{
+		AnnotationOwner: "deployer@example.com",
+		AnnotationMode:  "---------",
+	}
+	d := e.CheckTentacle(oidcDeployer("sub-stranger", "stranger@example.com"), encAnn, tentAnn, Execute)
+	if d.Allowed {
+		t.Fatal("expected deny")
+	}
+	if !strings.Contains(d.Reason, "other") {
+		t.Errorf("expected 'other' in reason, got %q", d.Reason)
+	}
+	if !strings.Contains(d.Reason, "execute") {
+		t.Errorf("expected 'execute' in reason, got %q", d.Reason)
 	}
 }
 

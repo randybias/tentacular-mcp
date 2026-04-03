@@ -243,6 +243,19 @@ func TestParseMembers_SingleEntry(t *testing.T) {
 	}
 }
 
+func TestParseMembers_NormalizesToLowercase(t *testing.T) {
+	result := ParseMembers("Alice@Example.COM, BOB@EXAMPLE.COM")
+	if len(result) != 2 {
+		t.Fatalf("ParseMembers = %v, want 2 entries", result)
+	}
+	if result[0] != "alice@example.com" {
+		t.Errorf("ParseMembers[0] = %q, want alice@example.com", result[0])
+	}
+	if result[1] != "bob@example.com" {
+		t.Errorf("ParseMembers[1] = %q, want bob@example.com", result[1])
+	}
+}
+
 // --- FormatMembers ---
 
 func TestFormatMembers_TwoEntries(t *testing.T) {
