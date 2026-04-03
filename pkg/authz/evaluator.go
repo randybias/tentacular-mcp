@@ -1,6 +1,8 @@
 package authz
 
 import (
+	"strings"
+
 	"github.com/randybias/tentacular-mcp/pkg/exoskeleton"
 )
 
@@ -101,8 +103,10 @@ func (e *Evaluator) CheckEnclave(deployer *exoskeleton.DeployerInfo, enclaveAnn 
 	}
 
 	// Step 4: enclave owner is superuser — bypass all permission checks.
-	enclaveOwner := enclaveAnn[AnnotationEnclaveOwner]
-	if enclaveOwner != "" && deployer.Email == enclaveOwner {
+	// Normalize to lowercase for case-insensitive comparison.
+	deployerEmail := strings.ToLower(deployer.Email)
+	enclaveOwner := strings.ToLower(enclaveAnn[AnnotationEnclaveOwner])
+	if enclaveOwner != "" && deployerEmail == enclaveOwner {
 		return Allow
 	}
 
@@ -115,7 +119,7 @@ func (e *Evaluator) CheckEnclave(deployer *exoskeleton.DeployerInfo, enclaveAnn 
 	// Step 6: enclave member match.
 	members := ParseMembers(enclaveAnn[AnnotationEnclaveMembers])
 	for _, m := range members {
-		if m == deployer.Email {
+		if m == deployerEmail {
 			return checkBits(mode, action, false, true)
 		}
 	}
@@ -147,9 +151,12 @@ func (e *Evaluator) CheckTentacle(deployer *exoskeleton.DeployerInfo, enclaveAnn
 		return Allow
 	}
 
+	// Normalize deployer email to lowercase for case-insensitive comparisons.
+	deployerEmail := strings.ToLower(deployer.Email)
+
 	// Enclave owner bypass: superuser within the enclave skips all checks.
-	enclaveOwner := enclaveAnn[AnnotationEnclaveOwner]
-	if enclaveOwner != "" && deployer.Email == enclaveOwner {
+	enclaveOwner := strings.ToLower(enclaveAnn[AnnotationEnclaveOwner])
+	if enclaveOwner != "" && deployerEmail == enclaveOwner {
 		return Allow
 	}
 
@@ -167,16 +174,16 @@ func (e *Evaluator) CheckTentacle(deployer *exoskeleton.DeployerInfo, enclaveAnn
 		}
 	}
 
-	// Tentacle owner check (email-based).
-	tentacleOwner := tentacleAnn[AnnotationOwner]
-	if tentacleOwner != "" && deployer.Email == tentacleOwner {
+	// Tentacle owner check (email-based, case-insensitive).
+	tentacleOwner := strings.ToLower(tentacleAnn[AnnotationOwner])
+	if tentacleOwner != "" && deployerEmail == tentacleOwner {
 		return checkBits(mode, action, true, false)
 	}
 
 	// Enclave member check at tentacle level.
 	members := ParseMembers(enclaveAnn[AnnotationEnclaveMembers])
 	for _, m := range members {
-		if m == deployer.Email {
+		if m == deployerEmail {
 			return checkBits(mode, action, false, true)
 		}
 	}

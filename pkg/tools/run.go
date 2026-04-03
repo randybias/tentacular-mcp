@@ -60,6 +60,12 @@ func registerRunTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator
 			if nsAnnErr != nil {
 				return nil, WfRunResult{}, nsAnnErr
 			}
+			// Block execution on frozen enclaves.
+			if authz.IsEnclave(nsAnn) {
+				if info := authz.ReadEnclaveInfo(nsAnn); info.Status == "frozen" {
+					return nil, WfRunResult{}, fmt.Errorf("enclave %q is frozen: new deployments and updates are blocked", info.Enclave)
+				}
+			}
 			if d := checkAuthz(eval, deployer, nsAnn, dep.Annotations, authz.Execute); !d.Allowed {
 				return nil, WfRunResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 			}

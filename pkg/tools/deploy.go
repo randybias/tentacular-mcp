@@ -169,6 +169,13 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 			return nil, WorkflowApplyResult{}, nsAnnErr
 		}
 
+		// Block deployments and updates on frozen enclaves.
+		if authz.IsEnclave(nsAnn) {
+			if info := authz.ReadEnclaveInfo(nsAnn); info.Status == "frozen" {
+				return nil, WorkflowApplyResult{}, fmt.Errorf("enclave %q is frozen: new deployments and updates are blocked", info.Enclave)
+			}
+		}
+
 		var mode string
 		if params.Mode != "" {
 			m, parseErr := authz.ParseMode(params.Mode)

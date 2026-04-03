@@ -121,15 +121,15 @@ func WriteEnclaveAnnotations(info EnclaveInfo) map[string]string {
 }
 
 // ParseMembers parses a comma-separated list of member emails into a string slice.
-// Whitespace around each entry is trimmed. Empty entries are ignored.
-// Always returns a non-nil slice.
+// Whitespace around each entry is trimmed. Emails are normalized to lowercase.
+// Empty entries are ignored. Always returns a non-nil slice.
 func ParseMembers(csv string) []string {
 	result := []string{}
 	if csv == "" {
 		return result
 	}
 	for _, part := range strings.Split(csv, ",") {
-		trimmed := strings.TrimSpace(part)
+		trimmed := strings.ToLower(strings.TrimSpace(part))
 		if trimmed != "" {
 			result = append(result, trimmed)
 		}
@@ -187,6 +187,8 @@ func ValidateEnclaveInfo(info EnclaveInfo) error {
 	if err := ValidateEnclaveName(info.Enclave); err != nil {
 		return err
 	}
+	// Normalize owner email to lowercase before validation.
+	info.Owner = strings.ToLower(info.Owner)
 	if info.Owner == "" {
 		return errors.New("enclave owner must not be empty")
 	}

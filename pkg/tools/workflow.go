@@ -276,6 +276,12 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 			if nsAnnErr != nil {
 				return nil, WfRestartResult{}, nsAnnErr
 			}
+			// Block restart on frozen enclaves.
+			if authz.IsEnclave(nsAnn) {
+				if info := authz.ReadEnclaveInfo(nsAnn); info.Status == "frozen" {
+					return nil, WfRestartResult{}, fmt.Errorf("enclave %q is frozen: new deployments and updates are blocked", info.Enclave)
+				}
+			}
 			if d := checkAuthz(eval, deployer, nsAnn, dep.Annotations, authz.Execute); !d.Allowed {
 				return nil, WfRestartResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 			}
