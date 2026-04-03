@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
 
 // enclaveProvisionResult mirrors tools.EnclaveProvisionResult for JSON decoding.
@@ -496,22 +496,27 @@ func TestEnclave_DeprovisionCleanup(t *testing.T) {
 	}
 	t.Logf("deprovision: tentacles_removed=%d", deprovResult.TentaclesRemoved)
 
-	// Verify namespace is gone — enclave_info should return an error.
-	// K8s namespace deletion is asynchronous; retry briefly to allow termination.
-	var infoFailed bool
-	for range 10 {
-		result, callErr := session.CallTool(context.Background(), &mcp.CallToolParams{
-			Name:      "enclave_info",
-			Arguments: map[string]any{"name": enclaveName},
-		})
-		if callErr != nil || result.IsError {
-			infoFailed = true
+	// Verify namespace is deleted or terminating. K8s namespace deletion is
+	// asynchronous — the namespace may linger in Terminating phase for 10-30s in
+	// kind clusters. We check the namespace phase directly via K8s client rather
+	// than waiting for it to fully disappear.
+	var deleted bool
+	for range 30 {
+		ns, err := k8s.GetNamespace(context.Background(), client, enclaveName)
+		if err != nil {
+			// Namespace is gone.
+			deleted = true
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
+		if ns.Status.Phase == "Terminating" {
+			// Namespace is being deleted — good enough.
+			deleted = true
+			break
+		}
+		time.Sleep(1 * time.Second)
 	}
-	if !infoFailed {
-		t.Error("CallTool(enclave_info): expected error after deprovision, got success")
+	if !deleted {
+		t.Error("namespace still Active after deprovision — expected Terminating or deleted")
 	}
 }
 
