@@ -3,8 +3,12 @@
 package integration_test
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
+	"time"
+
+	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // enclaveProvisionResult mirrors tools.EnclaveProvisionResult for JSON decoding.
@@ -493,7 +497,22 @@ func TestEnclave_DeprovisionCleanup(t *testing.T) {
 	t.Logf("deprovision: tentacles_removed=%d", deprovResult.TentaclesRemoved)
 
 	// Verify namespace is gone — enclave_info should return an error.
-	callToolExpectError(t, session, "enclave_info", map[string]any{"name": enclaveName})
+	// K8s namespace deletion is asynchronous; retry briefly to allow termination.
+	var infoFailed bool
+	for range 10 {
+		result, callErr := session.CallTool(context.Background(), &mcp.CallToolParams{
+			Name:      "enclave_info",
+			Arguments: map[string]any{"name": enclaveName},
+		})
+		if callErr != nil || result.IsError {
+			infoFailed = true
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if !infoFailed {
+		t.Error("CallTool(enclave_info): expected error after deprovision, got success")
+	}
 }
 
 // TestEnclave_ListFiltering provisions two enclaves with different members, then uses
