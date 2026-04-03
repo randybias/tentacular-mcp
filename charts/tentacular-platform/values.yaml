@@ -422,10 +422,12 @@ rustfs:
     console:
       port: 9001
     type: ClusterIP
-  # -- mTLS for RustFS internal traffic (cert-manager-issued certificates)
+  # -- mTLS for RustFS internal traffic (cert-manager-issued certificates).
+  # When enabled, health probes use exec with curl + client certs
+  # (kubelet cannot present mTLS client certs for httpGet probes).
   mtls:
     enabled: true
-    serverOnly: true
+    serverOnly: false
   # -- Ingress disabled (internal access only)
   ingress:
     enabled: false
@@ -437,6 +439,19 @@ rustfs:
     limits:
       cpu: 500m
       memory: 1Gi
+  # -- Health probe timeouts (increased for mTLS handshake overhead)
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
 
 # -- Future components (disabled placeholders)
 

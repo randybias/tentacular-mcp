@@ -2,7 +2,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "tentacular-platform.fullname" . }}-esm-sh
+  # Original: name: {{ include "tentacular-platform.fullname" . }}-esm-sh
+  # Fixed: CLI hardcodes "esm-sh" as service name (pkg/cli/deploy.go:329)
+  name: esm-sh
   namespace: {{ include "tentacular-platform.namespace.support" . }}
   labels:
     {{- include "tentacular-platform.labels" . | nindent 4 }}

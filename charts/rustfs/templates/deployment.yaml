@@ -106,25 +106,53 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
+          {{- if .Values.mtls.enabled }}
+            exec:
+              command:
+                - curl
+                - -k
+                - -sf
+                - --cert
+                - /opt/tls/client_cert.pem
+                - --key
+                - /opt/tls/client_key.pem
+                - --cacert
+                - /opt/tls/ca.crt
+                - https://localhost:{{ .Values.service.endpoint.port }}/health
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds | default 10 }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds | default 5 }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds | default 3 }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold | default 3 }}
+          {{- else }}
             {{- $lp := merge (dict) .Values.livenessProbe }}
             {{- $_ := unset $lp "enabled" }}
-            {{- if and .Values.mtls.enabled (hasKey $lp "httpGet") }}
-            {{- $lpHttpGet := deepCopy $lp.httpGet }}
-            {{- $_ := set $lpHttpGet "scheme" "HTTPS" }}
-            {{- $_ := set $lp "httpGet" $lpHttpGet }}
-            {{- end }}
             {{- $lp | toYaml | nindent 12 }}
+          {{- end }}
           {{- end }}
           {{- if .Values.readinessProbe.enabled }}
           readinessProbe:
+          {{- if .Values.mtls.enabled }}
+            exec:
+              command:
+                - curl
+                - -k
+                - -sf
+                - --cert
+                - /opt/tls/client_cert.pem
+                - --key
+                - /opt/tls/client_key.pem
+                - --cacert
+                - /opt/tls/ca.crt
+                - https://localhost:{{ .Values.service.endpoint.port }}/health/ready
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds | default 30 }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds | default 5 }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds | default 3 }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold | default 3 }}
+          {{- else }}
             {{- $rp := merge (dict) .Values.readinessProbe }}
             {{- $_ := unset $rp "enabled" }}
-            {{- if and .Values.mtls.enabled (hasKey $rp "httpGet") }}
-            {{- $rpHttpGet := deepCopy $rp.httpGet }}
-            {{- $_ := set $rpHttpGet "scheme" "HTTPS" }}
-            {{- $_ := set $rp "httpGet" $rpHttpGet }}
-            {{- end }}
             {{- $rp | toYaml | nindent 12 }}
+          {{- end }}
           {{- end }}
           volumeMounts:
             {{- if .Values.mtls.enabled }}
