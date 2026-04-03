@@ -371,3 +371,182 @@ func TestNewEvaluator_Enabled(t *testing.T) {
 		t.Errorf("DefaultMode = %v, want %v", e.DefaultMode.String(), DefaultMode.String())
 	}
 }
+
+// --- CheckTentacle (two-layer enclave authz, 16-scenario matrix) ---
+//
+// These tests cover every scenario from the design doc Section 6 permission
+// matrix. CheckTentacle implements the 7-step evaluator that the task spec
+// calls "CheckEnclave(deployer, nsAnnotations, resourceAnnotations, action)".
+
+// enclaveNS builds a namespace annotation map for a minimal enclave.
+func enclaveNS(owner string, members ...string) map[string]string { //nolint:unparam
+	return map[string]string{
+		AnnotationEnclave:        "test-enclave",
+		AnnotationEnclaveOwner:   owner,
+		AnnotationEnclaveMembers: FormatMembers(members),
+	}
+}
+
+// resourceAnns builds a resource annotation map with owner and mode.
+func resourceAnns(owner, modeStr string) map[string]string { //nolint:unparam
+	return map[string]string{
+		AnnotationOwner: owner,
+		AnnotationMode:  modeStr,
+	}
+}
+
+// nonEnclaveNS returns a namespace annotation map with no enclave annotation.
+func nonEnclaveNS() map[string]string {
+	return map[string]string{}
+}
+
+// TestCheckTentacle_ScenarioMatrix covers all 16 scenarios from the design doc.
+func TestCheckTentacle_ScenarioMatrix(t *testing.T) {
+	const (
+		enclaveOwnerEmail  = "owner@example.com"
+		resourceOwnerEmail = "deployer@example.com"
+		memberEmail        = "member@example.com"
+		nonMemberEmail     = "visitor@example.com"
+	)
+
+	enclaveOwner := oidcDeployer("sub-owner", enclaveOwnerEmail)
+	resourceOwner := oidcDeployer("sub-deployer", resourceOwnerEmail)
+	member := oidcDeployer("sub-member", memberEmail)
+	nonMember := oidcDeployer("sub-visitor", nonMemberEmail)
+	bearer := bearerDeployer()
+
+	// ns: member-edit enclave (rwxrwx--- default — no other bits)
+	ns := enclaveNS(enclaveOwnerEmail, memberEmail, resourceOwnerEmail)
+
+	// openNS: open-run enclave (rwxrwxr-x — others can read+execute)
+	openNS := enclaveNS(enclaveOwnerEmail, memberEmail, resourceOwnerEmail)
+	openNS[AnnotationMode] = "rwxrwxr-x"
+
+	tests := []struct { //nolint:govet // fieldalignment: test clarity takes priority over optimal packing
+		scenario int
+		name     string
+		e        *Evaluator
+		deployer *exoskeleton.DeployerInfo
+		ns       map[string]string
+		resource map[string]string
+		action   Action
+		want     bool
+	}{
+		// Scenario 1: evaluator disabled → Allow for any action
+		{1, "disabled evaluator allows read", &Evaluator{Enabled: false}, nonMember, ns, resourceAnns(resourceOwnerEmail, "rwx------"), Read, true},
+		// Scenario 2: bearer-token → Allow for any action
+		{2, "bearer-token allows any action", NewEvaluator(DefaultMode), bearer, ns, resourceAnns(resourceOwnerEmail, "rwx------"), Write, true},
+		// Scenario 3: no enclave annotation → Deny
+		{3, "non-enclave namespace denied", NewEvaluator(DefaultMode), nonMember, nonEnclaveNS(), resourceAnns(resourceOwnerEmail, "rwxrwxrwx"), Read, false},
+		// Scenario 4: enclave owner → Allow regardless of resource mode
+		{4, "enclave owner overrides resource mode", NewEvaluator(DefaultMode), enclaveOwner, ns, resourceAnns(resourceOwnerEmail, "rwx------"), Write, true},
+		// Scenario 5: resource owner, private mode (rwx------), read → Allow
+		{5, "resource owner read on private", NewEvaluator(DefaultMode), resourceOwner, ns, resourceAnns(resourceOwnerEmail, "rwx------"), Read, true},
+		// Scenario 6: resource owner, private mode (rwx------), write → Allow
+		{6, "resource owner write on private", NewEvaluator(DefaultMode), resourceOwner, ns, resourceAnns(resourceOwnerEmail, "rwx------"), Write, true},
+		// Scenario 7: resource owner, private mode (rwx------), execute → Allow
+		{7, "resource owner execute on private", NewEvaluator(DefaultMode), resourceOwner, ns, resourceAnns(resourceOwnerEmail, "rwx------"), Execute, true},
+		// Scenario 8: enclave member, member-edit (rwxrwx---), read → Allow
+		{8, "member read on member-edit", NewEvaluator(DefaultMode), member, ns, resourceAnns(resourceOwnerEmail, "rwxrwx---"), Read, true},
+		// Scenario 9: enclave member, member-edit (rwxrwx---), write → Allow
+		{9, "member write on member-edit", NewEvaluator(DefaultMode), member, ns, resourceAnns(resourceOwnerEmail, "rwxrwx---"), Write, true},
+		// Scenario 10: enclave member, member-edit (rwxrwx---), execute → Allow
+		{10, "member execute on member-edit", NewEvaluator(DefaultMode), member, ns, resourceAnns(resourceOwnerEmail, "rwxrwx---"), Execute, true},
+		// Scenario 11: enclave member, member-read (rwxr-x---), read → Allow
+		{11, "member read on member-read", NewEvaluator(DefaultMode), member, ns, resourceAnns(resourceOwnerEmail, "rwxr-x---"), Read, true},
+		// Scenario 12: enclave member, member-read (rwxr-x---), write → Deny
+		{12, "member write on member-read denied", NewEvaluator(DefaultMode), member, ns, resourceAnns(resourceOwnerEmail, "rwxr-x---"), Write, false},
+		// Scenario 13: enclave member, private (rwx------), read → Deny (no member bits)
+		{13, "member read on private denied", NewEvaluator(DefaultMode), member, ns, resourceAnns(resourceOwnerEmail, "rwx------"), Read, false},
+		// Scenario 14: non-member, open enclave + open-run tentacle (rwxrwxr-x), read → Allow
+		// Both layers must pass: enclave has other-read (openNS), tentacle has other-read (open-run).
+		{14, "non-member read on open-run", NewEvaluator(DefaultMode), nonMember, openNS, resourceAnns(resourceOwnerEmail, "rwxrwxr-x"), Read, true},
+		// Scenario 15: non-member, member-edit enclave, member-edit tentacle (rwxrwx---), read → Deny
+		// Enclave has no other bits — denied at the enclave layer.
+		{15, "non-member read on member-edit denied", NewEvaluator(DefaultMode), nonMember, ns, resourceAnns(resourceOwnerEmail, "rwxrwx---"), Read, false},
+		// Scenario 16: non-member, open enclave + open-run tentacle, write → Deny (other has no write)
+		{16, "non-member write on open-run denied", NewEvaluator(DefaultMode), nonMember, openNS, resourceAnns(resourceOwnerEmail, "rwxrwxr-x"), Write, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := tt.e.CheckTentacle(tt.deployer, tt.ns, tt.resource, tt.action)
+			if d.Allowed != tt.want {
+				t.Errorf("scenario %d (%s): allowed=%v, want=%v (reason: %s)",
+					tt.scenario, tt.name, d.Allowed, tt.want, d.Reason)
+			}
+		})
+	}
+}
+
+// Additional targeted tests for CheckEnclave (enclave-level only check).
+
+func TestCheckEnclave_Disabled_Allow(t *testing.T) {
+	e := &Evaluator{Enabled: false}
+	d := e.CheckEnclave(nonEnclaveDeployer(), enclaveNS("owner@example.com"), Read)
+	if !d.Allowed {
+		t.Error("disabled evaluator should allow")
+	}
+}
+
+func TestCheckEnclave_BearerToken_Allow(t *testing.T) {
+	e := NewEvaluator(DefaultMode)
+	d := e.CheckEnclave(bearerDeployer(), enclaveNS("owner@example.com"), Write)
+	if !d.Allowed {
+		t.Error("bearer token should always allow")
+	}
+}
+
+func TestCheckEnclave_NotEnclave_Deny(t *testing.T) {
+	e := NewEvaluator(DefaultMode)
+	d := e.CheckEnclave(oidcDeployer("sub-x", "x@example.com"), nonEnclaveNS(), Read)
+	if d.Allowed {
+		t.Error("non-enclave namespace should deny")
+	}
+}
+
+func TestCheckEnclave_EnclaveOwner_Allow(t *testing.T) {
+	e := NewEvaluator(DefaultMode)
+	ns := enclaveNS("owner@example.com")
+	// Set enclave mode to private (owner full, others none) — owner should still pass.
+	ns[AnnotationMode] = "rwx------"
+	d := e.CheckEnclave(oidcDeployer("sub-owner", "owner@example.com"), ns, Write)
+	if !d.Allowed {
+		t.Error("enclave owner should be allowed regardless of mode")
+	}
+}
+
+func TestCheckEnclave_Member_MemberEditMode_Allow(t *testing.T) {
+	e := NewEvaluator(DefaultMode)
+	ns := enclaveNS("owner@example.com", "member@example.com")
+	ns[AnnotationMode] = "rwxrwx---"
+	d := e.CheckEnclave(oidcDeployer("sub-m", "member@example.com"), ns, Write)
+	if !d.Allowed {
+		t.Errorf("member should be allowed with member-edit mode: %s", d.Reason)
+	}
+}
+
+func TestCheckEnclave_NonMember_MemberEditMode_Deny(t *testing.T) {
+	e := NewEvaluator(DefaultMode)
+	ns := enclaveNS("owner@example.com", "member@example.com")
+	ns[AnnotationMode] = "rwxrwx---"
+	d := e.CheckEnclave(oidcDeployer("sub-v", "visitor@example.com"), ns, Read)
+	if d.Allowed {
+		t.Error("non-member should be denied when other bits are not set")
+	}
+}
+
+func TestCheckEnclave_NonMember_OpenReadMode_Allow(t *testing.T) {
+	e := NewEvaluator(DefaultMode)
+	ns := enclaveNS("owner@example.com", "member@example.com")
+	ns[AnnotationMode] = "rwxrwxr--" // open-read
+	d := e.CheckEnclave(oidcDeployer("sub-v", "visitor@example.com"), ns, Read)
+	if !d.Allowed {
+		t.Errorf("non-member should be allowed read in open-read mode: %s", d.Reason)
+	}
+}
+
+// nonEnclaveDeployer returns an OIDC deployer with no enclave membership.
+func nonEnclaveDeployer() *exoskeleton.DeployerInfo {
+	return oidcDeployer("sub-none", "nobody@example.com")
+}

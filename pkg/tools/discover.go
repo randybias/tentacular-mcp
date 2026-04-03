@@ -163,10 +163,34 @@ func isSystemNamespace(ns string, annotations map[string]string) bool {
 func handleWfList(ctx context.Context, client *k8s.Client, params WfListParams, deployer *exoskeleton.DeployerInfo, eval *authz.Evaluator) (WfListResult, error) {
 	ns := params.Namespace
 
-	// If listing in a specific namespace, check namespace Read permission.
+	// Build a cache of namespace annotations used for authz routing and system
+	// namespace filtering. When listing a specific namespace, pre-populate the
+	// cache entry so the per-deployment loop can use it for dual-path authz.
+	nsAnnotations := map[string]map[string]string{}
 	if ns != "" {
-		if err := checkNamespaceAuthz(ctx, client, ns, deployer, eval, authz.Read); err != nil {
-			return WfListResult{}, err
+		// Single-namespace listing: pre-fetch annotations and check Read permission.
+		nsAnn, nsAnnErr := fetchNamespaceAnnotations(ctx, client, ns)
+		if nsAnnErr != nil {
+			return WfListResult{}, nsAnnErr
+		}
+		nsAnnotations[ns] = nsAnn
+		// Check namespace-level Read permission using dual-path evaluator.
+		var nsDecision authz.Decision
+		if authz.IsEnclave(nsAnn) {
+			nsDecision = eval.CheckEnclave(deployer, nsAnn, authz.Read)
+		} else {
+			nsDecision = eval.Check(deployer, nsAnn, authz.Read)
+		}
+		if !nsDecision.Allowed {
+			return WfListResult{}, fmt.Errorf("permission denied: %s", nsDecision.Reason)
+		}
+	} else {
+		// Cross-namespace listing: build full namespace annotation cache.
+		nsList, nsErr := client.Clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+		if nsErr == nil {
+			for _, n := range nsList.Items {
+				nsAnnotations[n.Name] = n.Annotations
+			}
 		}
 	}
 
@@ -175,18 +199,6 @@ func handleWfList(ctx context.Context, client *k8s.Client, params WfListParams, 
 	})
 	if err != nil {
 		return WfListResult{}, wrapListError(ns, err)
-	}
-
-	// When listing across all namespaces, build a cache of namespace annotations
-	// so we can filter out system namespaces efficiently.
-	nsAnnotations := map[string]map[string]string{}
-	if ns == "" {
-		nsList, nsErr := client.Clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
-		if nsErr == nil {
-			for _, n := range nsList.Items {
-				nsAnnotations[n.Name] = n.Annotations
-			}
-		}
 	}
 
 	entries := make([]WfListEntry, 0, len(depList.Items))
@@ -203,13 +215,24 @@ func handleWfList(ctx context.Context, client *k8s.Client, params WfListParams, 
 			if nsAnn == nil {
 				nsAnn = map[string]string{}
 			}
-			if d := eval.Check(deployer, nsAnn, authz.Read); !d.Allowed {
+			var nsDecision authz.Decision
+			if authz.IsEnclave(nsAnn) {
+				nsDecision = eval.CheckEnclave(deployer, nsAnn, authz.Read)
+			} else {
+				nsDecision = eval.Check(deployer, nsAnn, authz.Read)
+			}
+			if !nsDecision.Allowed {
 				continue
 			}
 		}
 
 		// Authz filter: skip deployments the caller cannot read.
-		if d := eval.Check(deployer, dep.Annotations, authz.Read); !d.Allowed {
+		// Use the cached namespace annotations for dual-path routing.
+		depNsAnn := nsAnnotations[dep.Namespace]
+		if depNsAnn == nil {
+			depNsAnn = map[string]string{}
+		}
+		if d := checkAuthz(eval, deployer, depNsAnn, dep.Annotations, authz.Read); !d.Allowed {
 			continue
 		}
 
@@ -241,8 +264,14 @@ func handleWfDescribe(ctx context.Context, client *k8s.Client, params WfDescribe
 		return WfDescribeResult{}, wrapGetError(params.Name, params.Namespace, err)
 	}
 
-	// Authz check: caller must have Read permission.
-	if d := eval.Check(deployer, dep.Annotations, authz.Read); !d.Allowed {
+	// Fetch namespace annotations for dual-path authz routing.
+	nsAnn, nsAnnErr := fetchNamespaceAnnotations(ctx, client, params.Namespace)
+	if nsAnnErr != nil {
+		return WfDescribeResult{}, nsAnnErr
+	}
+
+	// Authz check: caller must have Read permission (enclave or legacy path).
+	if d := checkAuthz(eval, deployer, nsAnn, dep.Annotations, authz.Read); !d.Allowed {
 		return WfDescribeResult{}, fmt.Errorf("permission denied: %s", d.Reason)
 	}
 

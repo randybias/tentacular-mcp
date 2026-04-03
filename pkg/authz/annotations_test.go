@@ -37,8 +37,9 @@ func TestReadOwnerInfo_FullAnnotations(t *testing.T) {
 	if info.Mode != want {
 		t.Errorf("Mode = %v, want %v", info.Mode.String(), want.String())
 	}
-	if info.PresetName != "group-read" {
-		t.Errorf("PresetName = %q, want 'group-read'", info.PresetName)
+	// rwxr-x--- maps to member-read (takes precedence over group-read alias).
+	if info.PresetName != "member-read" {
+		t.Errorf("PresetName = %q, want 'member-read'", info.PresetName)
 	}
 }
 
@@ -112,9 +113,9 @@ func TestReadOwnerInfo_PresetNameSet(t *testing.T) {
 		wantPreset string
 	}{
 		{"rwx------", "private"},
-		{"rwxr-x---", "group-read"},
+		{"rwxr-x---", "member-read"},
 		{"rwx--x---", "group-run"},
-		{"rwxrwx---", "group-edit"},
+		{"rwxrwx---", "member-edit"},
 		{"rwxr--r--", "public-read"},
 		{"---------", ""},
 	}

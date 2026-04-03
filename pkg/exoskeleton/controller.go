@@ -21,6 +21,9 @@ import (
 type PostgresRegistrarI interface {
 	Register(ctx context.Context, id Identity) (*PostgresCreds, error)
 	Unregister(ctx context.Context, id Identity) error
+	// EnsureEnclave provisions the enclave-level Postgres database if it does
+	// not already exist. It is idempotent and safe to call on every deploy.
+	EnsureEnclave(ctx context.Context, id EnclaveIdentity) error
 	Close()
 }
 
@@ -28,6 +31,9 @@ type PostgresRegistrarI interface {
 type NATSRegistrarI interface {
 	Register(ctx context.Context, id Identity) (*NATSCreds, error)
 	Unregister(ctx context.Context, id Identity) error
+	// EnsureEnclave provisions the enclave-level NATS account if it does not
+	// already exist. It is idempotent and safe to call on every deploy.
+	EnsureEnclave(ctx context.Context, id EnclaveIdentity) error
 	Close()
 }
 
@@ -35,6 +41,9 @@ type NATSRegistrarI interface {
 type RustFSRegistrarI interface {
 	Register(ctx context.Context, id Identity) (*RustFSCreds, error)
 	Unregister(ctx context.Context, id Identity) error
+	// EnsureEnclave provisions the enclave-level S3/RustFS bucket if it does
+	// not already exist. It is idempotent and safe to call on every deploy.
+	EnsureEnclave(ctx context.Context, id EnclaveIdentity) error
 	Close()
 }
 
@@ -371,6 +380,101 @@ func (c *Controller) Enabled() bool {
 	return c.cfg.Enabled
 }
 
+// EnsureEnclaveServices checks which exo services are required for the
+// enclave (as specified by requiredServices) and provisions any that are
+// missing. It is idempotent — safe to call on every tentacle deploy.
+//
+// Required service names: "postgres", "rustfs", "s3", "nats". These are
+// derived from contract dependencies via ExoServicesFromDeps.
+//
+// When the exoskeleton is disabled, returns nil (no-op). Returns an error if
+// a required service is not available (registrar not initialized) or if
+// provisioning fails.
+func (c *Controller) EnsureEnclaveServices(ctx context.Context, enclave string, requiredServices []string) error {
+	if !c.cfg.Enabled {
+		return nil
+	}
+	if len(requiredServices) == 0 {
+		return nil
+	}
+
+	id, err := CompileEnclaveIdentity(enclave)
+	if err != nil {
+		return fmt.Errorf("enclave identity: %w", err)
+	}
+
+	for _, svc := range requiredServices {
+		switch svc {
+		case "postgres":
+			if c.pg == nil {
+				return fmt.Errorf("enclave %q requires postgres but the Postgres registrar is not enabled or not configured", enclave)
+			}
+			if err := c.pg.EnsureEnclave(ctx, id); err != nil {
+				return fmt.Errorf("ensure postgres enclave %q: %w", enclave, err)
+			}
+			slog.Info("exoskeleton: postgres enclave ensured", "enclave", enclave, "db", id.PgDB)
+
+		case "rustfs", "s3":
+			if c.rustfs == nil {
+				return fmt.Errorf("enclave %q requires rustfs/s3 but the RustFS registrar is not enabled or not configured", enclave)
+			}
+			if err := c.rustfs.EnsureEnclave(ctx, id); err != nil {
+				return fmt.Errorf("ensure rustfs enclave %q: %w", enclave, err)
+			}
+			slog.Info("exoskeleton: rustfs enclave ensured", "enclave", enclave, "bucket", id.S3Bucket)
+
+		case "nats":
+			if c.nats == nil {
+				return fmt.Errorf("enclave %q requires nats but the NATS registrar is not enabled or not configured", enclave)
+			}
+			if err := c.nats.EnsureEnclave(ctx, id); err != nil {
+				return fmt.Errorf("ensure nats enclave %q: %w", enclave, err)
+			}
+			slog.Info("exoskeleton: nats enclave ensured", "enclave", enclave, "account", id.NATSAcct)
+
+		default:
+			slog.Warn("exoskeleton: unknown service in EnsureEnclaveServices, skipping", "service", svc)
+		}
+	}
+
+	return nil
+}
+
+// ExoServicesFromDeps extracts the backing service names required by a
+// tentacle contract's dependency map. The deps map keys are tentacular-*
+// dependency names (e.g., "tentacular-postgres", "tentacular-rustfs",
+// "tentacular-nats"). Returns deduplicated, sorted service names suitable
+// for passing to EnsureEnclaveServices.
+//
+// Mapping:
+//
+//	"tentacular-postgres" → "postgres"
+//	"tentacular-rustfs"   → "rustfs"
+//	"tentacular-nats"     → "nats"
+func ExoServicesFromDeps(deps map[string]any) []string {
+	seen := make(map[string]bool)
+	var services []string
+	for name := range deps {
+		var svc string
+		switch name {
+		case "tentacular-postgres":
+			svc = "postgres"
+		case "tentacular-rustfs":
+			svc = "rustfs"
+		case "tentacular-nats":
+			svc = "nats"
+		default:
+			continue
+		}
+		if !seen[svc] {
+			seen[svc] = true
+			services = append(services, svc)
+		}
+	}
+	sort.Strings(services)
+	return services
+}
+
 // PostgresAvailable returns true if the Postgres registrar is initialized.
 func (c *Controller) PostgresAvailable() bool {
 	return c.pg != nil
@@ -478,6 +582,12 @@ type contractDeps struct {
 	Contract *struct {
 		Dependencies map[string]any `yaml:"dependencies"`
 	} `yaml:"contract"`
+}
+
+// DetectExoDepsSlice is an exported wrapper around detectExoDeps.
+// It returns the tentacular-* dependency names found in the workflow manifests.
+func DetectExoDepsSlice(manifests []map[string]any) []string {
+	return detectExoDeps(manifests)
 }
 
 // detectExoDeps scans manifests for a ConfigMap containing workflow.yaml

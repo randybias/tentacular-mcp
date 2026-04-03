@@ -12,12 +12,14 @@ import (
 // --- Mock registrars for interface-based testing ---
 
 type mockPG struct {
-	creds           *PostgresCreds
-	registerErr     error
-	unregisterErr   error
-	registerCalls   []Identity
-	unregisterCalls []Identity
-	closed          bool
+	creds              *PostgresCreds
+	registerErr        error
+	unregisterErr      error
+	ensureEnclaveErr   error
+	registerCalls      []Identity
+	unregisterCalls    []Identity
+	ensureEnclaveCalls []EnclaveIdentity
+	closed             bool
 }
 
 func newMockPG() *mockPG {
@@ -43,15 +45,22 @@ func (m *mockPG) Unregister(_ context.Context, id Identity) error {
 	return m.unregisterErr
 }
 
+func (m *mockPG) EnsureEnclave(_ context.Context, id EnclaveIdentity) error {
+	m.ensureEnclaveCalls = append(m.ensureEnclaveCalls, id)
+	return m.ensureEnclaveErr
+}
+
 func (m *mockPG) Close() { m.closed = true }
 
 type mockNATS struct {
-	creds           *NATSCreds
-	registerErr     error
-	unregisterErr   error
-	registerCalls   []Identity
-	unregisterCalls []Identity
-	closed          bool
+	creds              *NATSCreds
+	registerErr        error
+	unregisterErr      error
+	ensureEnclaveErr   error
+	registerCalls      []Identity
+	unregisterCalls    []Identity
+	ensureEnclaveCalls []EnclaveIdentity
+	closed             bool
 }
 
 func newMockNATS() *mockNATS {
@@ -77,15 +86,22 @@ func (m *mockNATS) Unregister(_ context.Context, id Identity) error {
 	return m.unregisterErr
 }
 
+func (m *mockNATS) EnsureEnclave(_ context.Context, id EnclaveIdentity) error {
+	m.ensureEnclaveCalls = append(m.ensureEnclaveCalls, id)
+	return m.ensureEnclaveErr
+}
+
 func (m *mockNATS) Close() { m.closed = true }
 
 type mockRustFS struct {
-	creds           *RustFSCreds
-	registerErr     error
-	unregisterErr   error
-	registerCalls   []Identity
-	unregisterCalls []Identity
-	closed          bool
+	creds              *RustFSCreds
+	registerErr        error
+	unregisterErr      error
+	ensureEnclaveErr   error
+	registerCalls      []Identity
+	unregisterCalls    []Identity
+	ensureEnclaveCalls []EnclaveIdentity
+	closed             bool
 }
 
 func newMockRustFS() *mockRustFS {
@@ -109,6 +125,11 @@ func (m *mockRustFS) Register(_ context.Context, id Identity) (*RustFSCreds, err
 func (m *mockRustFS) Unregister(_ context.Context, id Identity) error {
 	m.unregisterCalls = append(m.unregisterCalls, id)
 	return m.unregisterErr
+}
+
+func (m *mockRustFS) EnsureEnclave(_ context.Context, id EnclaveIdentity) error {
+	m.ensureEnclaveCalls = append(m.ensureEnclaveCalls, id)
+	return m.ensureEnclaveErr
 }
 
 func (m *mockRustFS) Close() { m.closed = true }

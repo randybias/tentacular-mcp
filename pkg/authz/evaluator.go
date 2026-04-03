@@ -108,6 +108,129 @@ func (e *Evaluator) Check(deployer *exoskeleton.DeployerInfo, annotations map[st
 	return checkBits(mode, action, false, false)
 }
 
+// CheckEnclave evaluates whether the deployer may perform action on the enclave
+// described by enclaveAnnotations. This is the enclave-aware 7-step evaluator.
+//
+// Steps (evaluated in order):
+//  1. Evaluator nil or disabled → Allow
+//  2. Bearer-token deployer → Allow (platform operator)
+//  3. No enclave annotation → Deny (not an enclave namespace)
+//  4. Enclave owner match → Allow (superuser within the enclave)
+//  5. Resource owner match (AnnotationOwner) → check owner bits
+//  6. Enclave member match (AnnotationEnclaveMembers) → check member/group bits
+//  7. Otherwise → check other bits
+//
+// The mode is resolved from the enclave annotations (AnnotationMode). If
+// absent, DefaultEnclaveMode is used.
+func (e *Evaluator) CheckEnclave(deployer *exoskeleton.DeployerInfo, enclaveAnn map[string]string, action Action) Decision {
+	if e == nil || !e.Enabled {
+		return Allow
+	}
+	if deployer == nil {
+		return Deny("no deployer identity in request context")
+	}
+	if deployer.Provider == "bearer-token" {
+		return Allow
+	}
+
+	// Step 3: must be an enclave namespace.
+	if enclaveAnn[AnnotationEnclave] == "" {
+		return Deny("namespace is not an enclave")
+	}
+
+	// Resolve mode for this enclave.
+	mode := DefaultEnclaveMode
+	if raw, ok := enclaveAnn[AnnotationMode]; ok && raw != "" {
+		if m, err := ParseMode(raw); err == nil {
+			mode = m
+		}
+	}
+
+	// Step 4: enclave owner is superuser — bypass all permission checks.
+	enclaveOwner := enclaveAnn[AnnotationEnclaveOwner]
+	if enclaveOwner != "" && deployer.Email == enclaveOwner {
+		return Allow
+	}
+
+	// Step 5: resource owner check (e.g., for tentacle-level operations using
+	// enclave annotations directly, the resource owner is the enclave owner —
+	// already handled above. For standalone enclave-level operations, the
+	// resource owner IS the enclave owner, so this step is a no-op here.
+	// The AnnotationOwner is checked via CheckTentacle for tentacle-level ops.)
+
+	// Step 6: enclave member match.
+	members := ParseMembers(enclaveAnn[AnnotationEnclaveMembers])
+	for _, m := range members {
+		if m == deployer.Email {
+			return checkBits(mode, action, false, true)
+		}
+	}
+
+	// Step 7: other bits.
+	return checkBits(mode, action, false, false)
+}
+
+// CheckTentacle performs a two-layer authorization check for tentacle-level
+// operations within an enclave. Both the enclave layer and the tentacle layer
+// must pass. The enclave owner bypasses the tentacle layer (superuser).
+//
+// enclaveAnn: annotations from the enclave namespace.
+// tentacleAnn: annotations from the tentacle resource (Deployment).
+// action: the action being authorized.
+//
+// Two-layer check:
+//  1. Enclave layer: CheckEnclave(deployer, enclaveAnn, action)
+//  2. Tentacle layer: 7-step check using tentacleAnn with enclave members
+//     Exception: enclave owner bypasses tentacle layer entirely.
+func (e *Evaluator) CheckTentacle(deployer *exoskeleton.DeployerInfo, enclaveAnn, tentacleAnn map[string]string, action Action) Decision {
+	if e == nil || !e.Enabled {
+		return Allow
+	}
+	if deployer == nil {
+		return Deny("no deployer identity in request context")
+	}
+	if deployer.Provider == "bearer-token" {
+		return Allow
+	}
+
+	// Enclave owner bypass: superuser within the enclave skips all checks.
+	enclaveOwner := enclaveAnn[AnnotationEnclaveOwner]
+	if enclaveOwner != "" && deployer.Email == enclaveOwner {
+		return Allow
+	}
+
+	// Layer 1: enclave access check.
+	if d := e.CheckEnclave(deployer, enclaveAnn, action); !d.Allowed {
+		return d
+	}
+
+	// Layer 2: tentacle access check (uses enclave members as the group).
+	// Resolve tentacle mode.
+	mode := DefaultEnclaveMode
+	if raw, ok := tentacleAnn[AnnotationMode]; ok && raw != "" {
+		if m, err := ParseMode(raw); err == nil {
+			mode = m
+		}
+	}
+
+	// Tentacle owner check (email-based).
+	tentacleOwner := tentacleAnn[AnnotationOwner]
+	if tentacleOwner != "" && deployer.Email == tentacleOwner {
+		return checkBits(mode, action, true, false)
+	}
+
+	// Enclave member check at tentacle level.
+	members := ParseMembers(enclaveAnn[AnnotationEnclaveMembers])
+	for _, m := range members {
+		if m == deployer.Email {
+			return checkBits(mode, action, false, true)
+		}
+	}
+
+	// Other.
+	return checkBits(mode, action, false, false)
+}
+
 // checkBits maps an action to the appropriate mode bits for owner, group, or other.
 func checkBits(mode Mode, action Action, isOwner, isGroup bool) Decision {
 	var allowed bool

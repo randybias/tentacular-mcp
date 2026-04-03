@@ -73,8 +73,9 @@ func TestNsPermissionsGet_Basic(t *testing.T) {
 	if result.Mode != "rwxr-x---" {
 		t.Errorf("Mode = %q, want rwxr-x---", result.Mode)
 	}
-	if result.Preset != "group-read" {
-		t.Errorf("Preset = %q, want group-read", result.Preset)
+	// member-read shares bits with group-read; member-read takes precedence in reverse-lookup.
+	if result.Preset != "member-read" {
+		t.Errorf("Preset = %q, want member-read", result.Preset)
 	}
 }
 
@@ -164,8 +165,9 @@ func TestNsPermissionsGet_WithDefaults(t *testing.T) {
 	if result.DefaultMode != "rwxr-x---" {
 		t.Errorf("DefaultMode = %q, want rwxr-x---", result.DefaultMode)
 	}
-	if result.DefaultPreset != "group-read" {
-		t.Errorf("DefaultPreset = %q, want group-read", result.DefaultPreset)
+	// member-read shares bits with group-read; member-read takes precedence in reverse-lookup.
+	if result.DefaultPreset != "member-read" {
+		t.Errorf("DefaultPreset = %q, want member-read", result.DefaultPreset)
 	}
 }
 
@@ -229,8 +231,9 @@ func TestNsPermissionsSet_OwnerCanSetModePreset(t *testing.T) {
 	if result.Mode != "rwxr-x---" {
 		t.Errorf("Mode = %q, want rwxr-x---", result.Mode)
 	}
-	if result.Preset != "group-read" {
-		t.Errorf("Preset = %q, want group-read", result.Preset)
+	// member-read shares bits with group-read; member-read takes precedence in reverse-lookup.
+	if result.Preset != "member-read" {
+		t.Errorf("Preset = %q, want member-read", result.Preset)
 	}
 }
 

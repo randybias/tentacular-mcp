@@ -210,3 +210,10 @@ func escapeLiteral(s string) string {
 	}
 	return b.String()
 }
+
+// EnsureEnclave provisions the enclave-level Postgres database if it does not
+// already exist. Phase 0 stub: no-op placeholder. Full implementation in Phase 1.
+func (*PostgresRegistrar) EnsureEnclave(_ context.Context, id EnclaveIdentity) error {
+	slog.Info("exoskeleton: postgres EnsureEnclave (stub)", "enclave", id.Enclave, "db", id.PgDB)
+	return nil
+}
