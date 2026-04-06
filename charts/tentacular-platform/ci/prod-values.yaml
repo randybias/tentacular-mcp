@@ -7,7 +7,9 @@
 #   --set tentacular-mcp.auth.token=<secret> \
 #   --set keycloak.admin.password=<secret> \
 #   --set keycloakx.database.password=<secret> \
-#   --set exoskeletonAuth.clientSecret=<secret>
+#   --set exoskeletonAuth.clientSecret=<secret> \
+#   --set rustfs.secret.accessKey=<secret> \
+#   --set rustfs.secret.secretKey=<secret>
 #
 # NOTE: Replace all CHANGE-ME placeholder values before deploying.
 # In production, use --set or external secret management (e.g., Sealed Secrets,
@@ -156,6 +158,24 @@ keycloakx:
     username: keycloak
     # CHANGE: Must match the password used in postgres-init
     password: "CHANGE-ME-keycloak-db-password"
+
+# -- RustFS S3-compatible object storage
+rustfs:
+  enabled: true
+  persistence:
+    dataVolume:
+      size: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  secret:
+    # CHANGE-ME: inject at deploy time via --set
+    accessKey: "CHANGE-ME-rustfs-admin"
+    secretKey: "CHANGE-ME-rustfs-admin-secret"
 
 esm-sh:
   enabled: true
