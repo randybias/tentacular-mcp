@@ -1,5 +1,11 @@
 {{- $logDir := .Values.config.rustfs.obs_log_directory }}
 
+{{- if and .Values.mode.distributed.enabled .Values.mode.standalone.enabled }}
+  {{- fail "Cannot enable both standalone and distributed modes simultaneously. Set only one of mode.standalone.enabled or mode.distributed.enabled to true." }}
+{{- end }}
+{{- if and .Values.mode.distributed.enabled (not (or (eq (int .Values.replicaCount) 4) (eq (int .Values.replicaCount) 16))) }}
+  {{- fail "Distributed mode only supports replicaCount of 4 or 16." }}
+{{- end }}
 {{- if .Values.mode.distributed.enabled }}
 ---
 apiVersion: apps/v1
@@ -191,7 +197,9 @@ spec:
           {{- toYaml .Values.commonLabels | nindent 10 }}
       spec:
         accessModes: ["ReadWriteOnce"]
+        {{- if .Values.storageclass.name }}
         storageClassName: {{ .Values.storageclass.name }}
+        {{- end }}
         resources:
           requests:
             storage: {{ .Values.storageclass.logStorageSize }}
@@ -203,7 +211,9 @@ spec:
           {{- toYaml $.Values.commonLabels | nindent 10 }}
       spec:
         accessModes: ["ReadWriteOnce"]
+        {{- if $.Values.storageclass.name }}
         storageClassName: {{ $.Values.storageclass.name }}
+        {{- end }}
         resources:
           requests:
             storage: {{ $.Values.storageclass.dataStorageSize }}
@@ -215,7 +225,9 @@ spec:
           {{- toYaml .Values.commonLabels | nindent 10 }}
       spec:
         accessModes: ["ReadWriteOnce"]
+        {{- if .Values.storageclass.name }}
         storageClassName: {{ .Values.storageclass.name }}
+        {{- end }}
         resources:
           requests:
             storage: {{ .Values.storageclass.dataStorageSize }}
