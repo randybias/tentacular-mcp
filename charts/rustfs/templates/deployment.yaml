@@ -28,6 +28,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      serviceAccountName: {{ include "rustfs.serviceAccountName" . }}
       {{- with include "chart.imagePullSecrets" . }}
       imagePullSecrets:
         {{- . | nindent 8 }}

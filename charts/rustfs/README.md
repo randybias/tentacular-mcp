@@ -117,8 +117,8 @@ RustFS helm chart supports **standalone and distributed mode**. For standalone m
 | resources.requests.cpu | string | `"100m"` |  |
 | resources.requests.memory | string | `"128Mi"` |  |
 | secret.existingSecret | string | `""` | Use existing secret with a credentials. |
-| secret.rustfs.access_key | string | `"rustfsadmin"` | RustFS Access Key ID |
-| secret.rustfs.secret_key | string | `"rustfsadmin"` | RustFS Secret Key ID |
+| secret.accessKey | string | `"rustfsadmin"` | RustFS Access Key ID |
+| secret.secretKey | string | `"rustfsadmin"` | RustFS Secret Key ID |
 | service.type | string | `"ClusterIP"` |  |
 | service.console.nodePort | int | `32001` |  |
 | service.console.port | int | `9001` |  |

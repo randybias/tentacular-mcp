@@ -9,7 +9,6 @@ spec:
     - {{ include "rustfs.fullname" . }}-root-ca-secret
   certificatesSecrets:
     - {{ include "rustfs.fullname" . }}-mtls-secret
-  insecureSkipVerify: true
   {{- range .Values.ingress.hosts }}
   serverName: {{ .host | quote }}
   {{- end }}

@@ -27,6 +27,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      serviceAccountName: {{ include "rustfs.serviceAccountName" . }}
       enableServiceLinks: {{ .Values.enableServiceLinks }}
       {{- with include "chart.imagePullSecrets" . }}
       imagePullSecrets:
@@ -162,7 +163,7 @@ spec:
       volumes:
         - name: server-cert
           secret:
-            secretName: rustfs-server-tls
+            secretName: {{ include "rustfs.fullname" . }}-server-tls
             items:
               - key: tls.crt
                 path: rustfs_cert.pem
@@ -173,7 +174,7 @@ spec:
         {{- if not .Values.mtls.serverOnly }}
         - name: client-cert
           secret:
-            secretName: rustfs-client-tls
+            secretName: {{ include "rustfs.fullname" . }}-client-tls
             items:
               - key: tls.crt
                 path: client_cert.pem

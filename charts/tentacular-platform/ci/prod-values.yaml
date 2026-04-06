@@ -162,9 +162,10 @@ keycloakx:
 # -- RustFS S3-compatible object storage
 rustfs:
   enabled: true
-  persistence:
-    dataVolume:
-      size: 10Gi
+  storageclass:
+    name: ""
+    dataStorageSize: 10Gi
+    logStorageSize: 1Gi
   resources:
     requests:
       cpu: 100m

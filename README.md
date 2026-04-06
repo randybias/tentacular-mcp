@@ -46,7 +46,7 @@ The MCP server also manages the **module proxy** in the `tentacular-support` nam
 
 ### Platform Deploy via Umbrella Chart (Recommended)
 
-The umbrella chart (`charts/tentacular-platform/`) deploys the full platform: MCP server, PostgreSQL, NATS, cert-manager (optional), esm-sh proxy, namespace management, and network policies. It creates three namespaces (`tentacular-system`, `tentacular-exoskeleton`, `tentacular-support`), deploys all subcharts, and wires the exoskeleton Secret via `envFrom`.
+The umbrella chart (`charts/tentacular-platform/`) deploys the full platform: MCP server, PostgreSQL, NATS, RustFS (optional S3-compatible object storage), cert-manager (optional), esm-sh proxy, namespace management, and network policies. It creates three namespaces (`tentacular-system`, `tentacular-exoskeleton`, `tentacular-support`), deploys all subcharts, and wires the exoskeleton Secret via `envFrom`.
 
 **Development** (emptyDir storage, minimal resources, NodePort access):
 
@@ -77,7 +77,9 @@ helm install tentacular charts/tentacular-platform/ \
   -n tentacular-system --create-namespace \
   --set tentacular-mcp.auth.token="$(openssl rand -hex 32)" \
   --set postgresql.auth.password="$(openssl rand -hex 16)" \
-  --set nats.config.merge.authorization.token="$(openssl rand -hex 16)"
+  --set nats.config.merge.authorization.token="$(openssl rand -hex 16)" \
+  --set rustfs.secret.accessKey="$(openssl rand -hex 16)" \
+  --set rustfs.secret.secretKey="$(openssl rand -hex 32)"
 ```
 
 If you don't need TLS certificates, disable them and skip the cert-manager step:
@@ -90,7 +92,9 @@ helm install tentacular charts/tentacular-platform/ \
   --set tls.certificates.mcp.create=false \
   --set tentacular-mcp.auth.token="$(openssl rand -hex 32)" \
   --set postgresql.auth.password="$(openssl rand -hex 16)" \
-  --set nats.config.merge.authorization.token="$(openssl rand -hex 16)"
+  --set nats.config.merge.authorization.token="$(openssl rand -hex 16)" \
+  --set rustfs.secret.accessKey="$(openssl rand -hex 16)" \
+  --set rustfs.secret.secretKey="$(openssl rand -hex 32)"
 ```
 
 The `-n tentacular-system` flag is required so the MCP pod and its Secret are co-located. See `charts/tentacular-platform/README.md` for all value profiles, ingress modes (nodeport, ingress, istio, alb-istio), network policies, and component toggles.
