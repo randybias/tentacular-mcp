@@ -199,15 +199,19 @@ exoskeleton:
     # -- Namespace of the NATS authorization ConfigMap
     authzNamespace: "tentacular-exoskeleton"
   rustfs:
-    # -- RustFS endpoint URL (used in exoskeleton secret when rustfs.enabled)
+    # -- RustFS endpoint URL override. When empty and rustfs.enabled=true, the endpoint
+    # is auto-derived as http://<release>-rustfs.<exo-ns>.svc.cluster.local:9000.
+    # Set explicitly only when pointing at an external RustFS instance.
     endpoint: ""
-    # -- RustFS access key
+    # -- Admin access key override. When empty and rustfs.enabled=true, the value is
+    # taken from rustfs.secret.accessKey. Set explicitly for external RustFS.
     accessKey: ""
-    # -- RustFS secret key
+    # -- Admin secret key override. When empty and rustfs.enabled=true, the value is
+    # taken from rustfs.secret.secretKey. Set explicitly for external RustFS.
     secretKey: ""
-    # -- RustFS bucket name
+    # -- S3 bucket name for tentacle storage. The MCP server creates this bucket on startup.
     bucket: "tentacular"
-    # -- RustFS region
+    # -- S3 region reported to clients. RustFS accepts any non-empty value.
     region: "us-east-1"
 
 # -- Exoskeleton SSO/OIDC authentication configuration
@@ -382,10 +386,65 @@ keycloakx:
 
 # -- Future components (disabled placeholders)
 
-# -- RustFS object storage (S3-compatible)
+# -- RustFS S3-compatible object storage (local fork with namespaceOverride).
+# Provides per-tentacle prefix-scoped S3 storage. The MCP server uses admin
+# credentials to create per-tentacle IAM users and S3 policies at deploy time.
+# Admin credentials flow: rustfs.secret.* → exoskeleton Secret → MCP pod env vars.
 rustfs:
-  # -- Enable RustFS deployment (not yet implemented)
+  # -- Enable RustFS deployment as an exoskeleton backing service.
   enabled: false
+  # -- Deploy RustFS into the exoskeleton namespace (not the system namespace).
+  namespaceOverride: tentacular-exoskeleton
+  # -- Standalone mode: single pod + single PVC. Suitable for development and
+  # single-node production. For high-availability, use distributed mode (future).
+  mode:
+    standalone:
+      enabled: true
+    distributed:
+      enabled: false
+  # -- Admin root credentials. These are used both to bootstrap the RustFS pod
+  # and as the admin credentials for the MCP server's IAM management API.
+  # Must be set via --set; do NOT commit real credentials.
+  secret:
+    # -- RustFS root access key (also used as TENTACULAR_RUSTFS_ACCESS_KEY)
+    accessKey: ""
+    # -- RustFS root secret key (also used as TENTACULAR_RUSTFS_SECRET_KEY)
+    secretKey: ""
+  # -- Persistence for object data
+  persistence:
+    dataVolume:
+      # -- Storage size for object data. 5Gi suitable for development.
+      size: 5Gi
+      # -- StorageClass name. Leave empty to use the cluster default.
+      storageClass: ""
+  # -- Service ports (ClusterIP, internal access only)
+  service:
+    endpoint:
+      # -- S3 API port (used by MCP registrar and workflow pods)
+      port: 9000
+    console:
+      # -- Web console port (internal only)
+      port: 9001
+    type: ClusterIP
+  # -- Ingress disabled — RustFS is accessed only from within the cluster.
+  ingress:
+    enabled: false
+  # -- Resource requests and limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  # TODO(tls): mTLS support (cert-manager CA, server-only or mutual TLS).
+  # Enabling this requires: (1) cert-manager Certificate for RustFS,
+  # (2) mounting the CA cert into the MCP pod, (3) setting
+  # TENTACULAR_RUSTFS_CA_CERT_PATH, (4) changing endpoint scheme to https://.
+  # See docs/plans/rustfs-tls.md for the follow-up implementation plan.
+  # mtls:
+  #   enabled: false
+  #   serverOnly: true
 
 # -- SPIRE workload identity
 spire:
