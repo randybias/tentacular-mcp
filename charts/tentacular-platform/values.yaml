@@ -200,7 +200,7 @@ exoskeleton:
     authzNamespace: "tentacular-exoskeleton"
   rustfs:
     # -- RustFS endpoint URL override. When empty and rustfs.enabled=true, the endpoint
-    # is auto-derived as http://<release>-rustfs.<exo-ns>.svc.cluster.local:9000.
+    # is auto-derived as http://<release>-rustfs-svc.<exo-ns>.svc.cluster.local:9000.
     # Set explicitly only when pointing at an external RustFS instance.
     endpoint: ""
     # -- Admin access key override. When empty and rustfs.enabled=true, the value is

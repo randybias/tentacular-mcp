@@ -274,7 +274,9 @@ ingress:
 | `rustfs.namespaceOverride` | string | `tentacular-exoskeleton` | Namespace for RustFS resources |
 | `rustfs.secret.accessKey` | string | `""` | Admin root access key (required when enabled) |
 | `rustfs.secret.secretKey` | string | `""` | Admin root secret key (required when enabled) |
-| `rustfs.persistence.dataVolume.size` | string | `5Gi` | Object data PVC size |
+| `rustfs.storageclass.dataStorageSize` | string | `5Gi` | Object data PVC size |
+| `rustfs.storageclass.logStorageSize` | string | `256Mi` | Log data PVC size |
+| `rustfs.storageclass.name` | string | `""` | StorageClass name; empty uses cluster default |
 | `rustfs.service.endpoint.port` | int | `9000` | S3 API port |
 | `exoskeleton.rustfs.endpoint` | string | `""` | External endpoint override; auto-derived when empty |
 | `exoskeleton.rustfs.bucket` | string | `tentacular` | S3 bucket for tentacle storage |
