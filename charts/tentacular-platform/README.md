@@ -76,8 +76,14 @@ helm install tentacular charts/tentacular-platform/ \
   --set keycloak.admin.password="$(openssl rand -hex 16)" \
   --set keycloakx.database.password="$KC_DB_PASS" \
   --set keycloakx.database.hostname="tentacular-postgresql.tentacular-exoskeleton.svc.cluster.local" \
+  --set rustfs.secret.accessKey="$(openssl rand -hex 16)" \
+  --set rustfs.secret.secretKey="$(openssl rand -hex 32)" \
   --set exoskeletonAuth.clientSecret="$(openssl rand -hex 32)"
 ```
+
+> **RustFS TLS:** This release uses plain HTTP (port 9000) for simplicity. TLS/mTLS support
+> via cert-manager is planned as a follow-up (`# TODO(tls):` markers in the templates).
+> Do not expose the RustFS service outside the cluster — it is ClusterIP only.
 
 ### AWS (K8s on EC2 with NLB)
 
@@ -130,6 +136,8 @@ helm install tentacular charts/tentacular-platform/ \
   --set keycloakx.database.hostname="tentacular-postgresql.tentacular-exoskeleton.svc.cluster.local" \
   --set keycloakx.proxy.mode=xforwarded \
   --set-json 'keycloakx.command=["/opt/keycloak/bin/kc.sh","start","--hostname-strict=false","--import-realm"]' \
+  --set rustfs.secret.accessKey="$(openssl rand -hex 16)" \
+  --set rustfs.secret.secretKey="$(openssl rand -hex 32)" \
   --set exoskeletonAuth.clientSecret="$(openssl rand -hex 32)"
 ```
 
@@ -258,6 +266,20 @@ ingress:
 | `ingress.className` | string | `""` | Ingress class (nginx, traefik, etc.) |
 | `ingress.annotations` | object | `{}` | Freeform annotations for Ingress |
 
+#### RustFS
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `rustfs.enabled` | bool | `false` | Enable RustFS deployment |
+| `rustfs.namespaceOverride` | string | `tentacular-exoskeleton` | Namespace for RustFS resources |
+| `rustfs.secret.accessKey` | string | `""` | Admin root access key (required when enabled) |
+| `rustfs.secret.secretKey` | string | `""` | Admin root secret key (required when enabled) |
+| `rustfs.persistence.dataVolume.size` | string | `5Gi` | Object data PVC size |
+| `rustfs.service.endpoint.port` | int | `9000` | S3 API port |
+| `exoskeleton.rustfs.endpoint` | string | `""` | External endpoint override; auto-derived when empty |
+| `exoskeleton.rustfs.bucket` | string | `tentacular` | S3 bucket for tentacle storage |
+| `exoskeleton.rustfs.region` | string | `us-east-1` | S3 region |
+
 ## Component Toggles
 
 Every component can be independently enabled or disabled:
@@ -271,7 +293,7 @@ Every component can be independently enabled or disabled:
 | MCP Server | `tentacular-mcp.enabled` | `true` | Tentacular MCP server |
 | esm-sh | `esm-sh.enabled` | `true` | ES module proxy |
 | Network Policies | `networkPolicies.enabled` | `true` | Default-deny with allow rules |
-| RustFS | `rustfs.enabled` | `false` | Future: S3-compatible storage |
+| RustFS | `rustfs.enabled` | `false` | S3-compatible object storage; per-tentacle IAM scoping. HTTP only; HTTPS/mTLS is a future enhancement. |
 | SPIRE | `spire.enabled` | `false` | Future: Workload identity |
 
 ## Storage
