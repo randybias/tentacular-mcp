@@ -410,13 +410,14 @@ rustfs:
     accessKey: ""
     # -- RustFS root secret key (also used as TENTACULAR_RUSTFS_SECRET_KEY)
     secretKey: ""
-  # -- Persistence for object data
-  persistence:
-    dataVolume:
-      # -- Storage size for object data. 5Gi suitable for development.
-      size: 5Gi
-      # -- StorageClass name. Leave empty to use the cluster default.
-      storageClass: ""
+  # -- Storage class and PVC sizes (maps to subchart's storageclass.* keys)
+  storageclass:
+    # -- StorageClass name. Leave empty to use the cluster default.
+    name: ""
+    # -- Storage size for object data. 5Gi suitable for development.
+    dataStorageSize: 5Gi
+    # -- Storage size for log data.
+    logStorageSize: 256Mi
   # -- Service ports (ClusterIP, internal access only)
   service:
     endpoint:

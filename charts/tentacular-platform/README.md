@@ -298,10 +298,11 @@ Every component can be independently enabled or disabled:
 
 ## Storage
 
-PostgreSQL and NATS require persistent storage. In production clusters with a
-StorageClass provisioner this works out of the box (uses cluster default). For
-**dev/test clusters without a provisioner** (e.g., kind, bare minikube), the CI
-value files disable PVCs and fall back to `emptyDir`:
+PostgreSQL, NATS, and RustFS (when enabled) require persistent storage. In
+production clusters with a StorageClass provisioner this works out of the box
+(uses cluster default). For **dev/test clusters without a provisioner** (e.g.,
+kind, bare minikube), the CI value files disable PVCs and fall back to
+`emptyDir`:
 
 ```yaml
 postgresql:
