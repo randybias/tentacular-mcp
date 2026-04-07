@@ -26,7 +26,7 @@ collector:
   image:
     # -- Collector image (using the OTel Contrib distribution for k8s receivers)
     repository: otel/opentelemetry-collector-contrib
-    tag: "0.116.0"
+    tag: "0.120.0"
     pullPolicy: IfNotPresent
   # -- Collector replica count
   replicaCount: 1
