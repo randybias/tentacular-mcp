@@ -9,6 +9,10 @@ metadata:
     app.kubernetes.io/component: collector
 data:
   otel-collector-config.yaml: |
+    extensions:
+      health_check:
+        endpoint: "0.0.0.0:13133"
+
     receivers:
       # OTLP ingress from workflow pods and platform components.
       otlp:
@@ -83,6 +87,8 @@ data:
               - replace_pattern(attributes["http.request.header.authorization"], "Bearer [A-Za-z0-9\\-._~+/]+=*", "Bearer [REDACTED]")
               # Redact generic API keys in attribute values
               - replace_pattern(attributes["api.key"], ".+", "[REDACTED]")
+              # Redact Anthropic API keys
+              - replace_pattern(attributes["http.request.header.x-api-key"], "sk-ant-[A-Za-z0-9\\-]+", "[ANTHROPIC_KEY_REDACTED]")
         log_statements:
           - context: log
             statements:
@@ -90,16 +96,22 @@ data:
               - replace_pattern(body, "eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", "[JWT_REDACTED]")
               # Redact Bearer tokens in log bodies
               - replace_pattern(body, "Bearer [A-Za-z0-9\\-._~+/]+=*", "Bearer [REDACTED]")
+              # Redact Anthropic/OpenAI API key prefixes
+              - replace_pattern(body, "sk-ant-[A-Za-z0-9\\-]+", "[ANTHROPIC_KEY_REDACTED]")
+              - replace_pattern(body, "sk-[A-Za-z0-9]{20,}", "[OPENAI_KEY_REDACTED]")
+              # Redact Slack tokens
+              - replace_pattern(body, "xox[bpras]-[A-Za-z0-9\\-]+", "[SLACK_TOKEN_REDACTED]")
 
     exporters:
       # Export to SigNoz (same namespace, known Service DNS).
       # Replace this endpoint if using a different backend.
       otlp/signoz:
-        endpoint: "{{ include "tentacular-observability.fullname" . }}-signoz:4317"
+        endpoint: "{{ .Values.observability.signoz.exportEndpoint }}"
         tls:
           insecure: true
 
     service:
+      extensions: [health_check]
       telemetry:
         logs:
           level: warn

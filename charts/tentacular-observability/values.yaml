@@ -17,6 +17,9 @@ observability:
     # -- When true, deploy SigNoz as the observability backend. Requires
     # observability.collector.create=true. Disable for BYO backends.
     create: true
+    # -- OTLP export endpoint for the collector to send data to SigNoz.
+    # Override this if SigNoz's OTLP ingestion is at a different address.
+    exportEndpoint: "signoz-otel-collector:4317"
 
 # OTel Collector configuration.
 collector:
