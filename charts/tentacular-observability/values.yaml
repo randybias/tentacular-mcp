@@ -1,0 +1,101 @@
+# -- Override the release name
+nameOverride: ""
+# -- Override the full release name
+fullnameOverride: ""
+
+# Observability controls the bundled stack deployment.
+observability:
+  collector:
+    # -- When true, deploy the OTel Collector Deployment and Service.
+    # Set to false if you will provide your own otel-collector Service
+    # (ExternalName alias or manual Endpoints) pointing to your existing backend.
+    # The Namespace and NetworkPolicy are always created so the well-known DNS
+    # contract (otel-collector.tentacular-observability.svc.cluster.local) can
+    # be fulfilled by any backend.
+    create: true
+  signoz:
+    # -- When true, deploy SigNoz as the observability backend. Requires
+    # observability.collector.create=true. Disable for BYO backends.
+    create: true
+
+# OTel Collector configuration.
+collector:
+  image:
+    # -- Collector image (using the OTel Contrib distribution for k8s receivers)
+    repository: otel/opentelemetry-collector-contrib
+    tag: "0.116.0"
+    pullPolicy: IfNotPresent
+  # -- Collector replica count
+  replicaCount: 1
+  # -- Resource requests and limits for the collector
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # -- Additional environment variables for the collector
+  extraEnv: []
+
+serviceAccount:
+  # -- Create the ServiceAccount for the OTel Collector
+  create: true
+  # -- Annotations to add to the ServiceAccount
+  annotations: {}
+
+rbac:
+  # -- Create the ClusterRole and ClusterRoleBinding for k8s receivers
+  create: true
+
+# SigNoz configuration (placeholder for subchart integration).
+# SigNoz requires significant resources: minimum 4–8 GiB RAM and 20 GiB storage.
+# The full SigNoz subchart integration will be completed in a follow-up.
+signoz:
+  # -- SigNoz image (query frontend)
+  image:
+    repository: signoz/query-service
+    tag: "0.56.0"
+    pullPolicy: IfNotPresent
+  # -- Resource requests and limits for SigNoz query service
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  # Google OAuth SSO configuration for SigNoz.
+  # SigNoz community edition supports OIDC/OAuth. Configure your Google OAuth
+  # credentials here. Leave empty to use local admin account.
+  auth:
+    google:
+      # -- Google OAuth client ID (from Google Cloud Console)
+      clientId: ""
+      # -- Google OAuth client secret (from Google Cloud Console)
+      clientSecret: ""
+
+# ClickHouse configuration (storage backend for SigNoz).
+# Minimum: 2 GiB memory, 20 GiB storage.
+clickhouse:
+  image:
+    repository: clickhouse/clickhouse-server
+    tag: "24.3"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  # -- Persistent volume size for ClickHouse data
+  storage:
+    size: 20Gi
+    storageClassName: ""
+
+# NetworkPolicy controls OTLP ingress from all namespaces.
+networkPolicy:
+  # -- When true, create a NetworkPolicy allowing OTLP ingress on 4317/4318
+  # from all namespaces. Disable only if you manage NetworkPolicy externally.
+  create: true

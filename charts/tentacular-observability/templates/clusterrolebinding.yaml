@@ -1,0 +1,17 @@
+{{- if and .Values.observability.collector.create .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "tentacular-observability.fullname" . }}-collector
+  labels:
+    {{- include "tentacular-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "tentacular-observability.fullname" . }}-collector
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "tentacular-observability.serviceAccountName" . }}
+    namespace: {{ include "tentacular-observability.namespace" . }}
+{{- end }}

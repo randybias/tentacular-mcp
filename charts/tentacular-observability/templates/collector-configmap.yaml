@@ -1,0 +1,119 @@
+{{- if .Values.observability.collector.create }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tentacular-observability.fullname" . }}-collector
+  namespace: {{ include "tentacular-observability.namespace" . }}
+  labels:
+    {{- include "tentacular-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      # OTLP ingress from workflow pods and platform components.
+      otlp:
+        protocols:
+          grpc:
+            endpoint: "0.0.0.0:4317"
+          http:
+            endpoint: "0.0.0.0:4318"
+
+      # Kubernetes infrastructure metrics (admin dashboard).
+      kubeletstats:
+        collection_interval: 30s
+        auth_type: serviceAccount
+        endpoint: "${K8S_NODE_IP}:10250"
+        insecure_skip_verify: true
+        extra_metadata_labels:
+          - container.id
+        metric_groups:
+          - node
+          - pod
+          - container
+
+      # Cluster-level resource metrics.
+      k8s_cluster:
+        collection_interval: 30s
+        auth_type: serviceAccount
+
+    processors:
+      # Enrich spans/metrics/logs with Kubernetes metadata.
+      # The k8sattributes processor uses the collector's ServiceAccount to
+      # look up pod metadata from the Kubernetes API.
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        extract:
+          metadata:
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.namespace.name
+            - k8s.node.name
+            - k8s.deployment.name
+          labels:
+            - tag_name: tentacular.workflow.name
+              key: tentacular.io/workflow
+              from: pod
+            - tag_name: tentacular.enclave
+              key: tentacular.io/enclave
+              from: namespace
+        pod_association:
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.ip
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.uid
+          - sources:
+              - from: connection
+
+      # Batch telemetry before export to reduce network overhead.
+      batch:
+        send_batch_size: 512
+        timeout: 5s
+
+      # Redact common secret patterns from span attributes and log bodies.
+      # Defense-in-depth: primary protection is not logging secrets in the first place.
+      transform/redact-secrets:
+        error_mode: ignore
+        trace_statements:
+          - context: span
+            statements:
+              # Redact Bearer tokens
+              - replace_pattern(attributes["http.request.header.authorization"], "Bearer [A-Za-z0-9\\-._~+/]+=*", "Bearer [REDACTED]")
+              # Redact generic API keys in attribute values
+              - replace_pattern(attributes["api.key"], ".+", "[REDACTED]")
+        log_statements:
+          - context: log
+            statements:
+              # Redact JWT tokens (three base64 segments separated by dots)
+              - replace_pattern(body, "eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", "[JWT_REDACTED]")
+              # Redact Bearer tokens in log bodies
+              - replace_pattern(body, "Bearer [A-Za-z0-9\\-._~+/]+=*", "Bearer [REDACTED]")
+
+    exporters:
+      # Export to SigNoz (same namespace, known Service DNS).
+      # Replace this endpoint if using a different backend.
+      otlp/signoz:
+        endpoint: "{{ include "tentacular-observability.fullname" . }}-signoz:4317"
+        tls:
+          insecure: true
+
+    service:
+      telemetry:
+        logs:
+          level: warn
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [k8sattributes, transform/redact-secrets, batch]
+          exporters: [otlp/signoz]
+        metrics:
+          receivers: [otlp, kubeletstats, k8s_cluster]
+          processors: [k8sattributes, batch]
+          exporters: [otlp/signoz]
+        logs:
+          receivers: [otlp]
+          processors: [k8sattributes, transform/redact-secrets, batch]
+          exporters: [otlp/signoz]
+{{- end }}

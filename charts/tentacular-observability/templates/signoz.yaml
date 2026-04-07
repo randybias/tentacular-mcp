@@ -1,0 +1,59 @@
+{{- if and .Values.observability.collector.create .Values.observability.signoz.create }}
+{{- /*
+SigNoz deployment placeholder.
+
+Full SigNoz integration uses the official SigNoz Helm chart
+(https://github.com/SigNoz/charts). For production deployments, it is
+recommended to install SigNoz separately using:
+
+  helm repo add signoz https://charts.signoz.io
+  helm install signoz signoz/signoz \
+    --namespace tentacular-observability \
+    --set global.deploymentEnv=PRODUCTION \
+    --set frontend.service.type=ClusterIP
+
+Then configure the collector to forward to signoz-otel-collector:4317
+by updating the otlp/signoz exporter endpoint in the collector ConfigMap.
+
+The resources below are minimal stubs so that helm lint passes and
+cluster_profile can detect SigNoz via the service name. Replace with the
+full SigNoz chart subchart reference when ready.
+
+Resource requirements (SigNoz full stack):
+  - ClickHouse: minimum 2 GiB RAM, 20 GiB storage
+  - Query service: minimum 512 MiB RAM
+  - Frontend: minimum 128 MiB RAM
+  - Total: minimum 4 GiB RAM, 20 GiB storage
+  - Recommended: 8 GiB RAM, 50 GiB storage for production
+
+Google OAuth SSO (community edition):
+  Set signoz.auth.google.clientId and signoz.auth.google.clientSecret
+  in values. See SigNoz docs: https://signoz.io/docs/tutorial/sso-authentication
+*/}}
+---
+# Stub Service so that profileObservability() can detect SigNoz presence.
+# Replace with the full SigNoz chart deployment.
+apiVersion: v1
+kind: Service
+metadata:
+  name: signoz-query-service
+  namespace: {{ include "tentacular-observability.namespace" . }}
+  labels:
+    {{- include "tentacular-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: signoz
+  annotations:
+    tentacular.io/note: "Stub service — replace with full SigNoz Helm chart deployment"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: signoz-query-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+{{- end }}

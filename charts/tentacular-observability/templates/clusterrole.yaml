@@ -1,0 +1,33 @@
+{{- if and .Values.observability.collector.create .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "tentacular-observability.fullname" . }}-collector
+  labels:
+    {{- include "tentacular-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+rules:
+  # Required for kubeletstats receiver: read node stats from kubelet
+  - apiGroups: [""]
+    resources: ["nodes/stats", "nodes/proxy"]
+    verbs: ["get", "list", "watch"]
+  # Required for k8s_cluster receiver: enumerate cluster resources
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "namespaces", "endpoints", "services",
+                "replicationcontrollers", "resourcequotas", "persistentvolumeclaims",
+                "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets", "deployments", "replicasets", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  # Required for k8sattributes processor: look up pod metadata for enrichment
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+{{- end }}

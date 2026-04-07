@@ -37,6 +37,21 @@ type ExoskeletonInfo struct {
 	Enabled  bool                     `json:"enabled"`
 }
 
+// ObservabilityInfo describes the observability stack availability and endpoints.
+type ObservabilityInfo struct {
+	// CollectorEndpoint is the OTLP/HTTP endpoint for the OTel Collector
+	// (well-known DNS convention: otel-collector.tentacular-observability.svc.cluster.local:4318).
+	CollectorEndpoint string `json:"collectorEndpoint,omitempty"`
+	// Namespace is the namespace where the observability stack is deployed.
+	Namespace string `json:"namespace,omitempty"`
+	// CollectorReady is true when the otel-collector Service exists and has endpoints.
+	CollectorReady bool `json:"collectorReady"`
+	// SigNozAvailable is true when the SigNoz query frontend responds to its health check.
+	SigNozAvailable bool `json:"sigNozAvailable"`
+	// Available is true when the observability namespace and collector Service both exist.
+	Available bool `json:"available"`
+}
+
 // ClusterProfile contains a point-in-time capability snapshot of the cluster.
 type ClusterProfile struct {
 	GeneratedAt    time.Time          `json:"generatedAt"`
@@ -44,6 +59,7 @@ type ClusterProfile struct {
 	LimitRange     *LimitRangeSummary `json:"limitRange,omitempty"`
 	Quota          *QuotaSummary      `json:"quota,omitempty"`
 	Exoskeleton    *ExoskeletonInfo   `json:"exoskeleton,omitempty"`
+	Observability  *ObservabilityInfo `json:"observability,omitempty"`
 	K8sVersion     string             `json:"k8sVersion"`
 	Distribution   string             `json:"distribution"`
 	PodSecurity    string             `json:"podSecurity"`
@@ -176,6 +192,8 @@ func ProfileCluster(ctx context.Context, client *Client, namespace string) (*Clu
 	if err := profileNamespaceDetails(ctx, client, profile, namespace); err != nil {
 		return nil, err
 	}
+
+	profileObservability(ctx, client, profile)
 
 	profile.Guidance = deriveGuidance(profile)
 
@@ -559,6 +577,69 @@ func profileNamespaceDetails(ctx context.Context, client *Client, profile *Clust
 	}
 
 	return nil
+}
+
+// observabilityNamespace is the well-known namespace for the Tentacular
+// observability stack (OTel Collector + SigNoz).
+const observabilityNamespace = "tentacular-observability"
+
+// observabilityCollectorEndpoint is the OTLP/HTTP endpoint injected into
+// workflow pods via the exoskeleton enrichment pipeline.
+const observabilityCollectorEndpoint = "otel-collector.tentacular-observability.svc.cluster.local:4318"
+
+// profileObservability probes the tentacular-observability namespace for
+// the OTel Collector Service and SigNoz availability. It is non-fatal:
+// if the namespace does not exist, profile.Observability remains nil.
+// If the namespace exists but probes fail, Available is set to false and
+// a warning is appended.
+func profileObservability(ctx context.Context, client *Client, profile *ClusterProfile) {
+	// Check if the observability namespace exists.
+	_, err := client.Clientset.CoreV1().Namespaces().Get(ctx, observabilityNamespace, metav1.GetOptions{})
+	if err != nil {
+		// Namespace absent — observability not installed; silently skip.
+		return
+	}
+
+	info := &ObservabilityInfo{
+		Namespace:         observabilityNamespace,
+		CollectorEndpoint: observabilityCollectorEndpoint,
+	}
+
+	// Check whether the otel-collector Service exists.
+	svc, svcErr := client.Clientset.CoreV1().Services(observabilityNamespace).Get(ctx, "otel-collector", metav1.GetOptions{})
+	if svcErr != nil {
+		slog.Warn("observability: otel-collector Service not found",
+			"namespace", observabilityNamespace, "error", svcErr)
+		profile.Warnings = append(profile.Warnings,
+			fmt.Sprintf("observability: otel-collector Service not found in %s: %v", observabilityNamespace, svcErr))
+		profile.Observability = info
+		return
+	}
+
+	// Service exists — check whether it has a ClusterIP (i.e. it is not pending).
+	if svc.Spec.ClusterIP != "" && svc.Spec.ClusterIP != "None" {
+		info.Available = true
+		info.CollectorReady = true
+	} else {
+		slog.Warn("observability: otel-collector Service has no ClusterIP",
+			"namespace", observabilityNamespace)
+		profile.Warnings = append(profile.Warnings,
+			"observability: otel-collector Service exists but has no ClusterIP — collector may not be ready")
+	}
+
+	// Probe SigNoz: look for a Service with "signoz" or "query-service" in the name.
+	svcs, listErr := client.Clientset.CoreV1().Services(observabilityNamespace).List(ctx, metav1.ListOptions{})
+	if listErr == nil {
+		for _, s := range svcs.Items {
+			name := s.Name
+			if strings.Contains(name, "signoz") || strings.Contains(name, "query-service") {
+				info.SigNozAvailable = true
+				break
+			}
+		}
+	}
+
+	profile.Observability = info
 }
 
 func deriveGuidance(p *ClusterProfile) []string {
