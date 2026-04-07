@@ -470,6 +470,207 @@ func defaultPortForScheme(scheme string) string {
 	}
 }
 
+// otelVars is the list of OTel environment variable names that Deno
+// requires to export telemetry to the collector. This list is patched
+// into the Deployment's --allow-env flag so Deno can read them.
+var otelVars = []string{
+	"OTEL_DENO",
+	"OTEL_EXPORTER_OTLP_ENDPOINT",
+	"OTEL_EXPORTER_OTLP_PROTOCOL",
+	"OTEL_RESOURCE_ATTRIBUTES",
+	"OTEL_SERVICE_NAME",
+}
+
+// otelCollectorHost is the well-known DNS name for the OTel Collector
+// service inside the tentacular-observability namespace. Workflow pods
+// use this endpoint for OTLP/HTTP export on port 4318.
+const otelCollectorHost = "otel-collector.tentacular-observability.svc.cluster.local:4318"
+
+// patchDeploymentOTelEnv finds the Deployment manifest and appends OTel
+// environment variable names to --allow-env and the collector endpoint
+// to --allow-net so that Deno's native OTel export works inside gVisor.
+// The patch is unconditional — observability is a platform feature.
+// The function is idempotent: if the vars or host are already present,
+// they are not added again.
+func patchDeploymentOTelEnv(manifests []map[string]any) {
+	for _, m := range manifests {
+		obj := &unstructured.Unstructured{Object: m}
+		if obj.GetKind() != "Deployment" {
+			continue
+		}
+
+		containers, found, _ := unstructured.NestedSlice(obj.Object,
+			"spec", "template", "spec", "containers")
+		if !found || len(containers) == 0 {
+			return
+		}
+
+		container, ok := containers[0].(map[string]any)
+		if !ok {
+			return
+		}
+
+		// Patch --allow-env with OTel vars (args first, then command).
+		if patchAllowEnvInSlice(container, "args", otelVars) {
+			containers[0] = container
+			_ = unstructured.SetNestedSlice(obj.Object, containers,
+				"spec", "template", "spec", "containers")
+			slog.Info("exoskeleton: patched Deployment --allow-env with OTel vars in args")
+		} else if patchAllowEnvInSlice(container, "command", otelVars) {
+			containers[0] = container
+			_ = unstructured.SetNestedSlice(obj.Object, containers,
+				"spec", "template", "spec", "containers")
+			slog.Info("exoskeleton: patched Deployment --allow-env with OTel vars in command")
+		}
+
+		// Patch --allow-net with collector host.
+		if patchAllowNetInSlice(container, "args", []string{otelCollectorHost}) {
+			containers[0] = container
+			_ = unstructured.SetNestedSlice(obj.Object, containers,
+				"spec", "template", "spec", "containers")
+			slog.Info("exoskeleton: patched Deployment --allow-net with OTel collector in args")
+		} else if patchAllowNetInSlice(container, "command", []string{otelCollectorHost}) {
+			containers[0] = container
+			_ = unstructured.SetNestedSlice(obj.Object, containers,
+				"spec", "template", "spec", "containers")
+			slog.Info("exoskeleton: patched Deployment --allow-net with OTel collector in command")
+		}
+
+		return
+	}
+}
+
+// patchAllowEnvInSlice finds a --allow-env=... entry in the named string
+// slice field and appends any vars not already present. Returns true if
+// patching occurred.
+func patchAllowEnvInSlice(container map[string]any, field string, vars []string) bool {
+	rawSlice, ok := container[field]
+	if !ok {
+		return false
+	}
+	slice, ok := toStringSlice(rawSlice)
+	if !ok {
+		return false
+	}
+
+	patched := false
+	for i, arg := range slice {
+		if !strings.HasPrefix(arg, "--allow-env=") {
+			continue
+		}
+		existing := strings.TrimPrefix(arg, "--allow-env=")
+		existingSet := map[string]bool{}
+		if existing != "" {
+			for _, v := range strings.Split(existing, ",") {
+				existingSet[v] = true
+			}
+		}
+		var toAdd []string
+		for _, v := range vars {
+			if !existingSet[v] {
+				toAdd = append(toAdd, v)
+			}
+		}
+		if len(toAdd) == 0 {
+			return false // already present, idempotent
+		}
+		if existing == "" {
+			slice[i] = "--allow-env=" + strings.Join(toAdd, ",")
+		} else {
+			slice[i] = arg + "," + strings.Join(toAdd, ",")
+		}
+		result := make([]any, len(slice))
+		for j, s := range slice {
+			result[j] = s
+		}
+		container[field] = result
+		patched = true
+		break
+	}
+	return patched
+}
+
+// patchNetworkPolicyOTelEgress finds the workflow's NetworkPolicy manifest
+// and appends egress rules for the OTel Collector in the
+// tentacular-observability namespace on ports 4317 (gRPC) and 4318 (HTTP).
+// The patch is unconditional — observability is a platform feature.
+func patchNetworkPolicyOTelEgress(manifests []map[string]any, workflowName string) {
+	const observabilityNS = "tentacular-observability"
+
+	expectedName := workflowName + "-netpol"
+	var target map[string]any
+	for _, m := range manifests {
+		obj := &unstructured.Unstructured{Object: m}
+		if obj.GetKind() != "NetworkPolicy" {
+			continue
+		}
+		if obj.GetName() == expectedName {
+			target = m
+			break
+		}
+	}
+	if target == nil {
+		slog.Warn("exoskeleton: NetworkPolicy not found for OTel egress patch",
+			"expected", expectedName)
+		return
+	}
+
+	obj := &unstructured.Unstructured{Object: target}
+	egress, _, _ := unstructured.NestedSlice(obj.Object, "spec", "egress")
+	if egress == nil {
+		egress = []any{}
+	}
+
+	// Check if an OTel egress rule is already present (idempotent).
+	for _, e := range egress {
+		em, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+		ports, _, _ := unstructured.NestedSlice(em, "ports")
+		for _, p := range ports {
+			pm, ok := p.(map[string]any)
+			if !ok {
+				continue
+			}
+			if pm["port"] == int64(4318) || pm["port"] == int64(4317) {
+				slog.Info("exoskeleton: OTel egress rules already present, skipping")
+				return
+			}
+		}
+	}
+
+	rule := map[string]any{
+		"to": []any{
+			map[string]any{
+				"namespaceSelector": map[string]any{
+					"matchLabels": map[string]any{
+						"kubernetes.io/metadata.name": observabilityNS,
+					},
+				},
+			},
+		},
+		"ports": []any{
+			map[string]any{
+				"protocol": "TCP",
+				"port":     int64(4317),
+			},
+			map[string]any{
+				"protocol": "TCP",
+				"port":     int64(4318),
+			},
+		},
+	}
+	egress = append(egress, rule)
+
+	if err := unstructured.SetNestedSlice(obj.Object, egress, "spec", "egress"); err != nil {
+		slog.Warn("exoskeleton: failed to set OTel egress on NetworkPolicy", "error", err)
+		return
+	}
+	slog.Info("exoskeleton: patched NetworkPolicy OTel egress",
+		"namespace", observabilityNS, "ports", "4317,4318")
+}
+
 // patchDeploymentSpireVolume finds the Deployment manifest and adds the
 // SPIRE CSI volume and volumeMount so that the workload can receive an
 // X.509 SVID from the SPIRE agent.

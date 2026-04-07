@@ -258,6 +258,11 @@ func (c *Controller) ProcessManifests(ctx context.Context, namespace, name strin
 		}
 	}
 
+	// OTel enrichment: unconditional — observability is a platform feature
+	// regardless of whether exoskeleton services are registered.
+	patchDeploymentOTelEnv(manifests)
+	patchNetworkPolicyOTelEgress(manifests, name)
+
 	// SPIRE identity registration: creates a ClusterSPIFFEID so matching
 	// pods receive an X.509 SVID automatically. This does not produce
 	// credentials -- the SPIRE agent handles SVID provisioning.
