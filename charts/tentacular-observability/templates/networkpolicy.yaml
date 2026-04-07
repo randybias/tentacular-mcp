@@ -1,8 +1,12 @@
 {{- if .Values.networkPolicy.create }}
 {{- /*
-Allow OTLP ingress from all namespaces on ports 4317 (gRPC) and 4318 (HTTP).
-This NetworkPolicy is placed in the tentacular-observability namespace to
-allow workflow pods in enclave namespaces to reach the collector.
+Allow OTLP ingress from tentacle/enclave namespaces and the system namespace
+on ports 4317 (gRPC) and 4318 (HTTP).
+
+NOTE: We use explicit namespace selectors instead of namespaceSelector: {}
+(match-all) because kube-router silently drops match-all rules, which blocks
+all telemetry ingress. This matches the pattern used in tentacular-support's
+esm-sh NetworkPolicy.
 */}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -20,10 +24,22 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Allow OTLP from any namespace — all enclaves and platform components
-    # may send telemetry. The collector is a shared ingress point.
+    # Rule 1: Allow OTLP from all Tentacular-managed namespaces (enclaves).
+    # kube-router requires explicit selectors; namespaceSelector: {} is silently dropped.
     - from:
-        - namespaceSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/managed-by: tentacular
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    # Rule 2: Allow OTLP from the system namespace (MCP server, platform components).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tentacular-system
       ports:
         - protocol: TCP
           port: 4317
