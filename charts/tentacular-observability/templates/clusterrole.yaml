@@ -9,7 +9,7 @@ metadata:
 rules:
   # Required for kubeletstats receiver: read node stats from kubelet
   - apiGroups: [""]
-    resources: ["nodes/stats"]
+    resources: ["nodes/stats", "nodes/proxy"]
     verbs: ["get", "list", "watch"]
   # Required for k8s_cluster receiver: enumerate cluster resources
   - apiGroups: [""]
@@ -22,6 +22,9 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
     verbs: ["get", "list", "watch"]
   # Required for k8sattributes processor: look up pod metadata for enrichment
   - apiGroups: [""]
