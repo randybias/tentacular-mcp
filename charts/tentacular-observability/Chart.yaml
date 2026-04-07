@@ -1,0 +1,19 @@
+apiVersion: v2
+name: tentacular-observability
+description: Observability stack for Tentacular — OTel Collector gateway and SigNoz backend
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+icon: https://raw.githubusercontent.com/randybias/tentacular/main/assets/logo.png
+home: https://github.com/randybias/tentacular-mcp
+sources:
+  - https://github.com/randybias/tentacular-mcp
+maintainers:
+  - name: Randy Bias
+    url: https://github.com/randybias
+keywords:
+  - kubernetes
+  - observability
+  - opentelemetry
+  - signoz
+  - otel

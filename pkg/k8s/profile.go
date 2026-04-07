@@ -587,9 +587,6 @@ const observabilityNamespace = "tentacular-observability"
 // workflow pods via the exoskeleton enrichment pipeline.
 const observabilityCollectorEndpoint = "otel-collector.tentacular-observability.svc.cluster.local:4318"
 
-// sigNozHealthPath is the SigNoz query frontend health check endpoint.
-const sigNozHealthPath = "/api/v1/health"
-
 // profileObservability probes the tentacular-observability namespace for
 // the OTel Collector Service and SigNoz availability. It is non-fatal:
 // if the namespace does not exist, profile.Observability remains nil.

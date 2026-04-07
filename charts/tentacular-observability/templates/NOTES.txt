@@ -1,0 +1,44 @@
+Tentacular Observability Stack
+
+Installed in namespace: tentacular-observability
+
+{{- if .Values.observability.collector.create }}
+
+OTel Collector deployed. Well-known DNS endpoint:
+  otel-collector.tentacular-observability.svc.cluster.local:4318 (HTTP)
+  otel-collector.tentacular-observability.svc.cluster.local:4317 (gRPC)
+
+Workflow pods automatically receive this endpoint via exoskeleton enrichment.
+{{- else }}
+
+BYO mode: OTel Collector NOT deployed.
+
+To use your own backend, create a Service named "otel-collector" in the
+tentacular-observability namespace. Options:
+
+  ExternalName (in-cluster collector):
+    kubectl -n tentacular-observability create service externalname otel-collector \
+      --external-name my-collector.monitoring.svc.cluster.local
+
+  Manual Endpoints (external IP):
+    See the Tentacular docs "Bring Your Own Observability" guide.
+{{- end }}
+
+{{- if and .Values.observability.collector.create .Values.observability.signoz.create }}
+
+SigNoz: stub service created at signoz-query-service:8080
+
+NOTE: Full SigNoz integration is pending. For production use, install
+SigNoz using the official Helm chart and update the collector ConfigMap's
+otlp/signoz exporter endpoint.
+
+  helm repo add signoz https://charts.signoz.io
+  helm install signoz signoz/signoz --namespace tentacular-observability
+{{- end }}
+
+Verify the stack:
+  kubectl -n tentacular-observability get pods
+  kubectl -n tentacular-observability get svc
+
+Run cluster profile to check observability status:
+  tntc cluster profile

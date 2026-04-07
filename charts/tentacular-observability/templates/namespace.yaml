@@ -1,0 +1,14 @@
+{{- /*
+The tentacular-observability namespace is always created by this chart.
+It satisfies the well-known DNS contract for the otel-collector Service.
+Even in BYO mode (observability.collector.create=false), the namespace must
+exist so that users can create their own otel-collector Service.
+*/}}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "tentacular-observability.namespace" . }}
+  labels:
+    {{- include "tentacular-observability.labels" . | nindent 4 }}
+    kubernetes.io/metadata.name: tentacular-observability
+    app.kubernetes.io/component: observability

@@ -1,0 +1,31 @@
+{{- if .Values.observability.collector.create }}
+{{- /*
+CRITICAL: This Service MUST be named "otel-collector" in namespace
+"tentacular-observability". This is the well-known DNS contract:
+  otel-collector.tentacular-observability.svc.cluster.local
+All workflow pods have this endpoint injected via exoskeleton enrichment.
+Do NOT rename this Service.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: {{ include "tentacular-observability.namespace" . }}
+  labels:
+    {{- include "tentacular-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "tentacular-observability.name" . }}-collector
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+      protocol: TCP
+{{- end }}
