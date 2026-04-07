@@ -859,3 +859,112 @@ func TestExoskeletonInfo_SPIFFEEnabledOmittedWhenFalse(t *testing.T) {
 		t.Error("expected spiffeEnabled to be omitted when false")
 	}
 }
+
+// ---------- profileObservability ----------
+
+func TestProfileObservability_NamespaceAbsent(t *testing.T) {
+	cs := kubefake.NewClientset()
+	client := &Client{Clientset: cs, Config: &rest.Config{}}
+	profile := &ClusterProfile{}
+
+	profileObservability(context.Background(), client, profile)
+
+	if profile.Observability != nil {
+		t.Error("expected Observability to be nil when namespace absent")
+	}
+}
+
+func TestProfileObservability_NamespacePresentCollectorAbsent(t *testing.T) {
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: observabilityNamespace},
+	}
+	cs := kubefake.NewClientset(ns)
+	client := &Client{Clientset: cs, Config: &rest.Config{}}
+	profile := &ClusterProfile{}
+
+	profileObservability(context.Background(), client, profile)
+
+	if profile.Observability == nil {
+		t.Fatal("expected Observability to be non-nil when namespace exists")
+	}
+	if profile.Observability.Available {
+		t.Error("expected Available=false when collector Service absent")
+	}
+	if len(profile.Warnings) == 0 {
+		t.Error("expected warning when collector Service absent")
+	}
+}
+
+func TestProfileObservability_CollectorPresent(t *testing.T) {
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: observabilityNamespace},
+	}
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "otel-collector",
+			Namespace: observabilityNamespace,
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "10.96.100.1",
+			Ports: []corev1.ServicePort{
+				{Port: 4318},
+				{Port: 4317},
+			},
+		},
+	}
+	cs := kubefake.NewClientset(ns, svc)
+	client := &Client{Clientset: cs, Config: &rest.Config{}}
+	profile := &ClusterProfile{}
+
+	profileObservability(context.Background(), client, profile)
+
+	if profile.Observability == nil {
+		t.Fatal("expected Observability to be non-nil")
+	}
+	if !profile.Observability.Available {
+		t.Error("expected Available=true when collector Service exists with ClusterIP")
+	}
+	if !profile.Observability.CollectorReady {
+		t.Error("expected CollectorReady=true")
+	}
+	if profile.Observability.CollectorEndpoint != observabilityCollectorEndpoint {
+		t.Errorf("expected CollectorEndpoint %q, got %q",
+			observabilityCollectorEndpoint, profile.Observability.CollectorEndpoint)
+	}
+	if profile.Observability.Namespace != observabilityNamespace {
+		t.Errorf("expected Namespace %q, got %q",
+			observabilityNamespace, profile.Observability.Namespace)
+	}
+}
+
+func TestProfileObservability_SigNozDetected(t *testing.T) {
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: observabilityNamespace},
+	}
+	collectorSvc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "otel-collector",
+			Namespace: observabilityNamespace,
+		},
+		Spec: corev1.ServiceSpec{ClusterIP: "10.96.100.1"},
+	}
+	sigNozSvc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "signoz-query-service",
+			Namespace: observabilityNamespace,
+		},
+		Spec: corev1.ServiceSpec{ClusterIP: "10.96.100.2"},
+	}
+	cs := kubefake.NewClientset(ns, collectorSvc, sigNozSvc)
+	client := &Client{Clientset: cs, Config: &rest.Config{}}
+	profile := &ClusterProfile{}
+
+	profileObservability(context.Background(), client, profile)
+
+	if profile.Observability == nil {
+		t.Fatal("expected Observability to be non-nil")
+	}
+	if !profile.Observability.SigNozAvailable {
+		t.Error("expected SigNozAvailable=true when signoz service exists")
+	}
+}
