@@ -648,6 +648,11 @@ func patchNetworkPolicyOTelEgress(manifests []map[string]any, workflowName strin
 						"kubernetes.io/metadata.name": observabilityNS,
 					},
 				},
+				"podSelector": map[string]any{
+					"matchLabels": map[string]any{
+						"app.kubernetes.io/component": "collector",
+					},
+				},
 			},
 		},
 		"ports": []any{

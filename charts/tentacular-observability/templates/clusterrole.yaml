@@ -9,7 +9,7 @@ metadata:
 rules:
   # Required for kubeletstats receiver: read node stats from kubelet
   - apiGroups: [""]
-    resources: ["nodes/stats", "nodes/proxy"]
+    resources: ["nodes/stats"]
     verbs: ["get", "list", "watch"]
   # Required for k8s_cluster receiver: enumerate cluster resources
   - apiGroups: [""]
