@@ -470,6 +470,35 @@ func defaultPortForScheme(scheme string) string {
 	}
 }
 
+// patchDeploymentWorkflowLabel sets the tentacular.io/workflow label on
+// the pod template so the k8sattributes OTel processor can extract it
+// as the tentacular.workflow.name resource attribute on spans.
+func patchDeploymentWorkflowLabel(manifests []map[string]any, workflowName string) {
+	for _, m := range manifests {
+		obj := &unstructured.Unstructured{Object: m}
+		if obj.GetKind() != "Deployment" {
+			continue
+		}
+
+		labels, _, _ := unstructured.NestedStringMap(obj.Object,
+			"spec", "template", "metadata", "labels")
+		if labels == nil {
+			labels = map[string]string{}
+		}
+
+		if labels["tentacular.io/workflow"] == workflowName {
+			return // already set
+		}
+
+		labels["tentacular.io/workflow"] = workflowName
+		_ = unstructured.SetNestedStringMap(obj.Object, labels,
+			"spec", "template", "metadata", "labels")
+		slog.Info("exoskeleton: patched pod template with tentacular.io/workflow label",
+			"workflow", workflowName)
+		return
+	}
+}
+
 // otelVars is the list of OTel environment variable names that Deno
 // requires to export telemetry to the collector. This list is patched
 // into the Deployment's --allow-env flag so Deno can read them.
