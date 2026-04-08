@@ -346,6 +346,13 @@ keycloakx:
   extraEnvFrom: |
     - secretRef:
         name: tentacular-keycloak-admin
+  # -- Wire the PostgreSQL hostname from the umbrella chart's bundled instance.
+  # Uses tpl so .Release.Name resolves to the actual Helm release name at render time.
+  # KC_DB_URL_HOST overrides keycloakx.database.hostname (which defaults to localhost
+  # when empty, causing Keycloak to fail to connect to PostgreSQL).
+  extraEnv: |
+    - name: KC_DB_URL_HOST
+      value: {{ .Release.Name }}-postgresql.tentacular-exoskeleton.svc.cluster.local
   # -- Mount realm import JSON from ConfigMap
   extraVolumes: |
     - name: realm-import
