@@ -63,3 +63,25 @@ Namespace name helpers - resolve configured namespace names with defaults.
 {{- define "tentacular-platform.namespace.support" -}}
 {{- default "tentacular-support" .Values.namespaces.support.name }}
 {{- end }}
+
+{{/*
+esm-sh selector labels — match the well-known labels expected by tntc-generated
+workflow NetworkPolicy egress rules and the MCP proxy reconciler.
+*/}}
+{{- define "tentacular-platform.esm-sh.selectorLabels" -}}
+app.kubernetes.io/managed-by: tentacular
+app.kubernetes.io/name: esm-sh
+app.kubernetes.io/component: module-proxy
+{{- end }}
+
+{{/*
+esm-sh labels — full set including Helm metadata.
+*/}}
+{{- define "tentacular-platform.esm-sh.labels" -}}
+{{ include "tentacular-platform.esm-sh.selectorLabels" . }}
+helm.sh/chart: {{ include "tentacular-platform.chart" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
