@@ -9,12 +9,11 @@ import (
 
 // helpers
 
-func oidcDeployer(sub, email string, groups ...string) *exoskeleton.DeployerInfo {
+func oidcDeployer(sub, email string, _ ...string) *exoskeleton.DeployerInfo {
 	return &exoskeleton.DeployerInfo{
 		Subject:  sub,
 		Email:    email,
 		Provider: "keycloak",
-		Groups:   groups,
 	}
 }
 

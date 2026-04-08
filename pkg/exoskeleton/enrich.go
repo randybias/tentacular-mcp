@@ -744,7 +744,6 @@ func patchDeploymentSpireVolume(manifests []map[string]any) {
 // AnnotateDeployerParams holds the parameters for AnnotateDeployer.
 type AnnotateDeployerParams struct {
 	ExistingAnnotations map[string]string
-	Group               string
 	Mode                string
 	Deployer            DeployerInfo
 	IsUpdate            bool
@@ -784,7 +783,7 @@ func (*Controller) AnnotateDeployer(manifests []map[string]any, p AnnotateDeploy
 			// Carry forward ownership annotations from existing deployment.
 			ownershipKeys := []string{
 				"tentacular.io/owner", "tentacular.io/owner-sub", "tentacular.io/owner-email",
-				"tentacular.io/owner-name", "tentacular.io/group",
+				"tentacular.io/owner-name",
 				"tentacular.io/mode", "tentacular.io/created-at",
 			}
 			for _, k := range ownershipKeys {
@@ -792,16 +791,13 @@ func (*Controller) AnnotateDeployer(manifests []map[string]any, p AnnotateDeploy
 					ann[k] = v
 				}
 			}
-			// Allow explicit group/mode params to override on update, but only if
+			// Allow explicit mode params to override on update, but only if
 			// the caller is the owner or bearer-token. This prevents group members
-			// with Write access from changing permissions via wf_apply --group/--share.
+			// with Write access from changing permissions via wf_apply --share.
 			isOwnerOrBearer := p.Deployer.Provider == "bearer-token" ||
 				p.ExistingAnnotations["tentacular.io/owner"] == "" ||
 				(p.Deployer.Email != "" && p.Deployer.Email == p.ExistingAnnotations["tentacular.io/owner"])
 			if isOwnerOrBearer {
-				if p.Group != "" {
-					ann["tentacular.io/group"] = p.Group
-				}
 				if p.Mode != "" {
 					ann["tentacular.io/mode"] = p.Mode
 				}
@@ -821,7 +817,6 @@ func (*Controller) AnnotateDeployer(manifests []map[string]any, p AnnotateDeploy
 			}
 			ann["tentacular.io/owner-email"] = p.Deployer.Email
 			ann["tentacular.io/owner-name"] = p.Deployer.DisplayName
-			ann["tentacular.io/group"] = p.Group
 			ann["tentacular.io/mode"] = p.Mode
 		}
 

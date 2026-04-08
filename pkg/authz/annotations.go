@@ -17,7 +17,10 @@ const (
 	AnnotationOwnerName = "tentacular.io/owner-name"
 
 	// AnnotationGroup is the single IdP group assigned to this resource.
-	// Group-bit evaluation: slices.Contains(caller.Groups, annotation[AnnotationGroup]).
+	// DEPRECATED: Not written on new deploys since v0.9.0. Enclave membership
+	// (AnnotationEnclaveMembers) replaced organizational groups for authz.
+	// Read path retained for backward compatibility with pre-v0.9.0 deployments.
+	// Write-deprecated: retained for backward-compatible reads from existing deployments.
 	AnnotationGroup = "tentacular.io/group"
 
 	// AnnotationMode is the permission string (e.g. "rwxr-x---").
@@ -89,30 +92,25 @@ func GetAnnotation(annotations map[string]string, newKey string) string {
 
 // WriteOwnerAnnotations returns a map of annotation key→value for the authz
 // fields to be stamped onto a Deployment at deploy time.
-func WriteOwnerAnnotations(ownerSub, ownerEmail, ownerName, group string, mode Mode) map[string]string {
+func WriteOwnerAnnotations(ownerSub, ownerEmail, ownerName string, mode Mode) map[string]string {
 	return map[string]string{
 		AnnotationOwner:      ownerEmail,
 		AnnotationOwnerSub:   ownerSub,
 		AnnotationOwnerEmail: ownerEmail,
 		AnnotationOwnerName:  ownerName,
-		AnnotationGroup:      group,
 		AnnotationMode:       mode.String(),
 	}
 }
 
 // WriteNamespaceAnnotations returns a map of annotation key→value for the authz
 // fields to be stamped onto a Namespace at creation time.
-func WriteNamespaceAnnotations(ownerSub, ownerEmail, ownerName, group string, mode Mode, defaultGroup string, defaultMode Mode) map[string]string {
+func WriteNamespaceAnnotations(ownerSub, ownerEmail, ownerName string, mode, defaultMode Mode) map[string]string {
 	annotations := map[string]string{
 		AnnotationOwner:      ownerEmail,
 		AnnotationOwnerSub:   ownerSub,
 		AnnotationOwnerEmail: ownerEmail,
 		AnnotationOwnerName:  ownerName,
-		AnnotationGroup:      group,
 		AnnotationMode:       mode.String(),
-	}
-	if defaultGroup != "" {
-		annotations[AnnotationDefaultGroup] = defaultGroup
 	}
 	if defaultMode != 0 {
 		annotations[AnnotationDefaultMode] = defaultMode.String()

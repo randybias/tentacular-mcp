@@ -235,7 +235,6 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 			}
 			params.Manifests = exoCtrl.AnnotateDeployer(params.Manifests, exoskeleton.AnnotateDeployerParams{
 				Deployer:            annotateDeployer,
-				Group:               "",
 				Mode:                mode,
 				IsUpdate:            isUpdate,
 				ExistingAnnotations: existingAnnotations,
