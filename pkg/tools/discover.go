@@ -2,7 +2,9 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/randybias/tentacular-mcp/pkg/auth"
@@ -35,6 +38,28 @@ type minimalTrigger struct {
 
 type minimalNode struct {
 	Path string `yaml:"path"`
+}
+
+// SidecarMeta is a minimal representation of a sidecar container captured at build time.
+type SidecarMeta struct {
+	Name  string `json:"name"`
+	Image string `json:"image"`
+	Port  int    `json:"port"`
+}
+
+// DependencyMeta is a minimal representation of a contract dependency.
+type DependencyMeta struct {
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
+	Managed  bool   `json:"managed"`
+}
+
+// GitProvenance holds git state captured at build time for audit and reproducibility.
+type GitProvenance struct {
+	Commit string `json:"commit"`
+	Branch string `json:"branch"`
+	Repo   string `json:"repo,omitempty"`
+	Dirty  bool   `json:"dirty"`
 }
 
 // WfListParams are the parameters for wf_list.
@@ -73,29 +98,41 @@ type WfDescribeParams struct {
 
 // WfDescribeResult is the result of wf_describe.
 type WfDescribeResult struct {
-	Annotations    map[string]string `json:"annotations,omitempty"`
-	DeployedVia    string            `json:"deployed_via,omitempty"`
-	Age            string            `json:"age"`
-	Owner          string            `json:"owner,omitempty"`
-	OwnerName      string            `json:"owner_name,omitempty"`
-	Group          string            `json:"group,omitempty"`
-	Mode           string            `json:"mode,omitempty"`
-	Preset         string            `json:"preset,omitempty"`
-	Namespace      string            `json:"namespace"`
-	Environment    string            `json:"environment,omitempty"`
-	DeployedBy     string            `json:"deployed_by,omitempty"`
-	Name           string            `json:"name"`
-	Version        string            `json:"version"`
-	Image          string            `json:"image"`
-	DeployedAt     string            `json:"deployed_at,omitempty"`
-	EnclaveOwner   string            `json:"enclave_owner,omitempty"`
-	Nodes          []string          `json:"nodes,omitempty"`
-	Triggers       []string          `json:"triggers,omitempty"`
-	Tags           []string          `json:"tags,omitempty"`
-	EnclaveMembers []string          `json:"enclave_members,omitempty"`
-	ReadyReplicas  int32             `json:"ready_replicas"`
-	Replicas       int32             `json:"replicas"`
-	Ready          bool              `json:"ready"`
+	Annotations   map[string]string `json:"annotations,omitempty"`
+	GitProvenance *GitProvenance    `json:"git_provenance,omitempty"`
+	DeployedBy    string            `json:"deployed_by,omitempty"`
+	Image         string            `json:"image"`
+	OwnerName     string            `json:"owner_name,omitempty"`
+	Group         string            `json:"group,omitempty"`
+	Mode          string            `json:"mode,omitempty"`
+	Preset        string            `json:"preset,omitempty"`
+	Namespace     string            `json:"namespace"`
+	Environment   string            `json:"environment,omitempty"`
+	TriggerType   string            `json:"trigger_type,omitempty"`
+	Name          string            `json:"name"`
+	Version       string            `json:"version"`
+	Owner         string            `json:"owner,omitempty"`
+	DeployedAt    string            `json:"deployed_at,omitempty"`
+	EnclaveOwner  string            `json:"enclave_owner,omitempty"`
+	Age           string            `json:"age"`
+	DeployedVia   string            `json:"deployed_via,omitempty"`
+	ParamsSchema  string            `json:"params_schema,omitempty"`
+	// ContractSummary maps to the "contract" key in the metadata ConfigMap.
+	// The field name is more descriptive for API consumers.
+	ContractSummary string           `json:"contract_summary,omitempty"`
+	Readme          string           `json:"readme,omitempty"`
+	MetadataRef     string           `json:"metadata_ref,omitempty"`
+	ScaffoldName    string           `json:"scaffold_name,omitempty"`
+	Nodes           []string         `json:"nodes,omitempty"`
+	Sidecars        []SidecarMeta    `json:"sidecars,omitempty"`
+	Dependencies    []DependencyMeta `json:"dependencies,omitempty"`
+	Edges           [][2]string      `json:"edges,omitempty"`
+	EnclaveMembers  []string         `json:"enclave_members,omitempty"`
+	Tags            []string         `json:"tags,omitempty"`
+	Triggers        []string         `json:"triggers,omitempty"`
+	Replicas        int32            `json:"replicas"`
+	ReadyReplicas   int32            `json:"ready_replicas"`
+	Ready           bool             `json:"ready"`
 }
 
 func registerDiscoverTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
@@ -324,37 +361,149 @@ func handleWfDescribe(ctx context.Context, client *k8s.Client, params WfDescribe
 		EnclaveMembers: enclaveInfo.Members,
 	}
 
-	// Attempt to enrich from the workflow ConfigMap (best-effort, non-fatal)
+	// --- Tier 1: metadata annotations written by the builder ---
+	// All parsing is best-effort; invalid JSON is logged and skipped.
+	if raw := ann["tentacular.io/nodes"]; raw != "" {
+		var nodeNames []string
+		if parseErr := json.Unmarshal([]byte(raw), &nodeNames); parseErr == nil {
+			result.Nodes = nodeNames
+		} else {
+			slog.Warn("wf_describe: invalid JSON in tentacular.io/nodes annotation", "deployment", params.Name, "error", parseErr)
+		}
+	}
+
+	if raw := ann["tentacular.io/edges"]; raw != "" {
+		var edges [][2]string
+		if parseErr := json.Unmarshal([]byte(raw), &edges); parseErr == nil {
+			result.Edges = edges
+		} else {
+			slog.Warn("wf_describe: invalid JSON in tentacular.io/edges annotation", "deployment", params.Name, "error", parseErr)
+		}
+	}
+
+	if raw := ann["tentacular.io/sidecars"]; raw != "" {
+		var sidecars []SidecarMeta
+		if parseErr := json.Unmarshal([]byte(raw), &sidecars); parseErr == nil {
+			result.Sidecars = sidecars
+		} else {
+			slog.Warn("wf_describe: invalid JSON in tentacular.io/sidecars annotation", "deployment", params.Name, "error", parseErr)
+		}
+	}
+
+	if raw := ann["tentacular.io/dependencies"]; raw != "" {
+		var deps []DependencyMeta
+		if parseErr := json.Unmarshal([]byte(raw), &deps); parseErr == nil {
+			result.Dependencies = deps
+		} else {
+			slog.Warn("wf_describe: invalid JSON in tentacular.io/dependencies annotation", "deployment", params.Name, "error", parseErr)
+		}
+	}
+
+	if raw := ann["tentacular.io/trigger-type"]; raw != "" {
+		result.TriggerType = raw
+	}
+
+	if raw := ann["tentacular.io/scaffold-name"]; raw != "" {
+		result.ScaffoldName = raw
+	}
+
+	if raw := ann["tentacular.io/metadata-ref"]; raw != "" {
+		result.MetadataRef = raw
+	}
+
+	// Track whether the annotation provided a version — used below to decide whether
+	// the ConfigMap version should override the label-derived version.
+	annotationVersion := ann["tentacular.io/version"]
+	if annotationVersion != "" {
+		// Annotation version (semver+git from builder) takes highest priority.
+		result.Version = annotationVersion
+	}
+
+	// --- Existing code ConfigMap enrichment (fallback for pre-metadata deployments) ---
+	// Only parse the code ConfigMap if nodes/triggers were not populated from annotations.
 	cmName := params.Name + "-code"
 	cm, err := client.Clientset.CoreV1().ConfigMaps(params.Namespace).Get(ctx, cmName, metav1.GetOptions{})
 	if err == nil {
 		if yamlData, ok := cm.Data["workflow.yaml"]; ok {
 			var wf minimalWorkflow
 			if parseErr := yaml.Unmarshal([]byte(yamlData), &wf); parseErr == nil {
-				if wf.Version != "" {
+				// ConfigMap version overrides label-derived version,
+				// but not annotation-derived version (annotation is highest priority).
+				if annotationVersion == "" && wf.Version != "" {
 					result.Version = wf.Version
 				}
 
-				nodeNames := make([]string, 0, len(wf.Nodes))
-				for name := range wf.Nodes {
-					nodeNames = append(nodeNames, name)
-				}
-				sort.Strings(nodeNames)
-				if len(nodeNames) > 0 {
-					result.Nodes = nodeNames
+				// Nodes: use annotation-derived value if present; fall back to YAML parse.
+				if len(result.Nodes) == 0 {
+					nodeNames := make([]string, 0, len(wf.Nodes))
+					for name := range wf.Nodes {
+						nodeNames = append(nodeNames, name)
+					}
+					sort.Strings(nodeNames)
+					if len(nodeNames) > 0 {
+						result.Nodes = nodeNames
+					}
 				}
 
-				triggerDescs := make([]string, 0, len(wf.Triggers))
-				for _, t := range wf.Triggers {
-					desc := t.Type
-					if t.Schedule != "" {
-						desc += " " + t.Schedule
+				// Triggers: fall back to YAML parse if TriggerType annotation is absent.
+				if len(result.Triggers) == 0 {
+					triggerDescs := make([]string, 0, len(wf.Triggers))
+					for _, t := range wf.Triggers {
+						desc := t.Type
+						if t.Schedule != "" {
+							desc += " " + t.Schedule
+						}
+						triggerDescs = append(triggerDescs, desc)
 					}
-					triggerDescs = append(triggerDescs, desc)
+					if len(triggerDescs) > 0 {
+						result.Triggers = triggerDescs
+					}
 				}
-				if len(triggerDescs) > 0 {
-					result.Triggers = triggerDescs
-				}
+			}
+		}
+	}
+
+	// --- Tier 2: metadata ConfigMap written by the builder ---
+	// Missing ConfigMap is non-fatal (old deployments won't have one).
+	// Only attempt the lookup if the deployment has an explicit metadata-ref annotation
+	// or at least one other metadata annotation (e.g. tentacular.io/nodes), which
+	// indicates it was built with the metadata-aware builder. This avoids a
+	// unnecessary API call for every pre-metadata deployment.
+	metadataRef := result.MetadataRef
+	hasMetadataAnnotations := metadataRef != "" ||
+		ann["tentacular.io/nodes"] != "" ||
+		ann["tentacular.io/edges"] != "" ||
+		ann["tentacular.io/sidecars"] != "" ||
+		ann["tentacular.io/dependencies"] != "" ||
+		ann["tentacular.io/trigger-type"] != "" ||
+		ann["tentacular.io/scaffold-name"] != ""
+	if metadataRef == "" {
+		metadataRef = params.Name + "-metadata"
+	}
+	var metaCM *corev1.ConfigMap
+	var metaErr error
+	if hasMetadataAnnotations {
+		metaCM, metaErr = client.Clientset.CoreV1().ConfigMaps(params.Namespace).Get(
+			ctx, metadataRef, metav1.GetOptions{},
+		)
+	}
+	if metaErr == nil && metaCM != nil && metaCM.Data != nil {
+		if v, ok := metaCM.Data["readme"]; ok {
+			result.Readme = v
+		}
+		// ConfigMap key "contract" → API field "contract_summary"
+		if v, ok := metaCM.Data["contract"]; ok {
+			result.ContractSummary = v
+		}
+		if v, ok := metaCM.Data["params_schema"]; ok {
+			result.ParamsSchema = v
+		}
+		if v, ok := metaCM.Data["git_provenance"]; ok {
+			var prov GitProvenance
+			if jsonErr := json.Unmarshal([]byte(v), &prov); jsonErr == nil {
+				result.GitProvenance = &prov
+			} else {
+				slog.Warn("wf_describe: invalid JSON in git_provenance ConfigMap key", "deployment", params.Name, "error", jsonErr)
 			}
 		}
 	}

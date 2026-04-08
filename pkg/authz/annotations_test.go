@@ -137,7 +137,7 @@ func TestReadOwnerInfo_PresetNameSet(t *testing.T) {
 
 func TestWriteOwnerAnnotations_AllFields(t *testing.T) {
 	mode := ModeOwnerRead | ModeOwnerWrite | ModeOwnerExecute | ModeGroupRead | ModeGroupExecute
-	ann := WriteOwnerAnnotations("sub-abc", "alice@example.com", "Alice", "platform", mode)
+	ann := WriteOwnerAnnotations("sub-abc", "alice@example.com", "Alice", mode)
 
 	if ann[AnnotationOwnerSub] != "sub-abc" {
 		t.Errorf("owner-sub = %q", ann[AnnotationOwnerSub])
@@ -148,8 +148,9 @@ func TestWriteOwnerAnnotations_AllFields(t *testing.T) {
 	if ann[AnnotationOwnerName] != "Alice" {
 		t.Errorf("owner-name = %q", ann[AnnotationOwnerName])
 	}
-	if ann[AnnotationGroup] != "platform" {
-		t.Errorf("group = %q", ann[AnnotationGroup])
+	// AnnotationGroup is deprecated; WriteOwnerAnnotations no longer writes it.
+	if _, ok := ann[AnnotationGroup]; ok {
+		t.Errorf("group annotation should not be written by WriteOwnerAnnotations")
 	}
 	if ann[AnnotationMode] != mode.String() {
 		t.Errorf("mode = %q, want %q", ann[AnnotationMode], mode.String())
@@ -158,7 +159,7 @@ func TestWriteOwnerAnnotations_AllFields(t *testing.T) {
 
 func TestWriteOwnerAnnotations_RoundTrip(t *testing.T) {
 	mode := ModeOwnerRead | ModeOwnerWrite | ModeOwnerExecute
-	ann := WriteOwnerAnnotations("sub-test", "bob@example.com", "Bob", "ops-team", mode)
+	ann := WriteOwnerAnnotations("sub-test", "bob@example.com", "Bob", mode)
 
 	// Read back the annotations and verify they round-trip correctly.
 	info := ReadOwnerInfo(ann)
@@ -171,8 +172,9 @@ func TestWriteOwnerAnnotations_RoundTrip(t *testing.T) {
 	if info.OwnerName != "Bob" {
 		t.Errorf("round-trip OwnerName = %q", info.OwnerName)
 	}
-	if info.Group != "ops-team" {
-		t.Errorf("round-trip Group = %q", info.Group)
+	// Group is no longer written; should be empty after round-trip through write+read.
+	if info.Group != "" {
+		t.Errorf("round-trip Group should be empty (no longer written), got %q", info.Group)
 	}
 	if info.Mode != mode {
 		t.Errorf("round-trip Mode = %v, want %v", info.Mode.String(), mode.String())
@@ -180,13 +182,17 @@ func TestWriteOwnerAnnotations_RoundTrip(t *testing.T) {
 }
 
 func TestWriteOwnerAnnotations_EmptyValues(t *testing.T) {
-	ann := WriteOwnerAnnotations("", "", "", "", 0)
+	ann := WriteOwnerAnnotations("", "", "", 0)
 
-	// All keys should be present even with empty/zero values.
-	for _, key := range []string{AnnotationOwnerSub, AnnotationOwnerEmail, AnnotationOwnerName, AnnotationGroup, AnnotationMode} {
+	// All active keys should be present even with empty/zero values.
+	for _, key := range []string{AnnotationOwnerSub, AnnotationOwnerEmail, AnnotationOwnerName, AnnotationMode} {
 		if _, ok := ann[key]; !ok {
 			t.Errorf("expected key %q to be present even with empty value", key)
 		}
+	}
+	// AnnotationGroup should NOT be present — no longer written.
+	if _, ok := ann[AnnotationGroup]; ok {
+		t.Errorf("AnnotationGroup should not be written by WriteOwnerAnnotations")
 	}
 	if ann[AnnotationMode] != "---------" {
 		t.Errorf("mode for zero Mode should be '---------', got %q", ann[AnnotationMode])
@@ -194,7 +200,7 @@ func TestWriteOwnerAnnotations_EmptyValues(t *testing.T) {
 }
 
 func TestWriteOwnerAnnotations_UsesNewPrefix(t *testing.T) {
-	ann := WriteOwnerAnnotations("s", "e", "n", "g", DefaultMode)
+	ann := WriteOwnerAnnotations("s", "e", "n", DefaultMode)
 	for key := range ann {
 		if len(key) < 16 || key[:16] != "tentacular.io/" {
 			// Check prefix properly (tentacular.io/ is 14 chars)
@@ -202,5 +208,51 @@ func TestWriteOwnerAnnotations_UsesNewPrefix(t *testing.T) {
 				t.Errorf("annotation key %q does not use tentacular.io/ prefix", key)
 			}
 		}
+	}
+}
+
+// --- WriteNamespaceAnnotations ---
+
+// TestWriteNamespaceAnnotations_OmitsGroup verifies that WriteNamespaceAnnotations
+// does not write the tentacular.io/group annotation (posix-cleanup B1 requirement).
+func TestWriteNamespaceAnnotations_OmitsGroup(t *testing.T) {
+	mode := ModeOwnerRead | ModeOwnerWrite | ModeOwnerExecute
+	ann := WriteNamespaceAnnotations("sub-abc", "alice@example.com", "Alice", mode, DefaultMode)
+
+	if _, ok := ann[AnnotationGroup]; ok {
+		t.Errorf("WriteNamespaceAnnotations must not write %q (group annotation removed in posix-cleanup)", AnnotationGroup)
+	}
+}
+
+func TestWriteNamespaceAnnotations_AllActiveFields(t *testing.T) {
+	mode := ModeOwnerRead | ModeOwnerWrite | ModeOwnerExecute
+	defaultMode := ModeOwnerRead | ModeOwnerWrite | ModeOwnerExecute | ModeGroupRead | ModeGroupExecute
+	ann := WriteNamespaceAnnotations("sub-ns", "bob@example.com", "Bob", mode, defaultMode)
+
+	if ann[AnnotationOwnerSub] != "sub-ns" {
+		t.Errorf("owner-sub = %q, want sub-ns", ann[AnnotationOwnerSub])
+	}
+	if ann[AnnotationOwnerEmail] != "bob@example.com" {
+		t.Errorf("owner-email = %q, want bob@example.com", ann[AnnotationOwnerEmail])
+	}
+	if ann[AnnotationOwnerName] != "Bob" {
+		t.Errorf("owner-name = %q, want Bob", ann[AnnotationOwnerName])
+	}
+	if ann[AnnotationMode] != mode.String() {
+		t.Errorf("mode = %q, want %q", ann[AnnotationMode], mode.String())
+	}
+	if ann[AnnotationDefaultMode] != defaultMode.String() {
+		t.Errorf("default-mode = %q, want %q", ann[AnnotationDefaultMode], defaultMode.String())
+	}
+	// group must NOT be present
+	if _, ok := ann[AnnotationGroup]; ok {
+		t.Error("group annotation must not be written by WriteNamespaceAnnotations")
+	}
+}
+
+func TestWriteNamespaceAnnotations_ZeroDefaultModeOmitted(t *testing.T) {
+	ann := WriteNamespaceAnnotations("sub", "e@e.com", "E", DefaultMode, 0)
+	if _, ok := ann[AnnotationDefaultMode]; ok {
+		t.Error("expected AnnotationDefaultMode to be omitted when defaultMode is zero")
 	}
 }

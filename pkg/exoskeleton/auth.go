@@ -20,13 +20,12 @@ type AuthConfig struct {
 // DeployerInfo contains identity information extracted from an OIDC token
 // or synthesized from a bearer-token auth path.
 type DeployerInfo struct {
-	Email       string   `json:"email"`
-	DisplayName string   `json:"display_name"`
-	Subject     string   `json:"subject"`
-	Provider    string   `json:"provider"`   // "google", "keycloak", "bearer-token"
-	AgentType   string   `json:"agent_type"` // e.g. "claude-code", "mcp-client"
-	SessionID   string   `json:"session_id"`
-	Groups      []string `json:"groups,omitempty"` // IdP group memberships (live from JWT)
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+	Subject     string `json:"subject"`
+	Provider    string `json:"provider"`   // "google", "keycloak", "bearer-token"
+	AgentType   string `json:"agent_type"` // e.g. "claude-code", "mcp-client"
+	SessionID   string `json:"session_id"`
 }
 
 // OIDCValidator validates OIDC tokens using JWKS fetched from the issuer's
@@ -108,19 +107,14 @@ func (v *OIDCValidator) ValidateToken(ctx context.Context, tokenString string) (
 		displayName = claims.PreferredUser
 	}
 
-	slog.Info("OIDC token validated", "email", claims.Email, "subject", idToken.Subject, "provider", provider, "groups", len(claims.Groups))
-
-	groups := claims.Groups
-	if groups == nil {
-		groups = []string{}
-	}
+	slog.Info("OIDC token validated", "email", claims.Email, "subject", idToken.Subject, "provider", provider)
 
 	return &DeployerInfo{
 		Email:       claims.Email,
 		DisplayName: displayName,
 		Subject:     idToken.Subject,
 		Provider:    provider,
-		Groups:      groups,
+		// Groups removed — enclave membership is the group model since v0.9.0
 	}, nil
 }
 

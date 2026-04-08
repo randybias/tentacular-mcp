@@ -114,15 +114,26 @@ type EnclaveSyncParams struct {
 	NewOwner       string   `json:"new_owner,omitempty" jsonschema:"Transfer ownership to this email (must be a current member)"`
 	NewChannelName string   `json:"new_channel_name,omitempty" jsonschema:"Update the platform channel name"`
 	NewStatus      string   `json:"new_status,omitempty" jsonschema:"Update enclave lifecycle status: active or frozen"`
-	AddMembers     []string `json:"add_members,omitempty" jsonschema:"Email addresses of members to add"`
-	RemoveMembers  []string `json:"remove_members,omitempty" jsonschema:"Email addresses of members to remove"`
+	NewMode        string   `json:"new_mode,omitempty" jsonschema:"Set the default permission mode for new tentacles in this enclave (9-char rwx string, e.g. rwxrwx---)"`
+	AddMembers     []string `json:"add_members,omitempty" jsonschema:"Email addresses of members to add (CSV format)"`
+	RemoveMembers  []string `json:"remove_members,omitempty" jsonschema:"Email addresses of members to remove (CSV format)"`
+}
+
+// OwnershipTransfer records a single tentacle ownership change during enclave member removal.
+type OwnershipTransfer struct {
+	TentacleName string `json:"tentacle_name"`
+	FromOwner    string `json:"from_owner"`
+	ToOwner      string `json:"to_owner"`
+	Error        string `json:"error,omitempty"`
+	Success      bool   `json:"success"`
 }
 
 // EnclaveSyncResult is the result of enclave_sync.
 type EnclaveSyncResult struct {
-	Name    string            `json:"name"`
-	Updated []string          `json:"updated"`
-	Enclave EnclaveInfoResult `json:"enclave"`
+	Name      string              `json:"name"`
+	Updated   []string            `json:"updated"`
+	Transfers []OwnershipTransfer `json:"transfers,omitempty"`
+	Enclave   EnclaveInfoResult   `json:"enclave"`
 }
 
 // EnclaveDeprovisionParams are the parameters for enclave_deprovision.
@@ -580,19 +591,20 @@ func attemptEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveS
 
 	info := authz.ReadEnclaveInfo(ann)
 
-	// Ownership transfer, member management, and freeze/unfreeze are owner-only.
+	// Ownership transfer, member management, mode changes, and freeze/unfreeze are owner-only.
 	// Bearer-token callers bypass this check (platform operators).
-	isOwnerOp := params.NewOwner != "" || len(params.AddMembers) > 0 || len(params.RemoveMembers) > 0 || params.NewStatus != ""
+	isOwnerOp := params.NewOwner != "" || len(params.AddMembers) > 0 || len(params.RemoveMembers) > 0 || params.NewStatus != "" || params.NewMode != ""
 	if isOwnerOp && deployer != nil && deployer.Provider != "bearer-token" {
 		if deployer.Email == "" {
 			return EnclaveSyncResult{}, false, errors.New("permission denied: OIDC caller has no email claim")
 		}
 		if deployer.Email != info.Owner {
-			return EnclaveSyncResult{}, false, fmt.Errorf("permission denied: only the enclave owner (%s) may modify enclave %q", info.Owner, params.Name)
+			return EnclaveSyncResult{}, false, fmt.Errorf("permission denied: only the enclave owner may modify enclave %q", params.Name)
 		}
 	}
 
 	updated := []string{}
+	var transfers []OwnershipTransfer
 
 	// Handle member additions.
 	if len(params.AddMembers) > 0 {
@@ -628,9 +640,20 @@ func attemptEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveS
 		if !containsStr(updated, "members") {
 			updated = append(updated, "members")
 		}
+
+		// Transfer tentacle ownership from removed members to the enclave owner.
+		var transferErr error
+		transfers, transferErr = transferOrphanedTentacles(ctx, client, params.Name, params.RemoveMembers, info.Owner)
+		if transferErr != nil {
+			// Log but don't fail the sync — member removal is more important.
+			slog.Warn("enclave_sync: ownership transfer failed", "enclave", params.Name, "error", transferErr)
+		}
+		if len(transfers) > 0 {
+			updated = append(updated, "ownership_transfers")
+		}
 	}
 
-	// Handle ownership transfer.
+	// Handle ownership transfer (new_owner parameter).
 	if params.NewOwner != "" {
 		if params.NewOwner == info.Owner {
 			return EnclaveSyncResult{}, false, fmt.Errorf("new_owner %q is already the enclave owner", params.NewOwner)
@@ -673,8 +696,20 @@ func attemptEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveS
 		}
 	}
 
+	// Handle mode change (owner-only, guarded by isOwnerOp above).
+	if params.NewMode != "" {
+		if _, err := authz.ParseMode(params.NewMode); err != nil {
+			return EnclaveSyncResult{}, false, fmt.Errorf("invalid mode %q; must be a 9-character rwx string (e.g. \"rwxrwx---\")", params.NewMode)
+		}
+		// Update the enclave default-mode for new tentacles.
+		info.DefaultMode = params.NewMode
+		// Also update the namespace's own permission mode.
+		ann[authz.AnnotationMode] = params.NewMode
+		updated = append(updated, "mode")
+	}
+
 	if len(updated) == 0 {
-		return EnclaveSyncResult{}, false, errors.New("no updates specified; provide at least one of add_members, remove_members, new_owner, new_channel_name, or new_status")
+		return EnclaveSyncResult{}, false, errors.New("no updates specified; provide at least one of add_members, remove_members, new_owner, new_channel_name, new_status, or new_mode")
 	}
 
 	// Write updated annotations.
@@ -712,10 +747,79 @@ func attemptEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveS
 	}
 
 	return EnclaveSyncResult{
-		Name:    params.Name,
-		Updated: updated,
-		Enclave: infoResult,
+		Name:      params.Name,
+		Updated:   updated,
+		Enclave:   infoResult,
+		Transfers: transfers,
 	}, false, nil
+}
+
+// transferOrphanedTentacles finds all Deployments in the namespace owned by any of
+// the removed members and transfers ownership to newOwner. Partial failure is
+// acceptable — each transfer is attempted independently and reported in the result.
+func transferOrphanedTentacles(
+	ctx context.Context,
+	client *k8s.Client,
+	namespace string,
+	removedMembers []string,
+	newOwner string,
+) ([]OwnershipTransfer, error) {
+	removedSet := make(map[string]bool, len(removedMembers))
+	for _, m := range removedMembers {
+		removedSet[strings.ToLower(m)] = true
+	}
+
+	deps, err := client.Clientset.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: "app.kubernetes.io/managed-by=tentacular",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list deployments in %q: %w", namespace, err)
+	}
+
+	var result []OwnershipTransfer
+	for i := range deps.Items {
+		dep := &deps.Items[i]
+		depAnn := dep.Annotations
+		if depAnn == nil {
+			continue
+		}
+		currentOwner := strings.ToLower(depAnn[authz.AnnotationOwner])
+		if currentOwner == "" || !removedSet[currentOwner] {
+			continue
+		}
+
+		transfer := OwnershipTransfer{
+			TentacleName: dep.Name,
+			FromOwner:    currentOwner,
+			ToOwner:      newOwner,
+		}
+
+		depAnn[authz.AnnotationOwner] = newOwner
+		depAnn[authz.AnnotationOwnerEmail] = newOwner
+		// Clear owner-sub; the new owner's OIDC sub will be stamped on next deploy.
+		depAnn[authz.AnnotationOwnerSub] = ""
+		// NOTE: AnnotationOwnerName is intentionally NOT updated here because the
+		// enclave namespace annotations don't carry the owner's display name, so
+		// we have no value to set. It will be updated on the new owner's next
+		// deploy, when their OIDC token provides the display name claim.
+		dep.Annotations = depAnn
+
+		if _, updateErr := client.Clientset.AppsV1().Deployments(namespace).Update(
+			ctx, dep, metav1.UpdateOptions{},
+		); updateErr != nil {
+			transfer.Success = false
+			transfer.Error = updateErr.Error()
+			slog.Warn("enclave_sync: tentacle ownership transfer failed",
+				"tentacle", dep.Name, "from", currentOwner, "to", newOwner, "error", updateErr)
+		} else {
+			transfer.Success = true
+			slog.Info("enclave_sync: tentacle ownership transferred",
+				"tentacle", dep.Name, "from", currentOwner, "to", newOwner)
+		}
+		result = append(result, transfer)
+	}
+
+	return result, nil
 }
 
 func handleEnclaveDeprovision(ctx context.Context, client *k8s.Client, exoCtrl *exoskeleton.Controller, params EnclaveDeprovisionParams, deployer *exoskeleton.DeployerInfo) (EnclaveDeprovisionResult, error) {
@@ -743,7 +847,7 @@ func handleEnclaveDeprovision(ctx context.Context, client *k8s.Client, exoCtrl *
 			return EnclaveDeprovisionResult{}, errors.New("permission denied: OIDC caller has no email claim; cannot verify enclave ownership")
 		}
 		if deployer.Email != info.Owner {
-			return EnclaveDeprovisionResult{}, fmt.Errorf("permission denied: only the enclave owner (%s) may deprovision enclave %q", info.Owner, params.Name)
+			return EnclaveDeprovisionResult{}, fmt.Errorf("permission denied: only the enclave owner may deprovision enclave %q", params.Name)
 		}
 	}
 
