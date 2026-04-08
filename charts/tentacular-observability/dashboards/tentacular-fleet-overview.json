@@ -1,0 +1,381 @@
+{
+  "description": "Cross-enclave fleet health for Tentacular platform operators. Shows workflow status, error rates, latency percentiles, and enclave activity.",
+  "tags": ["tentacular", "fleet", "admin"],
+  "title": "Tentacular Fleet Overview",
+  "version": "v4",
+  "dotMigrated": true,
+  "uploadedGrafana": false,
+  "panelMap": {},
+  "layout": [
+    { "h": 6, "i": "active-services", "w": 6, "x": 0, "y": 0, "moved": false, "static": false },
+    { "h": 6, "i": "error-rate-trend", "w": 6, "x": 6, "y": 0, "moved": false, "static": false },
+    { "h": 6, "i": "latency-percentiles", "w": 6, "x": 0, "y": 6, "moved": false, "static": false },
+    { "h": 6, "i": "spans-by-enclave", "w": 6, "x": 6, "y": 6, "moved": false, "static": false },
+    { "h": 6, "i": "error-spans-table", "w": 12, "x": 0, "y": 12, "moved": false, "static": false }
+  ],
+  "variables": {},
+  "widgets": [
+    {
+      "id": "active-services",
+      "title": "Active Workflows",
+      "description": "All reporting workflows with request count and average duration",
+      "panelTypes": "table",
+      "opacity": "1",
+      "isStacked": false,
+      "fillSpans": false,
+      "nullZeroValues": "zero",
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "mergeAllActiveQueries": false,
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "columnUnits": { "B": "ns" },
+      "selectedLogFields": [],
+      "selectedTracesFields": [
+        { "dataType": "string", "id": "serviceName--string--tag--true", "isColumn": true, "isJSON": false, "key": "serviceName", "type": "tag" },
+        { "dataType": "string", "id": "name--string--tag--true", "isColumn": true, "isJSON": false, "key": "name", "type": "tag" },
+        { "dataType": "float64", "id": "durationNano--float64--tag--true", "isColumn": true, "isJSON": false, "key": "durationNano", "type": "tag" }
+      ],
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "expression": "A",
+              "dataSource": "traces",
+              "aggregateOperator": "count",
+              "aggregateAttribute": { "dataType": "", "id": "------false", "isColumn": false, "isJSON": false, "key": "", "type": "" },
+              "filters": { "items": [], "op": "AND" },
+              "groupBy": [
+                { "dataType": "string", "id": "serviceName--string--tag--true", "isColumn": true, "isJSON": false, "key": "serviceName", "type": "tag" }
+              ],
+              "having": [],
+              "legend": "Span Count",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "rate",
+              "disabled": false,
+              "functions": []
+            },
+            {
+              "queryName": "B",
+              "expression": "B",
+              "dataSource": "traces",
+              "aggregateOperator": "avg",
+              "aggregateAttribute": { "dataType": "float64", "id": "durationNano--float64--tag--true", "isColumn": true, "isJSON": false, "key": "durationNano", "type": "tag" },
+              "filters": { "items": [], "op": "AND" },
+              "groupBy": [
+                { "dataType": "string", "id": "serviceName--string--tag--true", "isColumn": true, "isJSON": false, "key": "serviceName", "type": "tag" }
+              ],
+              "having": [],
+              "legend": "Avg Duration",
+              "limit": null,
+              "orderBy": [],
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "avg",
+              "disabled": false,
+              "functions": []
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "promql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "id": "active-services-query"
+      }
+    },
+    {
+      "id": "error-rate-trend",
+      "title": "Error Rate by Workflow",
+      "description": "Rate of error spans (status=Error) per workflow over time",
+      "panelTypes": "graph",
+      "opacity": "1",
+      "isStacked": false,
+      "fillSpans": false,
+      "nullZeroValues": "zero",
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "mergeAllActiveQueries": false,
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "columnUnits": {},
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "expression": "A",
+              "dataSource": "traces",
+              "aggregateOperator": "rate",
+              "aggregateAttribute": { "dataType": "", "id": "------false", "isColumn": false, "isJSON": false, "key": "", "type": "" },
+              "filters": {
+                "items": [
+                  {
+                    "id": "err-filter",
+                    "key": { "dataType": "int64", "id": "statusCode--int64--tag--true", "isColumn": true, "isJSON": false, "key": "statusCode", "type": "tag" },
+                    "op": "=",
+                    "value": 2
+                  }
+                ],
+                "op": "AND"
+              },
+              "groupBy": [
+                { "dataType": "string", "id": "serviceName--string--tag--true", "isColumn": true, "isJSON": false, "key": "serviceName", "type": "tag" }
+              ],
+              "having": [],
+              "legend": "{{serviceName}}",
+              "limit": null,
+              "orderBy": [],
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "rate",
+              "disabled": false,
+              "functions": []
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "promql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "id": "error-rate-query"
+      }
+    },
+    {
+      "id": "latency-percentiles",
+      "title": "Workflow Latency (P50 / P95 / P99)",
+      "description": "Latency percentiles across all workflows",
+      "panelTypes": "graph",
+      "opacity": "1",
+      "isStacked": false,
+      "fillSpans": false,
+      "nullZeroValues": "zero",
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "mergeAllActiveQueries": false,
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "ns",
+      "columnUnits": {},
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "expression": "A",
+              "dataSource": "traces",
+              "aggregateOperator": "p50",
+              "aggregateAttribute": { "dataType": "float64", "id": "durationNano--float64--tag--true", "isColumn": true, "isJSON": false, "key": "durationNano", "type": "tag" },
+              "filters": { "items": [], "op": "AND" },
+              "groupBy": [
+                { "dataType": "string", "id": "serviceName--string--tag--true", "isColumn": true, "isJSON": false, "key": "serviceName", "type": "tag" }
+              ],
+              "having": [],
+              "legend": "P50 - {{serviceName}}",
+              "limit": null,
+              "orderBy": [],
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "p50",
+              "disabled": false,
+              "functions": []
+            },
+            {
+              "queryName": "B",
+              "expression": "B",
+              "dataSource": "traces",
+              "aggregateOperator": "p95",
+              "aggregateAttribute": { "dataType": "float64", "id": "durationNano--float64--tag--true", "isColumn": true, "isJSON": false, "key": "durationNano", "type": "tag" },
+              "filters": { "items": [], "op": "AND" },
+              "groupBy": [
+                { "dataType": "string", "id": "serviceName--string--tag--true", "isColumn": true, "isJSON": false, "key": "serviceName", "type": "tag" }
+              ],
+              "having": [],
+              "legend": "P95 - {{serviceName}}",
+              "limit": null,
+              "orderBy": [],
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "p95",
+              "disabled": false,
+              "functions": []
+            },
+            {
+              "queryName": "C",
+              "expression": "C",
+              "dataSource": "traces",
+              "aggregateOperator": "p99",
+              "aggregateAttribute": { "dataType": "float64", "id": "durationNano--float64--tag--true", "isColumn": true, "isJSON": false, "key": "durationNano", "type": "tag" },
+              "filters": { "items": [], "op": "AND" },
+              "groupBy": [
+                { "dataType": "string", "id": "serviceName--string--tag--true", "isColumn": true, "isJSON": false, "key": "serviceName", "type": "tag" }
+              ],
+              "having": [],
+              "legend": "P99 - {{serviceName}}",
+              "limit": null,
+              "orderBy": [],
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "p99",
+              "disabled": false,
+              "functions": []
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "promql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "id": "latency-query"
+      }
+    },
+    {
+      "id": "spans-by-enclave",
+      "title": "Span Volume by Enclave",
+      "description": "Trace volume grouped by tentacular.enclave resource attribute",
+      "panelTypes": "graph",
+      "opacity": "1",
+      "isStacked": true,
+      "fillSpans": false,
+      "nullZeroValues": "zero",
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "mergeAllActiveQueries": false,
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "columnUnits": {},
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "expression": "A",
+              "dataSource": "traces",
+              "aggregateOperator": "count",
+              "aggregateAttribute": { "dataType": "", "id": "------false", "isColumn": false, "isJSON": false, "key": "", "type": "" },
+              "filters": { "items": [], "op": "AND" },
+              "groupBy": [
+                { "dataType": "string", "id": "tentacular.enclave--string--resource--false", "isColumn": false, "isJSON": false, "key": "tentacular.enclave", "type": "resource" }
+              ],
+              "having": [],
+              "legend": "{{tentacular.enclave}}",
+              "limit": null,
+              "orderBy": [],
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "rate",
+              "disabled": false,
+              "functions": []
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "promql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "id": "enclave-query"
+      }
+    },
+    {
+      "id": "error-spans-table",
+      "title": "Recent Error Spans",
+      "description": "Individual spans with Error status, sorted by recency",
+      "panelTypes": "list",
+      "opacity": "1",
+      "isStacked": false,
+      "fillSpans": false,
+      "nullZeroValues": "zero",
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "mergeAllActiveQueries": false,
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "columnUnits": {},
+      "selectedLogFields": [],
+      "selectedTracesFields": [
+        { "dataType": "string", "id": "serviceName--string--tag--true", "isColumn": true, "isJSON": false, "key": "serviceName", "type": "tag" },
+        { "dataType": "string", "id": "name--string--tag--true", "isColumn": true, "isJSON": false, "key": "name", "type": "tag" },
+        { "dataType": "float64", "id": "durationNano--float64--tag--true", "isColumn": true, "isJSON": false, "key": "durationNano", "type": "tag" },
+        { "dataType": "string", "id": "statusMessage--string--tag--true", "isColumn": true, "isJSON": false, "key": "statusMessage", "type": "tag" }
+      ],
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "expression": "A",
+              "dataSource": "traces",
+              "aggregateOperator": "noop",
+              "aggregateAttribute": { "dataType": "", "id": "------false", "isColumn": false, "isJSON": false, "key": "", "type": "" },
+              "filters": {
+                "items": [
+                  {
+                    "id": "err-filter",
+                    "key": { "dataType": "int64", "id": "statusCode--int64--tag--true", "isColumn": true, "isJSON": false, "key": "statusCode", "type": "tag" },
+                    "op": "=",
+                    "value": 2
+                  }
+                ],
+                "op": "AND"
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "",
+              "limit": null,
+              "offset": 0,
+              "orderBy": [{ "columnName": "timestamp", "order": "desc" }],
+              "pageSize": 20,
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "rate",
+              "disabled": false,
+              "functions": []
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "promql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "id": "error-spans-query"
+      }
+    }
+  ]
+}

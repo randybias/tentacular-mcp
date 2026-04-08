@@ -1,0 +1,466 @@
+{
+  "description": "LLM and GenAI usage telemetry for Tentacular workflows. Tracks token consumption, model usage, call latency, and cost attribution by enclave.",
+  "tags": ["tentacular", "llm", "genai", "admin"],
+  "title": "Tentacular LLM Usage",
+  "version": "v4",
+  "dotMigrated": true,
+  "uploadedGrafana": false,
+  "panelMap": {},
+  "layout": [
+    { "h": 6, "i": "token-usage-time", "w": 6, "x": 0, "y": 0, "moved": false, "static": false },
+    { "h": 6, "i": "token-by-model", "w": 6, "x": 6, "y": 0, "moved": false, "static": false },
+    { "h": 6, "i": "llm-latency", "w": 6, "x": 0, "y": 6, "moved": false, "static": false },
+    { "h": 6, "i": "llm-calls-workflow", "w": 6, "x": 6, "y": 6, "moved": false, "static": false },
+    { "h": 6, "i": "llm-calls-list", "w": 12, "x": 0, "y": 12, "moved": false, "static": false }
+  ],
+  "variables": {},
+  "widgets": [
+    {
+      "id": "token-usage-time",
+      "title": "Token Usage Over Time",
+      "description": "Input and output token consumption across all LLM calls",
+      "panelTypes": "graph",
+      "opacity": "1",
+      "isStacked": true,
+      "fillSpans": false,
+      "nullZeroValues": "zero",
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "mergeAllActiveQueries": false,
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "columnUnits": {},
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "expression": "A",
+              "dataSource": "traces",
+              "aggregateOperator": "sum",
+              "aggregateAttribute": { "dataType": "float64", "id": "gen_ai.usage.input_tokens--float64--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.usage.input_tokens", "type": "tag" },
+              "filters": {
+                "items": [
+                  {
+                    "id": "genai-filter",
+                    "key": { "dataType": "string", "id": "gen_ai.system--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.system", "type": "tag" },
+                    "op": "exists",
+                    "value": ""
+                  }
+                ],
+                "op": "AND"
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "Input Tokens",
+              "limit": null,
+              "orderBy": [],
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "sum",
+              "disabled": false,
+              "functions": []
+            },
+            {
+              "queryName": "B",
+              "expression": "B",
+              "dataSource": "traces",
+              "aggregateOperator": "sum",
+              "aggregateAttribute": { "dataType": "float64", "id": "gen_ai.usage.output_tokens--float64--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.usage.output_tokens", "type": "tag" },
+              "filters": {
+                "items": [
+                  {
+                    "id": "genai-filter",
+                    "key": { "dataType": "string", "id": "gen_ai.system--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.system", "type": "tag" },
+                    "op": "exists",
+                    "value": ""
+                  }
+                ],
+                "op": "AND"
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "Output Tokens",
+              "limit": null,
+              "orderBy": [],
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "sum",
+              "disabled": false,
+              "functions": []
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "promql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "id": "token-time-query"
+      }
+    },
+    {
+      "id": "token-by-model",
+      "title": "Token Usage by Model",
+      "description": "Total token consumption grouped by gen_ai.request.model",
+      "panelTypes": "table",
+      "opacity": "1",
+      "isStacked": false,
+      "fillSpans": false,
+      "nullZeroValues": "zero",
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "mergeAllActiveQueries": false,
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "columnUnits": {},
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "expression": "A",
+              "dataSource": "traces",
+              "aggregateOperator": "count",
+              "aggregateAttribute": { "dataType": "", "id": "------false", "isColumn": false, "isJSON": false, "key": "", "type": "" },
+              "filters": {
+                "items": [
+                  {
+                    "id": "genai-filter",
+                    "key": { "dataType": "string", "id": "gen_ai.system--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.system", "type": "tag" },
+                    "op": "exists",
+                    "value": ""
+                  }
+                ],
+                "op": "AND"
+              },
+              "groupBy": [
+                { "dataType": "string", "id": "gen_ai.request.model--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.request.model", "type": "tag" },
+                { "dataType": "string", "id": "gen_ai.system--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.system", "type": "tag" }
+              ],
+              "having": [],
+              "legend": "Calls",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "rate",
+              "disabled": false,
+              "functions": []
+            },
+            {
+              "queryName": "B",
+              "expression": "B",
+              "dataSource": "traces",
+              "aggregateOperator": "sum",
+              "aggregateAttribute": { "dataType": "float64", "id": "gen_ai.usage.input_tokens--float64--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.usage.input_tokens", "type": "tag" },
+              "filters": {
+                "items": [
+                  {
+                    "id": "genai-filter",
+                    "key": { "dataType": "string", "id": "gen_ai.system--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.system", "type": "tag" },
+                    "op": "exists",
+                    "value": ""
+                  }
+                ],
+                "op": "AND"
+              },
+              "groupBy": [
+                { "dataType": "string", "id": "gen_ai.request.model--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.request.model", "type": "tag" },
+                { "dataType": "string", "id": "gen_ai.system--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.system", "type": "tag" }
+              ],
+              "having": [],
+              "legend": "Input Tokens",
+              "limit": null,
+              "orderBy": [],
+              "reduceTo": "sum",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "sum",
+              "disabled": false,
+              "functions": []
+            },
+            {
+              "queryName": "C",
+              "expression": "C",
+              "dataSource": "traces",
+              "aggregateOperator": "sum",
+              "aggregateAttribute": { "dataType": "float64", "id": "gen_ai.usage.output_tokens--float64--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.usage.output_tokens", "type": "tag" },
+              "filters": {
+                "items": [
+                  {
+                    "id": "genai-filter",
+                    "key": { "dataType": "string", "id": "gen_ai.system--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.system", "type": "tag" },
+                    "op": "exists",
+                    "value": ""
+                  }
+                ],
+                "op": "AND"
+              },
+              "groupBy": [
+                { "dataType": "string", "id": "gen_ai.request.model--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.request.model", "type": "tag" },
+                { "dataType": "string", "id": "gen_ai.system--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.system", "type": "tag" }
+              ],
+              "having": [],
+              "legend": "Output Tokens",
+              "limit": null,
+              "orderBy": [],
+              "reduceTo": "sum",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "sum",
+              "disabled": false,
+              "functions": []
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "promql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "id": "token-model-query"
+      }
+    },
+    {
+      "id": "llm-latency",
+      "title": "LLM Call Latency (P50 / P95)",
+      "description": "Latency percentiles for GenAI spans by model",
+      "panelTypes": "graph",
+      "opacity": "1",
+      "isStacked": false,
+      "fillSpans": false,
+      "nullZeroValues": "zero",
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "mergeAllActiveQueries": false,
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "ns",
+      "columnUnits": {},
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "expression": "A",
+              "dataSource": "traces",
+              "aggregateOperator": "p50",
+              "aggregateAttribute": { "dataType": "float64", "id": "durationNano--float64--tag--true", "isColumn": true, "isJSON": false, "key": "durationNano", "type": "tag" },
+              "filters": {
+                "items": [
+                  {
+                    "id": "genai-filter",
+                    "key": { "dataType": "string", "id": "gen_ai.system--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.system", "type": "tag" },
+                    "op": "exists",
+                    "value": ""
+                  }
+                ],
+                "op": "AND"
+              },
+              "groupBy": [
+                { "dataType": "string", "id": "gen_ai.request.model--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.request.model", "type": "tag" }
+              ],
+              "having": [],
+              "legend": "P50 - {{gen_ai.request.model}}",
+              "limit": null,
+              "orderBy": [],
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "p50",
+              "disabled": false,
+              "functions": []
+            },
+            {
+              "queryName": "B",
+              "expression": "B",
+              "dataSource": "traces",
+              "aggregateOperator": "p95",
+              "aggregateAttribute": { "dataType": "float64", "id": "durationNano--float64--tag--true", "isColumn": true, "isJSON": false, "key": "durationNano", "type": "tag" },
+              "filters": {
+                "items": [
+                  {
+                    "id": "genai-filter",
+                    "key": { "dataType": "string", "id": "gen_ai.system--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.system", "type": "tag" },
+                    "op": "exists",
+                    "value": ""
+                  }
+                ],
+                "op": "AND"
+              },
+              "groupBy": [
+                { "dataType": "string", "id": "gen_ai.request.model--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.request.model", "type": "tag" }
+              ],
+              "having": [],
+              "legend": "P95 - {{gen_ai.request.model}}",
+              "limit": null,
+              "orderBy": [],
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "p95",
+              "disabled": false,
+              "functions": []
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "promql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "id": "llm-latency-query"
+      }
+    },
+    {
+      "id": "llm-calls-workflow",
+      "title": "LLM Calls by Workflow",
+      "description": "Number of GenAI calls per workflow over time",
+      "panelTypes": "graph",
+      "opacity": "1",
+      "isStacked": true,
+      "fillSpans": false,
+      "nullZeroValues": "zero",
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "mergeAllActiveQueries": false,
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "columnUnits": {},
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "expression": "A",
+              "dataSource": "traces",
+              "aggregateOperator": "count",
+              "aggregateAttribute": { "dataType": "", "id": "------false", "isColumn": false, "isJSON": false, "key": "", "type": "" },
+              "filters": {
+                "items": [
+                  {
+                    "id": "genai-filter",
+                    "key": { "dataType": "string", "id": "gen_ai.system--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.system", "type": "tag" },
+                    "op": "exists",
+                    "value": ""
+                  }
+                ],
+                "op": "AND"
+              },
+              "groupBy": [
+                { "dataType": "string", "id": "serviceName--string--tag--true", "isColumn": true, "isJSON": false, "key": "serviceName", "type": "tag" }
+              ],
+              "having": [],
+              "legend": "{{serviceName}}",
+              "limit": null,
+              "orderBy": [],
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "rate",
+              "disabled": false,
+              "functions": []
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "promql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "id": "llm-calls-query"
+      }
+    },
+    {
+      "id": "llm-calls-list",
+      "title": "Recent LLM Calls",
+      "description": "Individual GenAI spans with model, tokens, and duration",
+      "panelTypes": "list",
+      "opacity": "1",
+      "isStacked": false,
+      "fillSpans": false,
+      "nullZeroValues": "zero",
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "mergeAllActiveQueries": false,
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "columnUnits": {},
+      "selectedLogFields": [],
+      "selectedTracesFields": [
+        { "dataType": "string", "id": "serviceName--string--tag--true", "isColumn": true, "isJSON": false, "key": "serviceName", "type": "tag" },
+        { "dataType": "string", "id": "name--string--tag--true", "isColumn": true, "isJSON": false, "key": "name", "type": "tag" },
+        { "dataType": "float64", "id": "durationNano--float64--tag--true", "isColumn": true, "isJSON": false, "key": "durationNano", "type": "tag" }
+      ],
+      "query": {
+        "queryType": "builder",
+        "builder": {
+          "queryData": [
+            {
+              "queryName": "A",
+              "expression": "A",
+              "dataSource": "traces",
+              "aggregateOperator": "noop",
+              "aggregateAttribute": { "dataType": "", "id": "------false", "isColumn": false, "isJSON": false, "key": "", "type": "" },
+              "filters": {
+                "items": [
+                  {
+                    "id": "genai-filter",
+                    "key": { "dataType": "string", "id": "gen_ai.system--string--tag--false", "isColumn": false, "isJSON": false, "key": "gen_ai.system", "type": "tag" },
+                    "op": "exists",
+                    "value": ""
+                  }
+                ],
+                "op": "AND"
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "",
+              "limit": null,
+              "offset": 0,
+              "orderBy": [{ "columnName": "timestamp", "order": "desc" }],
+              "pageSize": 20,
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "rate",
+              "disabled": false,
+              "functions": []
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "promql": [{ "disabled": false, "legend": "", "name": "A", "query": "" }],
+        "id": "llm-list-query"
+      }
+    }
+  ]
+}
