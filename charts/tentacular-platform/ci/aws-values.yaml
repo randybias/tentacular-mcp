@@ -1,19 +1,7 @@
 # AWS production profile - K8s on EC2 with nginx ingress + NLB
-# Usage: helm install tentacular charts/tentacular-platform/ \
-#   -f charts/tentacular-platform/ci/prod-values.yaml \
-#   -f charts/tentacular-platform/ci/aws-values.yaml \
-#   -n tentacular-system --create-namespace \
-#   --set global.domain=<your-domain> \
-#   --set tls.clusterIssuers.email=admin@<your-domain> \
-#   --set postgresql.auth.password="$(openssl rand -hex 16)" \
-#   --set nats.config.merge.authorization.token="$(openssl rand -hex 16)" \
-#   --set tentacular-mcp.auth.token="$(openssl rand -hex 32)" \
-#   --set keycloak.admin.password="$(openssl rand -hex 16)" \
-#   --set keycloakx.database.password="$(openssl rand -hex 16)" \
-#   --set exoskeletonAuth.clientSecret="$(openssl rand -hex 32)"
+# Layer ON TOP of prod-values.yaml. Overrides only AWS-specific settings.
 #
-# This file is meant to be layered ON TOP of prod-values.yaml.
-# It overrides only the AWS-specific settings.
+# See prod-values.yaml for the full list of mandatory --set parameters.
 # Hostnames are auto-derived from global.domain:
 #   - tentacular-mcp.<domain>
 #   - tentacular-keycloak.<domain>

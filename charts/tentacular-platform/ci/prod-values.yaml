@@ -1,18 +1,38 @@
 # Production profile - cloud-agnostic, works with any K8s cluster
-# Usage: helm install tentacular charts/tentacular-platform/ \
-#   -f charts/tentacular-platform/ci/prod-values.yaml \
-#   -n tentacular-system --create-namespace \
-#   --set postgresql.auth.password=<secret> \
-#   --set nats.config.merge.authorization.token=<secret> \
-#   --set tentacular-mcp.auth.token=<secret> \
-#   --set keycloak.admin.password=<secret> \
-#   --set keycloakx.database.password=<secret> \
-#   --set exoskeletonAuth.clientSecret=<secret> \
-#   --set rustfs.secret.accessKey=<secret> \
-#   --set rustfs.secret.secretKey=<secret>
 #
-# NOTE: Replace all CHANGE-ME placeholder values before deploying.
-# In production, use --set or external secret management (e.g., Sealed Secrets,
+# MANDATORY --set parameters (secrets are NOT stored in this file):
+#
+#   --set global.domain=<your-domain>                          # e.g. tentacular.example.com
+#   --set tls.clusterIssuers.email=admin@<your-domain>         # Let's Encrypt registration email
+#   --set postgresql.auth.password=<secret>                    # PostgreSQL app user password
+#   --set nats.config.merge.authorization.token=<secret>       # NATS auth token
+#   --set tentacular-mcp.auth.token=<secret>                   # MCP bearer token
+#   --set keycloak.admin.password=<secret>                     # Keycloak admin console password
+#   --set keycloakx.database.password=<secret>                 # Keycloak PostgreSQL user password
+#   --set exoskeletonAuth.clientSecret=<secret>                # OIDC client secret (from Keycloak)
+#   --set rustfs.secret.accessKey=<secret>                     # RustFS admin access key
+#   --set rustfs.secret.secretKey=<secret>                     # RustFS admin secret key
+#
+# Example install (generates secrets on the fly):
+#   helm install tentacular charts/tentacular-platform/ \
+#     -f charts/tentacular-platform/ci/prod-values.yaml \
+#     -n tentacular-system --create-namespace \
+#     --set global.domain=tentacular.example.com \
+#     --set tls.clusterIssuers.email=admin@tentacular.example.com \
+#     --set postgresql.auth.password="$(openssl rand -hex 16)" \
+#     --set nats.config.merge.authorization.token="$(openssl rand -hex 16)" \
+#     --set tentacular-mcp.auth.token="$(openssl rand -hex 32)" \
+#     --set keycloak.admin.password="$(openssl rand -hex 16)" \
+#     --set keycloakx.database.password="$(openssl rand -hex 16)" \
+#     --set exoskeletonAuth.clientSecret="$(openssl rand -hex 32)" \
+#     --set rustfs.secret.accessKey="$(openssl rand -hex 16)" \
+#     --set rustfs.secret.secretKey="$(openssl rand -hex 32)"
+#
+# WARNING: Do NOT use --reuse-values together with -f on upgrades — the values
+# files will override any --set secrets from the previous install, breaking auth.
+# Instead, pass all mandatory --set parameters explicitly on every upgrade.
+#
+# In production, use external secret management (e.g., Sealed Secrets,
 # External Secrets Operator) instead of plaintext values in this file.
 #
 # Prerequisites:
@@ -46,8 +66,9 @@ postgresql:
     # Bitnami removed versioned tags; use latest until chart is updated
     tag: latest
   auth:
-    # CHANGE: Use existingSecret in production instead of plaintext password
-    password: "CHANGE-ME-use-existing-secret"
+    username: tentacular_admin
+    database: tentacular
+    # password must be set at deploy time: --set postgresql.auth.password=<secret>
   tls:
     # TLS for PostgreSQL connections using cert-manager self-signed certificates.
     # cert-manager creates the Secret; Bitnami PostgreSQL mounts it.
@@ -84,9 +105,9 @@ nats:
           size: 5Gi
           # storageClassName omitted → uses cluster default
     merge:
-      authorization:
-        # CHANGE: Use a strong token in production
-        token: "CHANGE-ME-strong-nats-token"
+      max_payload: 8388608
+      # authorization.token must be set at deploy time:
+      # --set nats.config.merge.authorization.token=<secret>
 
 # cert-manager: assumes pre-installed in production clusters.
 cert-manager:
@@ -109,9 +130,7 @@ tentacular-mcp:
   enabled: true
   namespace:
     create: false
-  auth:
-    # CHANGE: Use a strong token in production
-    token: "CHANGE-ME-strong-mcp-token"
+  # auth.token must be set at deploy time: --set tentacular-mcp.auth.token=<secret>
   resources:
     requests:
       cpu: 250m
@@ -134,8 +153,7 @@ exoskeleton:
 exoskeletonAuth:
   enabled: true
   clientID: "tentacular-mcp"
-  # CHANGE: Set your OIDC client secret (configure in Keycloak admin console)
-  clientSecret: "CHANGE-ME-keycloak-client-secret"
+  # clientSecret must be set at deploy time: --set exoskeletonAuth.clientSecret=<secret>
 
 # Keycloak deployment (codecentric/keycloakx subchart)
 keycloak:
@@ -143,8 +161,7 @@ keycloak:
   realm: tentacular
   admin:
     user: admin
-    # CHANGE: Use a strong admin password
-    password: "CHANGE-ME-keycloak-admin"
+    # password must be set at deploy time: --set keycloak.admin.password=<secret>
   # hostname auto-derived from global.domain: tentacular-keycloak.<domain>
   hostname: ""
   ingress:
@@ -156,8 +173,7 @@ keycloakx:
     vendor: postgres
     database: keycloak
     username: keycloak
-    # CHANGE: Must match the password used in postgres-init
-    password: "CHANGE-ME-keycloak-db-password"
+    # password must be set at deploy time: --set keycloakx.database.password=<secret>
 
 # -- RustFS S3-compatible object storage
 rustfs:
@@ -173,10 +189,8 @@ rustfs:
     limits:
       cpu: 500m
       memory: 1Gi
-  secret:
-    # CHANGE-ME: inject at deploy time via --set
-    accessKey: "CHANGE-ME-rustfs-admin"
-    secretKey: "CHANGE-ME-rustfs-admin-secret"
+  # secret.accessKey and secret.secretKey must be set at deploy time:
+  # --set rustfs.secret.accessKey=<secret> --set rustfs.secret.secretKey=<secret>
 
 esm-sh:
   enabled: true
