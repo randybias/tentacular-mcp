@@ -98,41 +98,41 @@ type WfDescribeParams struct {
 
 // WfDescribeResult is the result of wf_describe.
 type WfDescribeResult struct {
-	Annotations     map[string]string `json:"annotations,omitempty"`
-	GitProvenance   *GitProvenance    `json:"git_provenance,omitempty"`
-	DeployedBy      string            `json:"deployed_by,omitempty"`
-	Image           string            `json:"image"`
-	OwnerName       string            `json:"owner_name,omitempty"`
-	Group           string            `json:"group,omitempty"`
-	Mode            string            `json:"mode,omitempty"`
-	Preset          string            `json:"preset,omitempty"`
-	Namespace       string            `json:"namespace"`
-	Environment     string            `json:"environment,omitempty"`
-	TriggerType     string            `json:"trigger_type,omitempty"`
-	Name            string            `json:"name"`
-	Version         string            `json:"version"`
-	Owner           string            `json:"owner,omitempty"`
-	DeployedAt      string            `json:"deployed_at,omitempty"`
-	EnclaveOwner    string            `json:"enclave_owner,omitempty"`
-	Age             string            `json:"age"`
-	DeployedVia     string            `json:"deployed_via,omitempty"`
-	ParamsSchema    string            `json:"params_schema,omitempty"`
+	Annotations   map[string]string `json:"annotations,omitempty"`
+	GitProvenance *GitProvenance    `json:"git_provenance,omitempty"`
+	DeployedBy    string            `json:"deployed_by,omitempty"`
+	Image         string            `json:"image"`
+	OwnerName     string            `json:"owner_name,omitempty"`
+	Group         string            `json:"group,omitempty"`
+	Mode          string            `json:"mode,omitempty"`
+	Preset        string            `json:"preset,omitempty"`
+	Namespace     string            `json:"namespace"`
+	Environment   string            `json:"environment,omitempty"`
+	TriggerType   string            `json:"trigger_type,omitempty"`
+	Name          string            `json:"name"`
+	Version       string            `json:"version"`
+	Owner         string            `json:"owner,omitempty"`
+	DeployedAt    string            `json:"deployed_at,omitempty"`
+	EnclaveOwner  string            `json:"enclave_owner,omitempty"`
+	Age           string            `json:"age"`
+	DeployedVia   string            `json:"deployed_via,omitempty"`
+	ParamsSchema  string            `json:"params_schema,omitempty"`
 	// ContractSummary maps to the "contract" key in the metadata ConfigMap.
 	// The field name is more descriptive for API consumers.
-	ContractSummary string `json:"contract_summary,omitempty"`
-	Readme          string            `json:"readme,omitempty"`
-	MetadataRef     string            `json:"metadata_ref,omitempty"`
-	ScaffoldName    string            `json:"scaffold_name,omitempty"`
-	Nodes           []string          `json:"nodes,omitempty"`
-	Sidecars        []SidecarMeta     `json:"sidecars,omitempty"`
-	Dependencies    []DependencyMeta  `json:"dependencies,omitempty"`
-	Edges           [][2]string       `json:"edges,omitempty"`
-	EnclaveMembers  []string          `json:"enclave_members,omitempty"`
-	Tags            []string          `json:"tags,omitempty"`
-	Triggers        []string          `json:"triggers,omitempty"`
-	Replicas        int32             `json:"replicas"`
-	ReadyReplicas   int32             `json:"ready_replicas"`
-	Ready           bool              `json:"ready"`
+	ContractSummary string           `json:"contract_summary,omitempty"`
+	Readme          string           `json:"readme,omitempty"`
+	MetadataRef     string           `json:"metadata_ref,omitempty"`
+	ScaffoldName    string           `json:"scaffold_name,omitempty"`
+	Nodes           []string         `json:"nodes,omitempty"`
+	Sidecars        []SidecarMeta    `json:"sidecars,omitempty"`
+	Dependencies    []DependencyMeta `json:"dependencies,omitempty"`
+	Edges           [][2]string      `json:"edges,omitempty"`
+	EnclaveMembers  []string         `json:"enclave_members,omitempty"`
+	Tags            []string         `json:"tags,omitempty"`
+	Triggers        []string         `json:"triggers,omitempty"`
+	Replicas        int32            `json:"replicas"`
+	ReadyReplicas   int32            `json:"ready_replicas"`
+	Ready           bool             `json:"ready"`
 }
 
 func registerDiscoverTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
