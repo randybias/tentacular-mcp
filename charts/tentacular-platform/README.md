@@ -65,21 +65,43 @@ helm install ingress-nginx ingress-nginx/ingress-nginx \
 **Step 3: Install the platform:**
 
 ```bash
-helm dependency update charts/tentacular-platform/
+helm dependency build charts/tentacular-platform/
 KC_DB_PASS="$(openssl rand -hex 16)"
 helm install tentacular charts/tentacular-platform/ \
   -f charts/tentacular-platform/ci/prod-values.yaml \
   -n tentacular-system --create-namespace \
+  --set global.domain="<your-domain>" \
+  --set tls.clusterIssuers.email="admin@<your-domain>" \
   --set postgresql.auth.password="$(openssl rand -hex 16)" \
   --set nats.config.merge.authorization.token="$(openssl rand -hex 16)" \
   --set tentacular-mcp.auth.token="$(openssl rand -hex 32)" \
   --set keycloak.admin.password="$(openssl rand -hex 16)" \
   --set keycloakx.database.password="$KC_DB_PASS" \
-  --set keycloakx.database.hostname="tentacular-postgresql.tentacular-exoskeleton.svc.cluster.local" \
   --set rustfs.secret.accessKey="$(openssl rand -hex 16)" \
   --set rustfs.secret.secretKey="$(openssl rand -hex 32)" \
   --set exoskeletonAuth.clientSecret="$(openssl rand -hex 32)"
 ```
+
+**Step 4: Verify the deployment:**
+
+```bash
+# Wait ~2-3 minutes for all services to initialize (Keycloak takes ~90s)
+kubectl get pods -n tentacular-system        # MCP server
+kubectl get pods -n tentacular-exoskeleton   # PostgreSQL, NATS, Keycloak, RustFS
+kubectl get pods -n tentacular-support       # esm-sh module proxy
+
+# Check PVCs are bound
+kubectl get pvc -n tentacular-exoskeleton
+kubectl get pvc -n tentacular-support
+
+# Test MCP health (via port-forward)
+kubectl port-forward -n tentacular-system svc/tentacular-tentacular-mcp 8080:8080 &
+curl -s http://localhost:8080/healthz        # → {"status":"ok"}
+```
+
+> **Note:** The MCP server may restart 3-4 times during initial deployment while
+> waiting for PostgreSQL, NATS, and Keycloak to become ready. This is expected
+> behavior — it stabilizes automatically within ~3 minutes.
 
 > **RustFS TLS:** This release uses plain HTTP (port 9000) for simplicity. TLS/mTLS support
 > via cert-manager is planned as a follow-up (`# TODO(tls):` markers in the templates).
@@ -122,18 +144,19 @@ kubectl get svc -n ingress-nginx ingress-nginx-controller \
 **Step 4: Install the platform:**
 
 ```bash
-helm dependency update charts/tentacular-platform/
+helm dependency build charts/tentacular-platform/
 KC_DB_PASS="$(openssl rand -hex 16)"
 helm install tentacular charts/tentacular-platform/ \
   -f charts/tentacular-platform/ci/prod-values.yaml \
   -f charts/tentacular-platform/ci/aws-values.yaml \
   -n tentacular-system --create-namespace \
+  --set global.domain="<your-domain>" \
+  --set tls.clusterIssuers.email="admin@<your-domain>" \
   --set postgresql.auth.password="$(openssl rand -hex 16)" \
   --set nats.config.merge.authorization.token="$(openssl rand -hex 16)" \
   --set tentacular-mcp.auth.token="$(openssl rand -hex 32)" \
   --set keycloak.admin.password="$(openssl rand -hex 16)" \
   --set keycloakx.database.password="$KC_DB_PASS" \
-  --set keycloakx.database.hostname="tentacular-postgresql.tentacular-exoskeleton.svc.cluster.local" \
   --set keycloakx.proxy.mode=xforwarded \
   --set-json 'keycloakx.command=["/opt/keycloak/bin/kc.sh","start","--hostname-strict=false","--import-realm"]' \
   --set rustfs.secret.accessKey="$(openssl rand -hex 16)" \
@@ -340,6 +363,64 @@ postgresql:
     certKeyFilename: tls.key
 ```
 
+## Deploying Workflows
+
+After the platform is running, deploy workflows using the `tntc` CLI.
+
+### Configure tntc
+
+Set up the CLI to point at your MCP server:
+
+```bash
+# Create the config directory
+mkdir -p ~/.tentacular
+
+# Write the MCP token (must match the tentacular-mcp.auth.token used at install)
+MCP_TOKEN="$(kubectl get secret tentacular-tentacular-mcp-auth \
+  -n tentacular-system -o jsonpath='{.data.token}' | base64 -d)"
+echo -n "$MCP_TOKEN" > ~/.tentacular/mcp-token
+
+# Create the config file
+cat > ~/.tentacular/config.yaml <<EOF
+environments:
+  dev:
+    namespace: tentacular-dev
+    mcp_endpoint: http://localhost:8081/mcp
+    mcp_token_path: ~/.tentacular/mcp-token
+default_env: dev
+EOF
+```
+
+### Deploy a workflow
+
+```bash
+# Start port-forward to MCP (tntc expects port 8081 by default)
+kubectl port-forward -n tentacular-system \
+  svc/tentacular-tentacular-mcp 8081:8080 &
+
+# Create the target namespace
+kubectl create namespace tentacular-dev
+kubectl label namespace tentacular-dev \
+  app.kubernetes.io/managed-by=tentacular \
+  pod-security.kubernetes.io/enforce=restricted \
+  pod-security.kubernetes.io/enforce-version=latest
+
+# Deploy the echo-probe validation workflow
+tntc deploy tentacles/echo-probe/ \
+  --image ghcr.io/randybias/tentacular-engine:latest \
+  --runtime-class="" \
+  --force
+
+# Verify it's running
+kubectl get pods -n tentacular-dev
+```
+
+### Run the workflow via MCP
+
+```bash
+tntc run echo-probe -e dev --input '{"hello": "world"}'
+```
+
 ## Keycloak User Management
 
 When `keycloak.enabled: true`, the chart deploys Keycloak and auto-creates the `tentacular`
@@ -347,10 +428,22 @@ realm with the `tentacular-mcp` OIDC client. Users can then authenticate via `tn
 
 ### Adding Local Users
 
-Use the Keycloak admin API to create users. First, get an admin token:
+Use the Keycloak admin API to create users. For clusters without external ingress, use
+port-forward to reach Keycloak:
 
 ```bash
-KC_URL="https://tentacular-keycloak.<your-domain>"
+# Port-forward to Keycloak (port 80 maps to internal 8080)
+kubectl port-forward -n tentacular-exoskeleton \
+  svc/tentacular-keycloakx-http 18094:80 &
+KC_URL="http://localhost:18094"
+
+# For clusters with ingress, use the external URL instead:
+# KC_URL="https://tentacular-keycloak.<your-domain>"
+```
+
+Get an admin token:
+
+```bash
 KC_ADMIN_PASS="$(kubectl get secret tentacular-keycloak-admin \
   -n tentacular-exoskeleton -o jsonpath='{.data.KEYCLOAK_ADMIN_PASSWORD}' | base64 -d)"
 
@@ -359,7 +452,7 @@ TOKEN=$(curl -sk "$KC_URL/auth/realms/master/protocol/openid-connect/token" \
   -d "grant_type=password" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 ```
 
-Then create a user:
+Create a user:
 
 ```bash
 curl -sk -X POST "$KC_URL/auth/admin/realms/tentacular/users" \
@@ -380,7 +473,7 @@ curl -sk -X POST "$KC_URL/auth/admin/realms/tentacular/users" \
   }'
 ```
 
-Or use the Keycloak admin console at `https://tentacular-keycloak.<your-domain>/auth/admin/`.
+Or use the Keycloak admin console at `$KC_URL/auth/admin/` (or `https://tentacular-keycloak.<your-domain>/auth/admin/` with ingress).
 
 ### Authenticating with tntc
 
@@ -448,14 +541,24 @@ Pre-built profiles are available in `ci/`:
 ## Upgrade
 
 ```bash
-helm dependency update charts/tentacular-platform/
+helm dependency build charts/tentacular-platform/
 helm upgrade tentacular charts/tentacular-platform/ \
-  -f your-values.yaml
+  -n tentacular-system \
+  -f charts/tentacular-platform/ci/prod-values.yaml \
+  --set postgresql.auth.password="<same-as-install>" \
+  --set nats.config.merge.authorization.token="<same-as-install>" \
+  --set tentacular-mcp.auth.token="<same-as-install>" \
+  --set keycloak.admin.password="<same-as-install>" \
+  --set keycloakx.database.password="<same-as-install>" \
+  --set rustfs.secret.accessKey="<same-as-install>" \
+  --set rustfs.secret.secretKey="<same-as-install>" \
+  --set exoskeletonAuth.clientSecret="<same-as-install>"
 ```
 
-> **Warning:** Do not use `helm upgrade --reuse-values -f ci/prod-values.yaml` --
-> the `CHANGE-ME` placeholders in value files will overwrite your generated secrets.
-> Either omit `-f` when using `--reuse-values`, or pass all secrets via `--set`.
+> **Warning:** Do not use `helm upgrade --reuse-values` together with `-f` --
+> the values file will override any `--set` secrets from the previous install.
+> Either omit `-f` when using `--reuse-values`, or pass all secrets via `--set`
+> on every upgrade.
 
 ## Uninstall
 
