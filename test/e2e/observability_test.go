@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
 )
@@ -27,14 +30,18 @@ const (
 	// sigNozQueryHost is the SigNoz query frontend service host.
 	sigNozQueryHost = "signoz-query-service.tentacular-observability.svc.cluster.local"
 
-	// e2eObsNS is the dedicated test namespace for observability validation.
-	e2eObsNS = "tentacular-e2e-observability"
+	// e2eObsNS is the namespace where pre-deployed otel validation tentacles live.
+	// These tentacles were deployed via tntc deploy with the enrichment pipeline.
+	e2eObsNS = "tentacular-e2e-test"
 
-	// traceWaitTimeout is the maximum time to wait for a trace to appear in SigNoz.
+	// traceWaitTimeout is the maximum time to wait for a trace to appear in ClickHouse.
 	traceWaitTimeout = 30 * time.Second
 
 	// traceWaitInterval is the polling interval when waiting for traces.
 	traceWaitInterval = 3 * time.Second
+
+	// clickhouseDefaultHost is the in-cluster ClickHouse HTTP endpoint.
+	clickhouseDefaultHost = "signoz-clickhouse.tentacular-observability.svc.cluster.local"
 )
 
 // requireObs skips the test if TENTACULAR_E2E_OBS is not "true". All
@@ -67,6 +74,138 @@ func sigNozBaseURL(t *testing.T) string {
 	return fmt.Sprintf("http://%s:8080", sigNozQueryHost)
 }
 
+// clickhouseBaseURL returns the ClickHouse HTTP endpoint URL, preferring
+// TENTACULAR_E2E_OBS_CLICKHOUSE_URL if set.
+func clickhouseBaseURL(t *testing.T) string {
+	t.Helper()
+	if u := os.Getenv("TENTACULAR_E2E_OBS_CLICKHOUSE_URL"); u != "" {
+		return strings.TrimRight(u, "/")
+	}
+	host := clickhouseDefaultHost
+	if h := os.Getenv("TENTACULAR_E2E_OBS_CLICKHOUSE_HOST"); h != "" {
+		host = h
+	}
+	return fmt.Sprintf("http://%s:8123", host)
+}
+
+// queryClickHouse executes a SQL query against ClickHouse via HTTP and returns
+// the result rows as a slice of maps. Uses JSONEachRow format for easy parsing.
+func queryClickHouse(t *testing.T, sql string) []map[string]any {
+	t.Helper()
+	chURL := clickhouseBaseURL(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	reqURL := fmt.Sprintf("%s/?default_format=JSONEachRow&query=%s", chURL, url.QueryEscape(sql))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		t.Fatalf("build ClickHouse request: %v", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("ClickHouse query failed: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("ClickHouse returned HTTP %d: %s\nQuery: %s", resp.StatusCode, string(body), sql)
+	}
+
+	var rows []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(string(body)), "\n") {
+		if line == "" {
+			continue
+		}
+		var row map[string]any
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			t.Fatalf("parse ClickHouse row: %v\nLine: %s", err, line)
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// waitForSpans polls ClickHouse until spans matching the given service and span
+// name appear, or the timeout expires. Returns the matching rows.
+func waitForSpans(t *testing.T, serviceName, spanName string, timeout time.Duration) []map[string]any {
+	t.Helper()
+
+	sql := fmt.Sprintf(
+		`SELECT name, statusCode, durationNano,
+			attributes_string['gen_ai.system'] AS gen_ai_system,
+			attributes_string['gen_ai.request.model'] AS gen_ai_model,
+			attributes_number['gen_ai.usage.input_tokens'] AS input_tokens,
+			attributes_number['gen_ai.usage.output_tokens'] AS output_tokens,
+			has(attributes_string, 'gen_ai.input.messages') AS has_input_messages,
+			has(attributes_string, 'gen_ai.output.messages') AS has_output_messages,
+			resources_string['tentacular.enclave'] AS enclave,
+			resources_string['k8s.namespace.name'] AS namespace
+		FROM signoz_traces.distributed_signoz_index_v3
+		WHERE serviceName = '%s' AND name = '%s'
+			AND timestamp > toDateTime64(now() - INTERVAL 2 MINUTE, 9)
+		ORDER BY timestamp DESC
+		LIMIT 10`,
+		serviceName, spanName,
+	)
+
+	deadline := time.Now().Add(timeout)
+	for {
+		rows := queryClickHouse(t, sql)
+		if len(rows) > 0 {
+			t.Logf("found %d %s spans for service=%s", len(rows), spanName, serviceName)
+			return rows
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no %s spans found for service %q within %s", spanName, serviceName, timeout)
+		}
+		t.Logf("waiting for %s spans (service=%s)...", spanName, serviceName)
+		time.Sleep(traceWaitInterval)
+	}
+}
+
+// scaleDeployment sets the replica count for a Deployment.
+func scaleDeployment(ctx context.Context, t *testing.T, client *k8s.Client, namespace, name string, replicas int32) {
+	t.Helper()
+	scale, err := client.Clientset.AppsV1().Deployments(namespace).GetScale(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get scale for %s/%s: %v", namespace, name, err)
+	}
+	scale.Spec.Replicas = replicas
+	_, err = client.Clientset.AppsV1().Deployments(namespace).UpdateScale(ctx, name, scale, metav1.UpdateOptions{})
+	if err != nil {
+		t.Fatalf("scale %s/%s to %d: %v", namespace, name, replicas, err)
+	}
+}
+
+// toFloat64 extracts a float64 from a JSON-decoded value (ClickHouse numbers
+// may arrive as float64 or string in JSONEachRow format).
+func toFloat64(v any) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case json.Number:
+		f, _ := n.Float64()
+		return f
+	case string:
+		var f float64
+		_, _ = fmt.Sscanf(n, "%f", &f)
+		return f
+	default:
+		return 0
+	}
+}
+
+// toBool extracts a boolean from a JSON-decoded value. ClickHouse has()
+// returns 0 or 1 as a number.
+func toBool(v any) bool {
+	return toFloat64(v) != 0
+}
+
+// ---------- Pipeline tests ----------
+
 // TestE2E_CollectorReachable verifies the OTel Collector HTTP endpoint accepts
 // OTLP trace requests. This is the lowest-level gate for all pipeline tests.
 func TestE2E_CollectorReachable(t *testing.T) {
@@ -77,7 +216,6 @@ func TestE2E_CollectorReachable(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// Minimal valid OTLP/JSON payload — empty resource spans.
 	payload := []byte(`{"resourceSpans":[]}`)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		collectorURL+"/v1/traces", bytes.NewReader(payload))
@@ -108,7 +246,6 @@ func TestE2E_PipelineE2E(t *testing.T) {
 	collectorURL := obsCollectorURL(t)
 	sigNozURL := sigNozBaseURL(t)
 
-	// Use a unique service name so we can query it back precisely.
 	serviceName := fmt.Sprintf("e2e-pipeline-test-%d", time.Now().UnixNano())
 	traceID := fmt.Sprintf("%032x", time.Now().UnixNano())
 	spanID := fmt.Sprintf("%016x", time.Now().UnixNano())
@@ -158,7 +295,6 @@ func TestE2E_PipelineE2E(t *testing.T) {
 	}
 	t.Logf("span sent: traceID=%s service=%s", traceID, serviceName)
 
-	// Poll SigNoz until the span is visible.
 	deadline := time.Now().Add(traceWaitTimeout)
 	for {
 		found, queryErr := querySigNozForService(sigNozURL, serviceName)
@@ -176,93 +312,271 @@ func TestE2E_PipelineE2E(t *testing.T) {
 	}
 }
 
-// TestE2E_WorkflowTrace deploys the otel-echo validation tentacle, runs it,
-// and verifies the resulting trace appears in SigNoz with invoke_workflow and
-// execute_node spans.
+// ---------- Workflow-level tests ----------
+
+// TestE2E_WorkflowTrace runs the otel-echo validation tentacle and verifies
+// the resulting trace appears in ClickHouse with invoke_workflow and
+// execute_node spans plus correct resource attributes.
 func TestE2E_WorkflowTrace(t *testing.T) {
 	requireObs(t)
 	client := e2eClient(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
-	t.Cleanup(func() {
-		_ = k8s.DeleteNamespace(context.Background(), client, e2eObsNS)
-	})
+	out, err := k8s.RunWorkflow(ctx, client, e2eObsNS, "otel-echo", nil)
+	if err != nil {
+		t.Fatalf("RunWorkflow otel-echo: %v", err)
+	}
+	t.Logf("otel-echo output: %s", string(out))
 
-	t.Skip("TestE2E_WorkflowTrace: requires engine OTel env var injection (builder dev) and wf_apply/wf_run helpers — skipping until Phase 1 engine changes land")
-
-	if err := k8s.CreateNamespace(ctx, client, e2eObsNS); err != nil {
-		t.Fatalf("CreateNamespace: %v", err)
+	invSpans := waitForSpans(t, "otel-echo", "invoke_workflow", traceWaitTimeout)
+	if len(invSpans) == 0 {
+		t.Fatal("no invoke_workflow spans found")
 	}
 
-	// TODO(phase1): deploy otel-echo via wf_apply, run via wf_run,
-	// query SigNoz for invoke_workflow + execute_node spans with
-	// tentacular.workflow.name attribute set correctly.
+	enclave, _ := invSpans[0]["enclave"].(string)
+	ns, _ := invSpans[0]["namespace"].(string)
+	if enclave != e2eObsNS {
+		t.Errorf("expected enclave=%q, got %q", e2eObsNS, enclave)
+	}
+	if ns != e2eObsNS {
+		t.Errorf("expected namespace=%q, got %q", e2eObsNS, ns)
+	}
+
+	execSpans := waitForSpans(t, "otel-echo", "execute_node", traceWaitTimeout)
+	if len(execSpans) == 0 {
+		t.Fatal("no execute_node spans found")
+	}
+	t.Logf("WorkflowTrace: %d invoke_workflow, %d execute_node spans", len(invSpans), len(execSpans))
 }
 
-// TestE2E_LLMTelemetry deploys the otel-llm-echo validation tentacle, runs it
-// (makes a real Anthropic API call), and verifies GenAI span attributes in
-// SigNoz. Content capture must be off by default.
+// TestE2E_LLMTelemetry runs the otel-llm-echo validation tentacle (real
+// Anthropic API call) and verifies GenAI span attributes in ClickHouse.
+// Content capture must be off by default.
 func TestE2E_LLMTelemetry(t *testing.T) {
 	requireObs(t)
 	client := e2eClient(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
 
-	t.Cleanup(func() {
-		_ = k8s.DeleteNamespace(context.Background(), client, e2eObsNS)
-	})
+	out, err := k8s.RunWorkflow(ctx, client, e2eObsNS, "otel-llm-echo", nil)
+	if err != nil {
+		t.Fatalf("RunWorkflow otel-llm-echo: %v", err)
+	}
+	t.Logf("otel-llm-echo output length: %d bytes", len(out))
 
-	t.Skip("TestE2E_LLMTelemetry: requires GenAI fetch wrapper (engine dev) and wf_apply/wf_run helpers — skipping until Phase 1 engine changes land")
+	sql := `SELECT name,
+			attributes_string['gen_ai.system'] AS gen_ai_system,
+			attributes_string['gen_ai.request.model'] AS gen_ai_model,
+			attributes_number['gen_ai.usage.input_tokens'] AS input_tokens,
+			attributes_number['gen_ai.usage.output_tokens'] AS output_tokens,
+			has(attributes_string, 'gen_ai.input.messages') AS has_input_messages,
+			has(attributes_string, 'gen_ai.output.messages') AS has_output_messages
+		FROM signoz_traces.distributed_signoz_index_v3
+		WHERE serviceName = 'otel-llm-echo'
+			AND attributes_string['gen_ai.system'] <> ''
+			AND timestamp > toDateTime64(now() - INTERVAL 2 MINUTE, 9)
+		ORDER BY timestamp DESC
+		LIMIT 5`
 
-	if err := k8s.CreateNamespace(ctx, client, e2eObsNS); err != nil {
-		t.Fatalf("CreateNamespace: %v", err)
+	var rows []map[string]any
+	deadline := time.Now().Add(traceWaitTimeout)
+	for {
+		rows = queryClickHouse(t, sql)
+		if len(rows) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no GenAI spans found for otel-llm-echo within timeout")
+		}
+		t.Log("waiting for GenAI spans...")
+		time.Sleep(traceWaitInterval)
 	}
 
-	// TODO(phase1): deploy otel-llm-echo via wf_apply, run via wf_run,
-	// assert gen_ai.usage.input_tokens > 0, gen_ai.system = "anthropic",
-	// gen_ai.request.model present, gen_ai.input.messages absent.
+	row := rows[0]
+	t.Logf("GenAI span: system=%v model=%v input=%v output=%v",
+		row["gen_ai_system"], row["gen_ai_model"], row["input_tokens"], row["output_tokens"])
+
+	if s, _ := row["gen_ai_system"].(string); s != "anthropic" {
+		t.Errorf("expected gen_ai.system=anthropic, got %q", s)
+	}
+	if m, _ := row["gen_ai_model"].(string); m == "" {
+		t.Error("gen_ai.request.model is empty")
+	}
+
+	inputTok := toFloat64(row["input_tokens"])
+	outputTok := toFloat64(row["output_tokens"])
+	if inputTok <= 0 {
+		t.Errorf("expected input_tokens > 0, got %v", inputTok)
+	}
+	if outputTok <= 0 {
+		t.Errorf("expected output_tokens > 0, got %v", outputTok)
+	}
+
+	if toBool(row["has_input_messages"]) {
+		t.Error("gen_ai.input.messages should not be present (content leakage)")
+	}
+	if toBool(row["has_output_messages"]) {
+		t.Error("gen_ai.output.messages should not be present (content leakage)")
+	}
 }
 
 // TestE2E_GracefulDegradation verifies that workflow execution succeeds even
-// when the OTel Collector service is unavailable (telemetry export is non-fatal).
+// when the OTel Collector is unavailable (telemetry export is non-fatal).
 func TestE2E_GracefulDegradation(t *testing.T) {
 	requireObs(t)
 	client := e2eClient(t)
-	ctx := context.Background()
 
 	t.Cleanup(func() {
-		_ = k8s.DeleteNamespace(context.Background(), client, e2eObsNS)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		scaleDeployment(ctx, t, client, observabilityNS, "tentacular-observability-collector", 1)
+		t.Log("collector restored to 1 replica")
 	})
 
-	t.Skip("TestE2E_GracefulDegradation: requires wf_apply/wf_run and collector Service manipulation — skipping until Phase 1 engine changes land")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	scaleDeployment(ctx, t, client, observabilityNS, "tentacular-observability-collector", 0)
+	t.Log("collector scaled to 0")
 
-	if err := k8s.CreateNamespace(ctx, client, e2eObsNS); err != nil {
-		t.Fatalf("CreateNamespace: %v", err)
+	// Wait for collector pod to terminate.
+	time.Sleep(5 * time.Second)
+
+	runCtx, runCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer runCancel()
+	out, err := k8s.RunWorkflow(runCtx, client, e2eObsNS, "otel-echo", nil)
+	if err != nil {
+		t.Fatalf("workflow should succeed without collector, but got: %v", err)
 	}
 
-	// TODO(phase1): delete otel-collector Service, deploy and run a tentacle,
-	// assert workflow succeeds, restore Service, verify telemetry resumes.
+	var result map[string]any
+	if err := json.Unmarshal(out, &result); err != nil {
+		t.Fatalf("unmarshal workflow output: %v", err)
+	}
+	if success, _ := result["success"].(bool); !success {
+		t.Fatalf("expected success=true, got output: %s", string(out))
+	}
+	t.Logf("workflow succeeded without collector: %d bytes output", len(out))
 }
 
-// TestE2E_ErrorSpan deploys the otel-error validation tentacle, runs it, and
-// verifies an ERROR-status span with an exception event appears in SigNoz.
+// TestE2E_ErrorSpan runs the otel-error validation tentacle and verifies an
+// ERROR-status span appears in ClickHouse.
 func TestE2E_ErrorSpan(t *testing.T) {
 	requireObs(t)
 	client := e2eClient(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
-	t.Cleanup(func() {
-		_ = k8s.DeleteNamespace(context.Background(), client, e2eObsNS)
-	})
-
-	t.Skip("TestE2E_ErrorSpan: requires wf_apply/wf_run MCP integration — skipping until Phase 1 engine changes land")
-
-	if err := k8s.CreateNamespace(ctx, client, e2eObsNS); err != nil {
-		t.Fatalf("CreateNamespace: %v", err)
+	// otel-error may return an HTTP error or succeed with error in output.
+	_, err := k8s.RunWorkflow(ctx, client, e2eObsNS, "otel-error", nil)
+	if err != nil {
+		t.Logf("otel-error returned error (expected): %v", err)
 	}
 
-	// TODO(phase1): deploy otel-error via wf_apply, run via wf_run,
-	// assert execute_node span has status ERROR and exception event recorded.
+	sql := `SELECT name, statusCode, statusMessage
+		FROM signoz_traces.distributed_signoz_index_v3
+		WHERE serviceName = 'otel-error'
+			AND statusCode = 2
+			AND timestamp > toDateTime64(now() - INTERVAL 2 MINUTE, 9)
+		ORDER BY timestamp DESC
+		LIMIT 5`
+
+	var rows []map[string]any
+	deadline := time.Now().Add(traceWaitTimeout)
+	for {
+		rows = queryClickHouse(t, sql)
+		if len(rows) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no ERROR spans found for otel-error within timeout")
+		}
+		t.Log("waiting for error spans...")
+		time.Sleep(traceWaitInterval)
+	}
+
+	t.Logf("found %d ERROR spans for otel-error", len(rows))
+	statusCode := toFloat64(rows[0]["statusCode"])
+	if statusCode != 2 {
+		t.Errorf("expected statusCode=2 (Error), got %v", statusCode)
+	}
 }
+
+// ---------- Enrichment validation ----------
+
+// TestE2E_EnrichmentApplied verifies that the OTel enrichment pipeline applied
+// the correct NetworkPolicy egress rules and Deployment environment variables
+// to a deployed tentacle.
+func TestE2E_EnrichmentApplied(t *testing.T) {
+	requireObs(t)
+	client := e2eClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Verify NetworkPolicy has OTel egress rules.
+	np, err := client.Clientset.NetworkingV1().NetworkPolicies(e2eObsNS).Get(
+		ctx, "otel-echo-netpol", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get NetworkPolicy otel-echo-netpol: %v", err)
+	}
+
+	foundOTelEgress := false
+	for _, rule := range np.Spec.Egress {
+		for _, port := range rule.Ports {
+			if port.Port != nil && port.Port.IntValue() == 4317 {
+				foundOTelEgress = true
+				for _, to := range rule.To {
+					if to.NamespaceSelector != nil {
+						nsLabels := to.NamespaceSelector.MatchLabels
+						if nsLabels["kubernetes.io/metadata.name"] == observabilityNS {
+							t.Log("NetworkPolicy has OTel egress to tentacular-observability on port 4317")
+						} else {
+							t.Errorf("OTel egress targets wrong namespace: %v", nsLabels)
+						}
+					}
+				}
+				break
+			}
+		}
+		if foundOTelEgress {
+			break
+		}
+	}
+	if !foundOTelEgress {
+		t.Error("NetworkPolicy missing OTel egress rule (port 4317)")
+	}
+
+	// Verify Deployment has OTel environment variables.
+	deploy, err := client.Clientset.AppsV1().Deployments(e2eObsNS).Get(
+		ctx, "otel-echo", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get Deployment otel-echo: %v", err)
+	}
+
+	envMap := map[string]string{}
+	for _, c := range deploy.Spec.Template.Spec.Containers {
+		for _, env := range c.Env {
+			envMap[env.Name] = env.Value
+		}
+	}
+
+	requiredEnvs := []string{
+		"OTEL_DENO",
+		"OTEL_EXPORTER_OTLP_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_PROTOCOL",
+		"OTEL_SERVICE_NAME",
+		"OTEL_RESOURCE_ATTRIBUTES",
+	}
+	for _, key := range requiredEnvs {
+		if v, ok := envMap[key]; !ok {
+			t.Errorf("Deployment missing env var %s", key)
+		} else {
+			t.Logf("env %s=%s", key, v)
+		}
+	}
+}
+
+// ---------- Helpers ----------
 
 // querySigNozForService queries the SigNoz services list API and returns true
 // if the given service name appears in the response.
