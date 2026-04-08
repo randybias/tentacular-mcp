@@ -599,7 +599,7 @@ func attemptEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveS
 			return EnclaveSyncResult{}, false, errors.New("permission denied: OIDC caller has no email claim")
 		}
 		if deployer.Email != info.Owner {
-			return EnclaveSyncResult{}, false, fmt.Errorf("permission denied: only the enclave owner (%s) may modify enclave %q", info.Owner, params.Name)
+			return EnclaveSyncResult{}, false, fmt.Errorf("permission denied: only the enclave owner may modify enclave %q", params.Name)
 		}
 	}
 
@@ -798,7 +798,10 @@ func transferOrphanedTentacles(
 		depAnn[authz.AnnotationOwnerEmail] = newOwner
 		// Clear owner-sub; the new owner's OIDC sub will be stamped on next deploy.
 		depAnn[authz.AnnotationOwnerSub] = ""
-		// Preserve owner-name as-is; it will be updated on the new owner's next deploy.
+		// NOTE: AnnotationOwnerName is intentionally NOT updated here because the
+		// enclave namespace annotations don't carry the owner's display name, so
+		// we have no value to set. It will be updated on the new owner's next
+		// deploy, when their OIDC token provides the display name claim.
 		dep.Annotations = depAnn
 
 		if _, updateErr := client.Clientset.AppsV1().Deployments(namespace).Update(
@@ -844,7 +847,7 @@ func handleEnclaveDeprovision(ctx context.Context, client *k8s.Client, exoCtrl *
 			return EnclaveDeprovisionResult{}, errors.New("permission denied: OIDC caller has no email claim; cannot verify enclave ownership")
 		}
 		if deployer.Email != info.Owner {
-			return EnclaveDeprovisionResult{}, fmt.Errorf("permission denied: only the enclave owner (%s) may deprovision enclave %q", info.Owner, params.Name)
+			return EnclaveDeprovisionResult{}, fmt.Errorf("permission denied: only the enclave owner may deprovision enclave %q", params.Name)
 		}
 	}
 

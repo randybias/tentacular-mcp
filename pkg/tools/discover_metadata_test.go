@@ -392,8 +392,12 @@ func TestWfDescribe_FallbackMetadataConfigMapName(t *testing.T) {
 	client := newWfTestClient()
 	ctx := context.Background()
 
-	// No metadata-ref annotation — should fall back to "<name>-metadata" naming convention.
-	dep := makeTestDeployment("fallback-meta-wf", "fb-ns", nil)
+	// No metadata-ref annotation, but has a metadata annotation (nodes) — should
+	// fall back to "<name>-metadata" naming convention. Deployments with zero
+	// metadata annotations are treated as pre-metadata and skip the lookup entirely.
+	dep := makeTestDeployment("fallback-meta-wf", "fb-ns", map[string]string{
+		"tentacular.io/nodes": `["node-a"]`,
+	})
 	if _, err := client.Clientset.AppsV1().Deployments("fb-ns").Create(ctx, dep, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("create deployment: %v", err)
 	}

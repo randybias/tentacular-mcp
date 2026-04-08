@@ -210,3 +210,49 @@ func TestWriteOwnerAnnotations_UsesNewPrefix(t *testing.T) {
 		}
 	}
 }
+
+// --- WriteNamespaceAnnotations ---
+
+// TestWriteNamespaceAnnotations_OmitsGroup verifies that WriteNamespaceAnnotations
+// does not write the tentacular.io/group annotation (posix-cleanup B1 requirement).
+func TestWriteNamespaceAnnotations_OmitsGroup(t *testing.T) {
+	mode := ModeOwnerRead | ModeOwnerWrite | ModeOwnerExecute
+	ann := WriteNamespaceAnnotations("sub-abc", "alice@example.com", "Alice", mode, DefaultMode)
+
+	if _, ok := ann[AnnotationGroup]; ok {
+		t.Errorf("WriteNamespaceAnnotations must not write %q (group annotation removed in posix-cleanup)", AnnotationGroup)
+	}
+}
+
+func TestWriteNamespaceAnnotations_AllActiveFields(t *testing.T) {
+	mode := ModeOwnerRead | ModeOwnerWrite | ModeOwnerExecute
+	defaultMode := ModeOwnerRead | ModeOwnerWrite | ModeOwnerExecute | ModeGroupRead | ModeGroupExecute
+	ann := WriteNamespaceAnnotations("sub-ns", "bob@example.com", "Bob", mode, defaultMode)
+
+	if ann[AnnotationOwnerSub] != "sub-ns" {
+		t.Errorf("owner-sub = %q, want sub-ns", ann[AnnotationOwnerSub])
+	}
+	if ann[AnnotationOwnerEmail] != "bob@example.com" {
+		t.Errorf("owner-email = %q, want bob@example.com", ann[AnnotationOwnerEmail])
+	}
+	if ann[AnnotationOwnerName] != "Bob" {
+		t.Errorf("owner-name = %q, want Bob", ann[AnnotationOwnerName])
+	}
+	if ann[AnnotationMode] != mode.String() {
+		t.Errorf("mode = %q, want %q", ann[AnnotationMode], mode.String())
+	}
+	if ann[AnnotationDefaultMode] != defaultMode.String() {
+		t.Errorf("default-mode = %q, want %q", ann[AnnotationDefaultMode], defaultMode.String())
+	}
+	// group must NOT be present
+	if _, ok := ann[AnnotationGroup]; ok {
+		t.Error("group annotation must not be written by WriteNamespaceAnnotations")
+	}
+}
+
+func TestWriteNamespaceAnnotations_ZeroDefaultModeOmitted(t *testing.T) {
+	ann := WriteNamespaceAnnotations("sub", "e@e.com", "E", DefaultMode, 0)
+	if _, ok := ann[AnnotationDefaultMode]; ok {
+		t.Error("expected AnnotationDefaultMode to be omitted when defaultMode is zero")
+	}
+}

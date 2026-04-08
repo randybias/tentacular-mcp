@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/randybias/tentacular-mcp/pkg/auth"
@@ -116,7 +117,9 @@ type WfDescribeResult struct {
 	Age             string            `json:"age"`
 	DeployedVia     string            `json:"deployed_via,omitempty"`
 	ParamsSchema    string            `json:"params_schema,omitempty"`
-	ContractSummary string            `json:"contract_summary,omitempty"`
+	// ContractSummary maps to the "contract" key in the metadata ConfigMap.
+	// The field name is more descriptive for API consumers.
+	ContractSummary string `json:"contract_summary,omitempty"`
 	Readme          string            `json:"readme,omitempty"`
 	MetadataRef     string            `json:"metadata_ref,omitempty"`
 	ScaffoldName    string            `json:"scaffold_name,omitempty"`
@@ -462,17 +465,33 @@ func handleWfDescribe(ctx context.Context, client *k8s.Client, params WfDescribe
 
 	// --- Tier 2: metadata ConfigMap written by the builder ---
 	// Missing ConfigMap is non-fatal (old deployments won't have one).
+	// Only attempt the lookup if the deployment has an explicit metadata-ref annotation
+	// or at least one other metadata annotation (e.g. tentacular.io/nodes), which
+	// indicates it was built with the metadata-aware builder. This avoids a
+	// unnecessary API call for every pre-metadata deployment.
 	metadataRef := result.MetadataRef
+	hasMetadataAnnotations := metadataRef != "" ||
+		ann["tentacular.io/nodes"] != "" ||
+		ann["tentacular.io/edges"] != "" ||
+		ann["tentacular.io/sidecars"] != "" ||
+		ann["tentacular.io/dependencies"] != "" ||
+		ann["tentacular.io/trigger-type"] != "" ||
+		ann["tentacular.io/scaffold-name"] != ""
 	if metadataRef == "" {
 		metadataRef = params.Name + "-metadata"
 	}
-	metaCM, metaErr := client.Clientset.CoreV1().ConfigMaps(params.Namespace).Get(
-		ctx, metadataRef, metav1.GetOptions{},
-	)
-	if metaErr == nil && metaCM.Data != nil {
+	var metaCM *corev1.ConfigMap
+	var metaErr error
+	if hasMetadataAnnotations {
+		metaCM, metaErr = client.Clientset.CoreV1().ConfigMaps(params.Namespace).Get(
+			ctx, metadataRef, metav1.GetOptions{},
+		)
+	}
+	if metaErr == nil && metaCM != nil && metaCM.Data != nil {
 		if v, ok := metaCM.Data["readme"]; ok {
 			result.Readme = v
 		}
+		// ConfigMap key "contract" → API field "contract_summary"
 		if v, ok := metaCM.Data["contract"]; ok {
 			result.ContractSummary = v
 		}
