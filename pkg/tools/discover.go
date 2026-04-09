@@ -54,6 +54,32 @@ type DependencyMeta struct {
 	Managed  bool   `json:"managed"`
 }
 
+// PromptTool is a tool reference within a prompt entry.
+type PromptTool struct {
+	Name        string `json:"name" yaml:"name"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+}
+
+// PromptEntry describes a single prompt definition within a tentacle.
+type PromptEntry struct {
+	Node               string       `json:"node" yaml:"node"`
+	Name               string       `json:"name" yaml:"name"`
+	Description        string       `json:"description,omitempty" yaml:"description,omitempty"`
+	Model              string       `json:"model,omitempty" yaml:"model,omitempty"`
+	SystemPrompt       string       `json:"system_prompt,omitempty" yaml:"system_prompt,omitempty"`
+	UserPromptTemplate string       `json:"user_prompt_template,omitempty" yaml:"user_prompt_template,omitempty"`
+	Tools              []PromptTool `json:"tools,omitempty" yaml:"tools,omitempty"`
+}
+
+// TemplateEntry describes a single template definition within a tentacle.
+type TemplateEntry struct {
+	Node        string `json:"node" yaml:"node"`
+	Name        string `json:"name" yaml:"name"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	Format      string `json:"format,omitempty" yaml:"format,omitempty"`
+	Template    string `json:"template,omitempty" yaml:"template,omitempty"`
+}
+
 // GitProvenance holds git state captured at build time for audit and reproducibility.
 type GitProvenance struct {
 	Commit string `json:"commit"`
@@ -126,6 +152,8 @@ type WfDescribeResult struct {
 	Nodes           []string         `json:"nodes,omitempty"`
 	Sidecars        []SidecarMeta    `json:"sidecars,omitempty"`
 	Dependencies    []DependencyMeta `json:"dependencies,omitempty"`
+	Prompts         []PromptEntry    `json:"prompts,omitempty"`
+	Templates       []TemplateEntry  `json:"templates,omitempty"`
 	Edges           [][2]string      `json:"edges,omitempty"`
 	EnclaveMembers  []string         `json:"enclave_members,omitempty"`
 	Tags            []string         `json:"tags,omitempty"`
@@ -504,6 +532,19 @@ func handleWfDescribe(ctx context.Context, client *k8s.Client, params WfDescribe
 				result.GitProvenance = &prov
 			} else {
 				slog.Warn("wf_describe: invalid JSON in git_provenance ConfigMap key", "deployment", params.Name, "error", jsonErr)
+			}
+		}
+		if v, ok := metaCM.Data["prompts"]; ok {
+			var promptsDoc struct {
+				Prompts   []PromptEntry   `yaml:"prompts"`
+				Templates []TemplateEntry `yaml:"templates"`
+			}
+			if yamlErr := yaml.Unmarshal([]byte(v), &promptsDoc); yamlErr == nil {
+				result.Prompts = promptsDoc.Prompts
+				result.Templates = promptsDoc.Templates
+			} else {
+				slog.Warn("wf_describe: invalid YAML in prompts ConfigMap key",
+					"deployment", params.Name, "error", yamlErr)
 			}
 		}
 	}

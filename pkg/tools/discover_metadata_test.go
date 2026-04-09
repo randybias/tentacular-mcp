@@ -388,6 +388,185 @@ version: "1.0"
 	}
 }
 
+func TestWfDescribe_PromptsFromConfigMap(t *testing.T) {
+	client := newWfTestClient()
+	ctx := context.Background()
+
+	dep := makeTestDeployment("prompt-wf", "prompt-ns", map[string]string{
+		"tentacular.io/metadata-ref":   "prompt-wf-metadata",
+		"tentacular.io/prompt-count":   "2",
+		"tentacular.io/template-count": "1",
+	})
+	if _, err := client.Clientset.AppsV1().Deployments("prompt-ns").Create(ctx, dep, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "prompt-wf-metadata",
+			Namespace: "prompt-ns",
+		},
+		Data: map[string]string{
+			"prompts": `prompts:
+  - node: analyze
+    name: classify
+    description: "Classify input data"
+    model: claude-sonnet-4-20250514
+    system_prompt: "You are a classifier."
+    user_prompt_template: "Classify: {{input}}"
+    tools:
+      - name: web_search
+        description: "Search the web"
+  - node: report
+    name: summarize
+    description: "Summarize results"
+    model: claude-sonnet-4-20250514
+templates:
+  - node: report
+    name: report_template
+    description: "HTML report template"
+    format: html
+    template: "<h1>{{title}}</h1>"
+`,
+		},
+	}
+	if _, err := client.Clientset.CoreV1().ConfigMaps("prompt-ns").Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create configmap: %v", err)
+	}
+
+	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
+		Namespace: "prompt-ns",
+		Name:      "prompt-wf",
+	}, bearerInfo(), bearerEval())
+	if err != nil {
+		t.Fatalf("handleWfDescribe: %v", err)
+	}
+
+	// Prompts
+	if len(result.Prompts) != 2 {
+		t.Fatalf("Prompts: got %d, want 2", len(result.Prompts))
+	}
+	p0 := result.Prompts[0]
+	if p0.Node != "analyze" || p0.Name != "classify" {
+		t.Errorf("Prompts[0] = node=%q name=%q, want analyze/classify", p0.Node, p0.Name)
+	}
+	if p0.Model != "claude-sonnet-4-20250514" {
+		t.Errorf("Prompts[0].Model = %q, want claude-sonnet-4-20250514", p0.Model)
+	}
+	if p0.SystemPrompt != "You are a classifier." {
+		t.Errorf("Prompts[0].SystemPrompt = %q", p0.SystemPrompt)
+	}
+	if p0.UserPromptTemplate != "Classify: {{input}}" {
+		t.Errorf("Prompts[0].UserPromptTemplate = %q", p0.UserPromptTemplate)
+	}
+	if len(p0.Tools) != 1 || p0.Tools[0].Name != "web_search" {
+		t.Errorf("Prompts[0].Tools = %+v, want [{web_search ...}]", p0.Tools)
+	}
+
+	// Templates
+	if len(result.Templates) != 1 {
+		t.Fatalf("Templates: got %d, want 1", len(result.Templates))
+	}
+	tpl := result.Templates[0]
+	if tpl.Node != "report" || tpl.Name != "report_template" {
+		t.Errorf("Templates[0] = node=%q name=%q, want report/report_template", tpl.Node, tpl.Name)
+	}
+	if tpl.Format != "html" {
+		t.Errorf("Templates[0].Format = %q, want html", tpl.Format)
+	}
+	if tpl.Template != "<h1>{{title}}</h1>" {
+		t.Errorf("Templates[0].Template = %q", tpl.Template)
+	}
+
+	// Annotation counts should be in the annotations map.
+	if result.Annotations["tentacular.io/prompt-count"] != "2" {
+		t.Errorf("prompt-count annotation = %q, want 2", result.Annotations["tentacular.io/prompt-count"])
+	}
+	if result.Annotations["tentacular.io/template-count"] != "1" {
+		t.Errorf("template-count annotation = %q, want 1", result.Annotations["tentacular.io/template-count"])
+	}
+}
+
+func TestWfDescribe_PromptsKeyAbsent(t *testing.T) {
+	client := newWfTestClient()
+	ctx := context.Background()
+
+	dep := makeTestDeployment("noprompt-wf", "noprompt-ns", map[string]string{
+		"tentacular.io/metadata-ref": "noprompt-wf-metadata",
+	})
+	if _, err := client.Clientset.AppsV1().Deployments("noprompt-ns").Create(ctx, dep, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "noprompt-wf-metadata",
+			Namespace: "noprompt-ns",
+		},
+		Data: map[string]string{
+			"readme": "# No prompts here",
+		},
+	}
+	if _, err := client.Clientset.CoreV1().ConfigMaps("noprompt-ns").Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create configmap: %v", err)
+	}
+
+	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
+		Namespace: "noprompt-ns",
+		Name:      "noprompt-wf",
+	}, bearerInfo(), bearerEval())
+	if err != nil {
+		t.Fatalf("handleWfDescribe: %v", err)
+	}
+
+	if len(result.Prompts) != 0 {
+		t.Errorf("Prompts should be empty, got %d", len(result.Prompts))
+	}
+	if len(result.Templates) != 0 {
+		t.Errorf("Templates should be empty, got %d", len(result.Templates))
+	}
+}
+
+func TestWfDescribe_PromptsInvalidYAML(t *testing.T) {
+	client := newWfTestClient()
+	ctx := context.Background()
+
+	dep := makeTestDeployment("badprompt-wf", "badprompt-ns", map[string]string{
+		"tentacular.io/metadata-ref": "badprompt-wf-metadata",
+	})
+	if _, err := client.Clientset.AppsV1().Deployments("badprompt-ns").Create(ctx, dep, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "badprompt-wf-metadata",
+			Namespace: "badprompt-ns",
+		},
+		Data: map[string]string{
+			"prompts": `{{{not valid yaml at all`,
+		},
+	}
+	if _, err := client.Clientset.CoreV1().ConfigMaps("badprompt-ns").Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create configmap: %v", err)
+	}
+
+	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
+		Namespace: "badprompt-ns",
+		Name:      "badprompt-wf",
+	}, bearerInfo(), bearerEval())
+	if err != nil {
+		t.Fatalf("handleWfDescribe should not error on invalid YAML: %v", err)
+	}
+
+	if len(result.Prompts) != 0 {
+		t.Errorf("Prompts should be empty after parse failure, got %d", len(result.Prompts))
+	}
+	if len(result.Templates) != 0 {
+		t.Errorf("Templates should be empty after parse failure, got %d", len(result.Templates))
+	}
+}
+
 func TestWfDescribe_FallbackMetadataConfigMapName(t *testing.T) {
 	client := newWfTestClient()
 	ctx := context.Background()
