@@ -71,6 +71,17 @@ data:
           - sources:
               - from: connection
 
+      # Drop health-check spans. Deno auto-instruments all HTTP including
+      # /health probes (~18 requests/min per workflow), producing 99.9% noise.
+      # Filter runs after k8sattributes so enriched metadata is available but
+      # before batch to avoid buffering spans we will discard.
+      filter/drop-health:
+        error_mode: ignore
+        traces:
+          span:
+            - 'attributes["url.path"] == "/health"'
+            - 'IsMatch(attributes["url.full"], ".*/health.*")'
+
       # Batch telemetry before export to reduce network overhead.
       batch:
         send_batch_size: 512
@@ -118,7 +129,7 @@ data:
       pipelines:
         traces:
           receivers: [otlp]
-          processors: [k8sattributes, transform/redact-secrets, batch]
+          processors: [k8sattributes, filter/drop-health, transform/redact-secrets, batch]
           exporters: [otlp/signoz]
         metrics:
           receivers: [otlp, kubeletstats, k8s_cluster]

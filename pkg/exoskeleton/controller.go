@@ -261,6 +261,7 @@ func (c *Controller) ProcessManifests(ctx context.Context, namespace, name strin
 	// OTel enrichment: unconditional — observability is a platform feature
 	// regardless of whether exoskeleton services are registered.
 	patchDeploymentOTelEnv(manifests)
+	patchDeploymentWorkflowLabel(manifests, name)
 	patchNetworkPolicyOTelEgress(manifests, name)
 
 	// SPIRE identity registration: creates a ClusterSPIFFEID so matching
