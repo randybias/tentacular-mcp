@@ -285,7 +285,7 @@ func TestDetermineProvider(t *testing.T) {
 		},
 		{
 			name:     "azp differs from our client",
-			expected: "some-other-client",
+			expected: "keycloak",
 			claims:   keycloakClaims{AZP: "some-other-client"},
 		},
 		{

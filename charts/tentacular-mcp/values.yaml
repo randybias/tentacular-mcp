@@ -141,6 +141,9 @@ exoskeletonAuth:
   # -- Name of an existing Secret containing Keycloak credentials.
   # Required keys: issuer-url, client-id, client-secret.
   existingSecret: ""
+  # -- Comma-separated list of additional OIDC client IDs whose tokens
+  # are accepted (e.g. "thekraken" for service-to-service auth).
+  trustedAZPs: ""
 
 # -- Exoskeleton configuration for backing-service registration.
 exoskeleton:

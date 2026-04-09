@@ -98,6 +98,10 @@ spec:
                   name: {{ include "tentacular-mcp.fullname" . }}-exoskeleton-auth
                   key: client-secret
             {{- end }}
+            {{- if .Values.exoskeletonAuth.trustedAZPs }}
+            - name: TENTACULAR_KEYCLOAK_TRUSTED_AZPS
+              value: {{ .Values.exoskeletonAuth.trustedAZPs | quote }}
+            {{- end }}
             {{- end }}
             {{- end }}
             {{- if .Values.exoskeleton.enabled }}
