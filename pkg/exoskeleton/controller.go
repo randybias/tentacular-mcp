@@ -174,6 +174,13 @@ func (c *Controller) ProcessManifests(ctx context.Context, namespace, name strin
 		return manifests, nil
 	}
 
+	// OTel enrichment: unconditional — observability is a platform feature
+	// regardless of whether exoskeleton services are registered.
+	// Must run before the early return for workflows with no exo deps.
+	patchDeploymentOTelEnv(manifests)
+	patchDeploymentWorkflowLabel(manifests, name)
+	patchNetworkPolicyOTelEgress(manifests, name)
+
 	deps := detectExoDeps(manifests)
 	if len(deps) == 0 {
 		return manifests, nil
@@ -257,12 +264,6 @@ func (c *Controller) ProcessManifests(ctx context.Context, namespace, name strin
 			return nil, fmt.Errorf("merge exo creds: %w", err)
 		}
 	}
-
-	// OTel enrichment: unconditional — observability is a platform feature
-	// regardless of whether exoskeleton services are registered.
-	patchDeploymentOTelEnv(manifests)
-	patchDeploymentWorkflowLabel(manifests, name)
-	patchNetworkPolicyOTelEgress(manifests, name)
 
 	// SPIRE identity registration: creates a ClusterSPIFFEID so matching
 	// pods receive an X.509 SVID automatically. This does not produce
