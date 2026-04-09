@@ -1,0 +1,37 @@
+# Azure production profile - K8s on Azure with nginx ingress + Azure LB
+# Layer ON TOP of prod-values.yaml. Overrides only Azure-specific settings.
+#
+# See prod-values.yaml for the full list of mandatory --set parameters.
+# Hostnames are auto-derived from global.domain:
+#   - tentacular-mcp.<domain>
+#   - tentacular-keycloak.<domain>
+#
+# Prerequisites:
+#   1. nginx ingress controller with Azure LB:
+#      helm install ingress-nginx ingress-nginx/ingress-nginx \
+#        -n ingress-nginx --create-namespace \
+#        --set controller.service.type=LoadBalancer \
+#        --set controller.service.annotations."service\.beta\.kubernetes\.io/azure-load-balancer-health-probe-request-path"=/healthz
+#   2. cert-manager installed
+#   3. Default StorageClass set (e.g., managed-csi)
+#   4. DNS records pointing to the Azure LB:
+#      - tentacular-mcp.<your-domain>
+#      - tentacular-keycloak.<your-domain>
+
+# All hostnames are derived from global.domain (set via --set global.domain=<your-domain>)
+# No explicit hostname overrides needed in this file.
+
+tls:
+  clusterIssuers:
+    create: true
+    # Set via --set tls.clusterIssuers.email=admin@<your-domain>
+    production: true
+  certificates:
+    mcp:
+      create: true
+      secretName: tentacular-mcp-tls
+
+ingress:
+  tls:
+    enabled: true
+    secretName: tentacular-mcp-tls
