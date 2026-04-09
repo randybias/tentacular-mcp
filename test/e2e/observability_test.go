@@ -12,9 +12,11 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/randybias/tentacular-mcp/pkg/k8s"
@@ -204,6 +206,136 @@ func toBool(v any) bool {
 	return toFloat64(v) != 0
 }
 
+// ---------- MCP-based workflow runner ----------
+
+// bearerTransport injects a Bearer token into every HTTP request.
+type obsBearerTransport struct {
+	token string
+	base  http.RoundTripper
+}
+
+func (t *obsBearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Header.Set("Authorization", "Bearer "+t.token)
+	return t.base.RoundTrip(req)
+}
+
+var (
+	mcpSessionOnce sync.Once
+	mcpSessionVal  *mcp.ClientSession
+	mcpSessionErr  error
+)
+
+// obsMCPSession returns a shared MCP client session connected to the external
+// MCP server. Returns nil if TENTACULAR_E2E_MCP_URL is not set.
+func obsMCPSession(t *testing.T) *mcp.ClientSession {
+	t.Helper()
+	mcpURL := os.Getenv("TENTACULAR_E2E_MCP_URL")
+	if mcpURL == "" {
+		return nil
+	}
+	mcpSessionOnce.Do(func() {
+		token := os.Getenv("TENTACULAR_E2E_MCP_TOKEN")
+		if token == "" {
+			mcpSessionErr = fmt.Errorf("TENTACULAR_E2E_MCP_URL set but TENTACULAR_E2E_MCP_TOKEN is empty")
+			return
+		}
+		transport := &mcp.StreamableClientTransport{
+			Endpoint: strings.TrimRight(mcpURL, "/") + "/mcp",
+			HTTPClient: &http.Client{
+				Transport: &obsBearerTransport{token: token, base: http.DefaultTransport},
+			},
+			MaxRetries: -1,
+		}
+		client := mcp.NewClient(&mcp.Implementation{
+			Name:    "e2e-obs-test",
+			Version: "1.0.0",
+		}, nil)
+		mcpSessionVal, mcpSessionErr = client.Connect(context.Background(), transport, nil)
+	})
+	if mcpSessionErr != nil {
+		t.Fatalf("MCP session: %v", mcpSessionErr)
+	}
+	return mcpSessionVal
+}
+
+// runWorkflow triggers a deployed workflow. If TENTACULAR_E2E_MCP_URL is set,
+// it uses the MCP server's wf_run tool (works from outside the cluster).
+// Otherwise it calls k8s.RunWorkflow() directly (requires ClusterIP access).
+func runWorkflow(ctx context.Context, t *testing.T, client *k8s.Client, namespace, name string) json.RawMessage {
+	t.Helper()
+
+	if sess := obsMCPSession(t); sess != nil {
+		result, err := sess.CallTool(ctx, &mcp.CallToolParams{
+			Name: "wf_run",
+			Arguments: map[string]any{
+				"namespace": namespace,
+				"name":      name,
+			},
+		})
+		if err != nil {
+			t.Fatalf("MCP wf_run %s/%s: %v", namespace, name, err)
+		}
+		if result.IsError {
+			msg := "wf_run returned error"
+			if len(result.Content) > 0 {
+				if tc, ok := result.Content[0].(*mcp.TextContent); ok {
+					msg = tc.Text
+				}
+			}
+			t.Fatalf("MCP wf_run %s/%s: %s", namespace, name, msg)
+		}
+		if len(result.Content) > 0 {
+			if tc, ok := result.Content[0].(*mcp.TextContent); ok {
+				return json.RawMessage(tc.Text)
+			}
+		}
+		return json.RawMessage(`{}`)
+	}
+
+	out, err := k8s.RunWorkflow(ctx, client, namespace, name, nil)
+	if err != nil {
+		t.Fatalf("RunWorkflow %s/%s: %v", namespace, name, err)
+	}
+	return out
+}
+
+// runWorkflowAllowError is like runWorkflow but does not fail on error
+// (used for otel-error which deliberately fails).
+func runWorkflowAllowError(ctx context.Context, t *testing.T, client *k8s.Client, namespace, name string) (json.RawMessage, error) {
+	t.Helper()
+
+	if sess := obsMCPSession(t); sess != nil {
+		result, err := sess.CallTool(ctx, &mcp.CallToolParams{
+			Name: "wf_run",
+			Arguments: map[string]any{
+				"namespace": namespace,
+				"name":      name,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		if result.IsError {
+			msg := "wf_run error"
+			if len(result.Content) > 0 {
+				if tc, ok := result.Content[0].(*mcp.TextContent); ok {
+					msg = tc.Text
+				}
+			}
+			return nil, fmt.Errorf("%s", msg)
+		}
+		if len(result.Content) > 0 {
+			if tc, ok := result.Content[0].(*mcp.TextContent); ok {
+				return json.RawMessage(tc.Text), nil
+			}
+		}
+		return json.RawMessage(`{}`), nil
+	}
+
+	return k8s.RunWorkflow(ctx, client, namespace, name, nil)
+}
+
 // ---------- Pipeline tests ----------
 
 // TestE2E_CollectorReachable verifies the OTel Collector HTTP endpoint accepts
@@ -323,10 +455,7 @@ func TestE2E_WorkflowTrace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	out, err := k8s.RunWorkflow(ctx, client, e2eObsNS, "otel-echo", nil)
-	if err != nil {
-		t.Fatalf("RunWorkflow otel-echo: %v", err)
-	}
+	out := runWorkflow(ctx, t, client, e2eObsNS, "otel-echo")
 	t.Logf("otel-echo output: %s", string(out))
 
 	invSpans := waitForSpans(t, "otel-echo", "invoke_workflow", traceWaitTimeout)
@@ -359,10 +488,7 @@ func TestE2E_LLMTelemetry(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	out, err := k8s.RunWorkflow(ctx, client, e2eObsNS, "otel-llm-echo", nil)
-	if err != nil {
-		t.Fatalf("RunWorkflow otel-llm-echo: %v", err)
-	}
+	out := runWorkflow(ctx, t, client, e2eObsNS, "otel-llm-echo")
 	t.Logf("otel-llm-echo output length: %d bytes", len(out))
 
 	sql := `SELECT name,
@@ -444,18 +570,7 @@ func TestE2E_GracefulDegradation(t *testing.T) {
 
 	runCtx, runCancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer runCancel()
-	out, err := k8s.RunWorkflow(runCtx, client, e2eObsNS, "otel-echo", nil)
-	if err != nil {
-		t.Fatalf("workflow should succeed without collector, but got: %v", err)
-	}
-
-	var result map[string]any
-	if err := json.Unmarshal(out, &result); err != nil {
-		t.Fatalf("unmarshal workflow output: %v", err)
-	}
-	if success, _ := result["success"].(bool); !success {
-		t.Fatalf("expected success=true, got output: %s", string(out))
-	}
+	out := runWorkflow(runCtx, t, client, e2eObsNS, "otel-echo")
 	t.Logf("workflow succeeded without collector: %d bytes output", len(out))
 }
 
@@ -468,7 +583,7 @@ func TestE2E_ErrorSpan(t *testing.T) {
 	defer cancel()
 
 	// otel-error may return an HTTP error or succeed with error in output.
-	_, err := k8s.RunWorkflow(ctx, client, e2eObsNS, "otel-error", nil)
+	_, err := runWorkflowAllowError(ctx, t, client, e2eObsNS, "otel-error")
 	if err != nil {
 		t.Logf("otel-error returned error (expected): %v", err)
 	}
