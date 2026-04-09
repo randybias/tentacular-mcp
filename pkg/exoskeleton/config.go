@@ -83,6 +83,7 @@ func LoadFromEnv() *Config {
 			IssuerURL:    os.Getenv("TENTACULAR_KEYCLOAK_ISSUER"),
 			ClientID:     os.Getenv("TENTACULAR_KEYCLOAK_CLIENT_ID"),
 			ClientSecret: os.Getenv("TENTACULAR_KEYCLOAK_CLIENT_SECRET"),
+			TrustedAZPs:  parseTrustedAZPs(os.Getenv("TENTACULAR_KEYCLOAK_TRUSTED_AZPS")),
 		},
 		SPIRE: SPIREConfig{
 			Enabled:   envBool("TENTACULAR_EXOSKELETON_SPIRE_ENABLED"),
@@ -195,6 +196,21 @@ func (c *Config) Validate() error {
 func envBool(key string) bool {
 	v := strings.ToLower(os.Getenv(key))
 	return v == "true" || v == "1" || v == "yes"
+}
+
+// parseTrustedAZPs splits a comma-separated list of OIDC client IDs.
+func parseTrustedAZPs(val string) []string {
+	if val == "" {
+		return nil
+	}
+	var result []string
+	for _, s := range strings.Split(val, ",") {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 // envDefault returns the value of the named environment variable, or

@@ -15,6 +15,10 @@ type AuthConfig struct {
 	ClientID     string
 	ClientSecret string
 	Enabled      bool
+	// TrustedAZPs lists additional OIDC client IDs whose tokens are accepted.
+	// This allows service-to-service callers (e.g. thekraken) to authenticate
+	// with their own client credentials while being accepted by the MCP server.
+	TrustedAZPs []string
 }
 
 // DeployerInfo contains identity information extracted from an OIDC token
@@ -31,9 +35,10 @@ type DeployerInfo struct {
 // OIDCValidator validates OIDC tokens using JWKS fetched from the issuer's
 // discovery endpoint.
 type OIDCValidator struct {
-	provider *oidc.Provider
-	verifier *oidc.IDTokenVerifier
-	clientID string
+	provider    *oidc.Provider
+	verifier    *oidc.IDTokenVerifier
+	clientID    string
+	trustedAZPs map[string]bool
 }
 
 // NewOIDCValidator creates a validator that fetches JWKS from the issuer and
@@ -62,12 +67,19 @@ func NewOIDCValidator(cfg AuthConfig) (*OIDCValidator, error) {
 		SkipClientIDCheck: true,
 	})
 
-	slog.Info("OIDC validator initialized", "issuer", cfg.IssuerURL, "client_id", cfg.ClientID)
+	trusted := make(map[string]bool)
+	trusted[cfg.ClientID] = true
+	for _, azp := range cfg.TrustedAZPs {
+		trusted[azp] = true
+	}
+
+	slog.Info("OIDC validator initialized", "issuer", cfg.IssuerURL, "client_id", cfg.ClientID, "trusted_azps", len(trusted))
 
 	return &OIDCValidator{
-		provider: provider,
-		verifier: verifier,
-		clientID: cfg.ClientID,
+		provider:    provider,
+		verifier:    verifier,
+		clientID:    cfg.ClientID,
+		trustedAZPs: trusted,
 	}, nil
 }
 
@@ -96,8 +108,8 @@ func (v *OIDCValidator) ValidateToken(ctx context.Context, tokenString string) (
 
 	// Validate azp (authorized party) since Keycloak access tokens use azp
 	// instead of aud for the client identifier.
-	if claims.AZP != v.clientID {
-		return nil, fmt.Errorf("OIDC token azp %q does not match client ID %q", claims.AZP, v.clientID)
+	if !v.trustedAZPs[claims.AZP] {
+		return nil, fmt.Errorf("OIDC token azp %q is not a trusted client (expected one of %v)", claims.AZP, v.trustedAZPs)
 	}
 
 	provider := determineProvider(claims)
@@ -120,14 +132,10 @@ func (v *OIDCValidator) ValidateToken(ctx context.Context, tokenString string) (
 
 // determineProvider infers the identity provider from the token claims.
 // Keycloak sets "identity_provider" when brokering (e.g., "google").
-// Otherwise we check the authorized party (azp) or default to "keycloak".
+// Service account tokens (no identity_provider) return "keycloak".
 func determineProvider(claims keycloakClaims) string {
 	if claims.IdentityProvider != "" {
 		return claims.IdentityProvider
-	}
-	// If azp looks like a Google client ID, it's likely Google SSO
-	if claims.AZP != "" && claims.AZP != "tentacular-mcp" {
-		return claims.AZP
 	}
 	return "keycloak"
 }
