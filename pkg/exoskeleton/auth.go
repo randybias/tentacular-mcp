@@ -14,11 +14,8 @@ type AuthConfig struct {
 	IssuerURL    string
 	ClientID     string
 	ClientSecret string
+	TrustedAZPs  []string
 	Enabled      bool
-	// TrustedAZPs lists additional OIDC client IDs whose tokens are accepted.
-	// This allows service-to-service callers (e.g. thekraken) to authenticate
-	// with their own client credentials while being accepted by the MCP server.
-	TrustedAZPs []string
 }
 
 // DeployerInfo contains identity information extracted from an OIDC token
@@ -35,10 +32,10 @@ type DeployerInfo struct {
 // OIDCValidator validates OIDC tokens using JWKS fetched from the issuer's
 // discovery endpoint.
 type OIDCValidator struct {
+	trustedAZPs map[string]bool
 	provider    *oidc.Provider
 	verifier    *oidc.IDTokenVerifier
 	clientID    string
-	trustedAZPs map[string]bool
 }
 
 // NewOIDCValidator creates a validator that fetches JWKS from the issuer and

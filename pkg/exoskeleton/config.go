@@ -11,8 +11,8 @@ type Config struct {
 	Postgres          PostgresConfig
 	RustFS            RustFSConfig
 	NATS              NATSConfig
-	Auth              AuthConfig
 	SPIRE             SPIREConfig
+	Auth              AuthConfig
 	Enabled           bool
 	CleanupOnUndeploy bool
 }
