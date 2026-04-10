@@ -319,6 +319,29 @@ keycloak:
   ingress:
     # -- Enable Keycloak Ingress (uses the same className as platform ingress)
     enabled: true
+  # -- OIDC client configuration for all platform services.
+  # See templates/keycloak-realm-configmap.yaml for how these map to the realm.
+  clients:
+    # -- MCP server consumer client (PUBLIC).
+    # Used by tntc CLI (device auth) and Claude Code (.mcp.json OAuth).
+    # The MCP server itself is a resource server — it validates tokens,
+    # it does not authenticate to Keycloak. This client exists for its consumers.
+    mcp:
+      clientId: "tentacular-mcp"
+    # -- The Kraken Slack bot client (CONFIDENTIAL).
+    # Uses client_credentials for bot-level MCP calls and device auth
+    # for per-user transitive trust.
+    kraken:
+      clientId: "thekraken"
+      clientSecret: ""
+      # -- Hostname not needed — Kraken uses direct access grants, not redirects
+    # -- Chroma enclave UI client (CONFIDENTIAL).
+    # Uses authorization code flow via NextAuth server-side.
+    chroma:
+      clientId: "chroma"
+      clientSecret: ""
+      # -- Chroma hostname for redirect URIs
+      hostname: ""
 
 # -- keycloakx subchart configuration (passed through to codecentric/keycloakx)
 # See https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx
