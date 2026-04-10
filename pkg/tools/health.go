@@ -209,10 +209,18 @@ func handleHealthNsUsage(ctx context.Context, client *k8s.Client, params HealthN
 
 	quota := quotaList.Items[0]
 
-	cpuUsed := quota.Status.Used[corev1.ResourceLimitsCPU]
-	cpuLimit := quota.Status.Hard[corev1.ResourceLimitsCPU]
-	memUsed := quota.Status.Used[corev1.ResourceLimitsMemory]
-	memLimit := quota.Status.Hard[corev1.ResourceLimitsMemory]
+	// Try requests-based quota first (new default), fall back to limits-based
+	// for enclaves provisioned before the quota model change.
+	cpuUsed := quota.Status.Used[corev1.ResourceRequestsCPU]
+	cpuLimit := quota.Status.Hard[corev1.ResourceRequestsCPU]
+	memUsed := quota.Status.Used[corev1.ResourceRequestsMemory]
+	memLimit := quota.Status.Hard[corev1.ResourceRequestsMemory]
+	if cpuLimit.IsZero() {
+		cpuUsed = quota.Status.Used[corev1.ResourceLimitsCPU]
+		cpuLimit = quota.Status.Hard[corev1.ResourceLimitsCPU]
+		memUsed = quota.Status.Used[corev1.ResourceLimitsMemory]
+		memLimit = quota.Status.Hard[corev1.ResourceLimitsMemory]
+	}
 	podUsed := quota.Status.Used[corev1.ResourcePods]
 	podLimit := quota.Status.Hard[corev1.ResourcePods]
 
