@@ -23,17 +23,17 @@ func TestCreateResourceQuota_SmallPreset(t *testing.T) {
 		t.Fatalf("Get ResourceQuota: %v", err)
 	}
 
-	cpuLimit := quota.Spec.Hard[corev1.ResourceLimitsCPU]
-	if cpuLimit.String() != "2" {
-		t.Errorf("small CPU limit: expected '2', got %q", cpuLimit.String())
+	cpuReq := quota.Spec.Hard[corev1.ResourceRequestsCPU]
+	if cpuReq.String() != "4" {
+		t.Errorf("small CPU request quota: expected '4', got %q", cpuReq.String())
 	}
-	memLimit := quota.Spec.Hard[corev1.ResourceLimitsMemory]
-	if memLimit.String() != "2Gi" {
-		t.Errorf("small memory limit: expected '2Gi', got %q", memLimit.String())
+	memReq := quota.Spec.Hard[corev1.ResourceRequestsMemory]
+	if memReq.String() != "4Gi" {
+		t.Errorf("small memory request quota: expected '4Gi', got %q", memReq.String())
 	}
 	pods := quota.Spec.Hard[corev1.ResourcePods]
-	if pods.Value() != 10 {
-		t.Errorf("small pod limit: expected 10, got %d", pods.Value())
+	if pods.Value() != 20 {
+		t.Errorf("small pod limit: expected 20, got %d", pods.Value())
 	}
 }
 
@@ -47,13 +47,13 @@ func TestCreateResourceQuota_MediumPreset(t *testing.T) {
 		t.Fatalf("Get ResourceQuota: %v", err)
 	}
 
-	cpuLimit := quota.Spec.Hard[corev1.ResourceLimitsCPU]
-	if cpuLimit.String() != "4" {
-		t.Errorf("medium CPU limit: expected '4', got %q", cpuLimit.String())
+	cpuReq := quota.Spec.Hard[corev1.ResourceRequestsCPU]
+	if cpuReq.String() != "16" {
+		t.Errorf("medium CPU request quota: expected '16', got %q", cpuReq.String())
 	}
-	memLimit := quota.Spec.Hard[corev1.ResourceLimitsMemory]
-	if memLimit.String() != "8Gi" {
-		t.Errorf("medium memory limit: expected '8Gi', got %q", memLimit.String())
+	memReq := quota.Spec.Hard[corev1.ResourceRequestsMemory]
+	if memReq.String() != "16Gi" {
+		t.Errorf("medium memory request quota: expected '16Gi', got %q", memReq.String())
 	}
 }
 
@@ -67,13 +67,13 @@ func TestCreateResourceQuota_LargePreset(t *testing.T) {
 		t.Fatalf("Get ResourceQuota: %v", err)
 	}
 
-	cpuLimit := quota.Spec.Hard[corev1.ResourceLimitsCPU]
-	if cpuLimit.String() != "8" {
-		t.Errorf("large CPU limit: expected '8', got %q", cpuLimit.String())
+	cpuReq := quota.Spec.Hard[corev1.ResourceRequestsCPU]
+	if cpuReq.String() != "32" {
+		t.Errorf("large CPU request quota: expected '32', got %q", cpuReq.String())
 	}
 	pods := quota.Spec.Hard[corev1.ResourcePods]
-	if pods.Value() != 50 {
-		t.Errorf("large pod limit: expected 50, got %d", pods.Value())
+	if pods.Value() != 100 {
+		t.Errorf("large pod limit: expected 100, got %d", pods.Value())
 	}
 }
 
@@ -119,8 +119,8 @@ func TestCreateLimitRange_DefaultsSet(t *testing.T) {
 	}
 
 	cpuReq := item.DefaultRequest[corev1.ResourceCPU]
-	if cpuReq.String() != "100m" {
-		t.Errorf("default CPU request: expected '100m', got %q", cpuReq.String())
+	if cpuReq.String() != "50m" {
+		t.Errorf("default CPU request: expected '50m', got %q", cpuReq.String())
 	}
 	memReq := item.DefaultRequest[corev1.ResourceMemory]
 	if memReq.String() != "64Mi" {

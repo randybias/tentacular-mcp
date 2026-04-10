@@ -115,6 +115,7 @@ type EnclaveSyncParams struct {
 	NewChannelName string   `json:"new_channel_name,omitempty" jsonschema:"Update the platform channel name"`
 	NewStatus      string   `json:"new_status,omitempty" jsonschema:"Update enclave lifecycle status: active or frozen"`
 	NewMode        string   `json:"new_mode,omitempty" jsonschema:"Set the default permission mode for new tentacles in this enclave (9-char rwx string, e.g. rwxrwx---)"`
+	NewQuotaPreset string   `json:"new_quota_preset,omitempty" jsonschema:"Update resource quota preset: small, medium, or large"`
 	AddMembers     []string `json:"add_members,omitempty" jsonschema:"Email addresses of members to add (CSV format)"`
 	RemoveMembers  []string `json:"remove_members,omitempty" jsonschema:"Email addresses of members to remove (CSV format)"`
 }
@@ -228,7 +229,7 @@ func registerEnclaveTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exoskele
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "enclave_sync",
-		Description: "Update an enclave: add/remove members, transfer ownership, update channel name, or change lifecycle status (freeze/unfreeze).",
+		Description: "Update an enclave: add/remove members, transfer ownership, update channel name, change lifecycle status, or update resource quota.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Sync Enclave",
 			ReadOnlyHint:    false,
@@ -593,7 +594,7 @@ func attemptEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveS
 
 	// Ownership transfer, member management, mode changes, and freeze/unfreeze are owner-only.
 	// Bearer-token callers bypass this check (platform operators).
-	isOwnerOp := params.NewOwner != "" || len(params.AddMembers) > 0 || len(params.RemoveMembers) > 0 || params.NewStatus != "" || params.NewMode != ""
+	isOwnerOp := params.NewOwner != "" || len(params.AddMembers) > 0 || len(params.RemoveMembers) > 0 || params.NewStatus != "" || params.NewMode != "" || params.NewQuotaPreset != ""
 	if isOwnerOp && deployer != nil && deployer.Provider != "bearer-token" {
 		if deployer.Email == "" {
 			return EnclaveSyncResult{}, false, errors.New("permission denied: OIDC caller has no email claim")
@@ -708,8 +709,20 @@ func attemptEnclaveSync(ctx context.Context, client *k8s.Client, params EnclaveS
 		updated = append(updated, "mode")
 	}
 
+	// Handle quota preset change (owner-only, guarded by isOwnerOp above).
+	if params.NewQuotaPreset != "" {
+		if !validQuotaPresets[params.NewQuotaPreset] {
+			return EnclaveSyncResult{}, false, fmt.Errorf("invalid quota_preset %q; valid values: small, medium, large", params.NewQuotaPreset)
+		}
+		if err := k8s.UpdateResourceQuota(ctx, client, params.Name, params.NewQuotaPreset); err != nil {
+			return EnclaveSyncResult{}, false, fmt.Errorf("updating resource quota: %w", err)
+		}
+		ann[annotationEnclaveQuotaPreset] = params.NewQuotaPreset
+		updated = append(updated, "quota_preset")
+	}
+
 	if len(updated) == 0 {
-		return EnclaveSyncResult{}, false, errors.New("no updates specified; provide at least one of add_members, remove_members, new_owner, new_channel_name, new_status, or new_mode")
+		return EnclaveSyncResult{}, false, errors.New("no updates specified; provide at least one of add_members, remove_members, new_owner, new_channel_name, new_status, new_mode, or new_quota_preset")
 	}
 
 	// Write updated annotations.

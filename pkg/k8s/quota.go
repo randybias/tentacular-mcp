@@ -10,7 +10,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// QuotaPreset defines resource limits for a namespace.
+// QuotaPreset defines resource quota for a namespace.
+// Quotas are set on requests (not limits) to allow bursty workloads.
+// Most tentacles are event-triggered and idle between runs, so the
+// request-based quota reflects actual scheduling demand while pods
+// are free to burst to their container limits during execution.
 type QuotaPreset struct {
 	CPU  string
 	Mem  string
@@ -18,9 +22,9 @@ type QuotaPreset struct {
 }
 
 var quotaPresets = map[string]QuotaPreset{
-	"small":  {CPU: "2", Mem: "2Gi", Pods: 10},
-	"medium": {CPU: "4", Mem: "8Gi", Pods: 20},
-	"large":  {CPU: "8", Mem: "16Gi", Pods: 50},
+	"small":  {CPU: "4", Mem: "4Gi", Pods: 20},
+	"medium": {CPU: "16", Mem: "16Gi", Pods: 50},
+	"large":  {CPU: "32", Mem: "64Gi", Pods: 100},
 }
 
 // CreateResourceQuota creates a ResourceQuota in the given namespace using
@@ -44,8 +48,8 @@ func CreateResourceQuota(ctx context.Context, client *Client, namespace, preset 
 		},
 		Spec: corev1.ResourceQuotaSpec{
 			Hard: corev1.ResourceList{
-				corev1.ResourceLimitsCPU:    resource.MustParse(p.CPU),
-				corev1.ResourceLimitsMemory: resource.MustParse(p.Mem),
+				corev1.ResourceRequestsCPU:    resource.MustParse(p.CPU),
+				corev1.ResourceRequestsMemory: resource.MustParse(p.Mem),
 				corev1.ResourcePods:         *resource.NewQuantity(p.Pods, resource.DecimalSI),
 			},
 		},
@@ -112,7 +116,7 @@ func CreateLimitRange(ctx context.Context, client *Client, namespace string) err
 				{
 					Type: corev1.LimitTypeContainer,
 					DefaultRequest: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceCPU:    resource.MustParse("50m"),
 						corev1.ResourceMemory: resource.MustParse("64Mi"),
 					},
 					Default: corev1.ResourceList{
