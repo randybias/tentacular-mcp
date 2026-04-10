@@ -50,7 +50,7 @@ func CreateResourceQuota(ctx context.Context, client *Client, namespace, preset 
 			Hard: corev1.ResourceList{
 				corev1.ResourceRequestsCPU:    resource.MustParse(p.CPU),
 				corev1.ResourceRequestsMemory: resource.MustParse(p.Mem),
-				corev1.ResourcePods:         *resource.NewQuantity(p.Pods, resource.DecimalSI),
+				corev1.ResourcePods:           *resource.NewQuantity(p.Pods, resource.DecimalSI),
 			},
 		},
 	}
