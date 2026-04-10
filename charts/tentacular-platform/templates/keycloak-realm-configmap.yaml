@@ -1,8 +1,15 @@
 {{/*
 Keycloak realm import ConfigMap.
-Contains the tentacular realm definition with the tentacular-mcp OIDC client.
+Contains the tentacular realm definition with OIDC clients for:
+  - tentacular-mcp (MCP server + Claude Code OAuth)
+  - thekraken (Slack bot, device auth flow)
+  - chroma (enclave UI, authorization code flow)
 Mounted into the Keycloak pod at /opt/keycloak/data/import/ and imported
 on startup via the --import-realm flag.
+
+IMPORTANT: All OIDC clients MUST be defined here. Manually-created clients
+in the Keycloak admin console get wiped on pod restarts when the realm is
+reimported from this ConfigMap.
 */}}
 {{- if .Values.keycloak.enabled }}
 {{- $kcHost := .Values.keycloak.hostname | default (printf "tentacular-keycloak.%s" .Values.global.domain) }}
@@ -57,6 +64,48 @@ data:
           "webOrigins": ["+"],
           "defaultClientScopes": ["openid", "email", "profile"]
         }
+        {{- if .Values.krakenAuth.enabled }},
+        {
+          "clientId": {{ .Values.krakenAuth.clientID | quote }},
+          "name": "The Kraken (Slack Bot)",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "secret": {{ .Values.krakenAuth.clientSecret | default "" | quote }},
+          "standardFlowEnabled": false,
+          "directAccessGrantsEnabled": true,
+          "serviceAccountsEnabled": true,
+          "authorizationServicesEnabled": false,
+          "attributes": {
+            "oauth2.device.authorization.grant.enabled": "true",
+            "oauth2.device.polling.interval": "5"
+          },
+          "redirectUris": ["*"],
+          "webOrigins": ["+"],
+          "defaultClientScopes": ["openid", "email", "profile"]
+        }
+        {{- end }}
+        {{- if .Values.chromaAuth.enabled }},
+        {
+          "clientId": {{ .Values.chromaAuth.clientID | quote }},
+          "name": "Chroma (Enclave UI)",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "secret": {{ .Values.chromaAuth.clientSecret | default "" | quote }},
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "authorizationServicesEnabled": false,
+          "attributes": {},
+          "redirectUris": {{ .Values.chromaAuth.redirectUris | toJson }},
+          "webOrigins": ["+"],
+          "defaultClientScopes": ["openid", "email", "profile"]
+        }
+        {{- end }}
       ]
+      {{- if .Values.keycloak.identityProviders }}
+      ,"identityProviders": {{ .Values.keycloak.identityProviders | toJson }}
+      {{- end }}
     }
 {{- end }}

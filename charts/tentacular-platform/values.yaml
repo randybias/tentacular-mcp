@@ -225,6 +225,30 @@ exoskeletonAuth:
   # -- OIDC client secret
   clientSecret: ""
 
+# -- Additional OIDC clients registered in the Keycloak realm import.
+# These are defined here (not in their own charts) because the realm ConfigMap
+# is authoritative — manually-created clients get wiped on Keycloak restarts.
+krakenAuth:
+  # -- Enable The Kraken OIDC client in realm import
+  enabled: false
+  # -- OIDC client ID
+  clientID: "thekraken"
+  # -- OIDC client secret
+  clientSecret: ""
+
+chromaAuth:
+  # -- Enable Chroma OIDC client in realm import
+  enabled: false
+  # -- OIDC client ID
+  clientID: "chroma"
+  # -- OIDC client secret
+  clientSecret: ""
+  # -- Redirect URI(s) for NextAuth callback (glob patterns supported)
+  # Must match the NEXTAUTH_URL + /api/auth/callback/keycloak
+  redirectUris:
+    - "https://chroma.eastus-dev1.ospo-dev.miralabs.dev/*"
+    - "http://localhost:3000/*"
+
 # -- esm-sh module proxy configuration
 esm-sh:
   # -- Enable esm-sh proxy deployment
@@ -315,6 +339,24 @@ keycloak:
     password: ""
   # -- Keycloak hostname (e.g., tentacular-keycloak.example.com)
   hostname: ""
+  # -- Identity providers (e.g., Google SSO) included in realm import.
+  # Each entry is a Keycloak IdentityProviderRepresentation object.
+  # IMPORTANT: IdPs created manually in the admin console will be lost if
+  # the realm is ever recreated from this ConfigMap.
+  identityProviders: []
+  # Example:
+  # identityProviders:
+  #   - alias: "google"
+  #     displayName: "Google"
+  #     providerId: "google"
+  #     enabled: true
+  #     trustEmail: true
+  #     firstBrokerLoginFlowAlias: "first broker login"
+  #     config:
+  #       clientId: "<google-oauth-client-id>"
+  #       clientSecret: "<google-oauth-client-secret>"
+  #       defaultScope: "openid email profile"
+  #       syncMode: "IMPORT"
   # -- Keycloak ingress configuration
   ingress:
     # -- Enable Keycloak Ingress (uses the same className as platform ingress)
