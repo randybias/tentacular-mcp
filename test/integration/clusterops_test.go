@@ -68,21 +68,21 @@ func TestIntegration_ClusterProfileWithNamespace(t *testing.T) {
 	if profile.Quota == nil {
 		t.Error("expected Quota to be populated")
 	} else {
-		if profile.Quota.CPULimit != "4" {
-			t.Errorf("expected quota CPU limit 4, got %s", profile.Quota.CPULimit)
+		if profile.Quota.CPURequest != "16" {
+			t.Errorf("expected quota CPU request 16, got %s", profile.Quota.CPURequest)
 		}
-		if profile.Quota.MemoryLimit != "8Gi" {
-			t.Errorf("expected quota mem limit 8Gi, got %s", profile.Quota.MemoryLimit)
+		if profile.Quota.MemoryRequest != "16Gi" {
+			t.Errorf("expected quota memory request 16Gi, got %s", profile.Quota.MemoryRequest)
 		}
-		if profile.Quota.MaxPods != 20 {
-			t.Errorf("expected quota pod limit 20, got %d", profile.Quota.MaxPods)
+		if profile.Quota.MaxPods != 50 {
+			t.Errorf("expected quota pod limit 50, got %d", profile.Quota.MaxPods)
 		}
 	}
 	if profile.LimitRange == nil {
 		t.Error("expected LimitRange to be populated")
 	} else {
-		if profile.LimitRange.DefaultCPURequest != "100m" {
-			t.Errorf("expected default CPU request 100m, got %s", profile.LimitRange.DefaultCPURequest)
+		if profile.LimitRange.DefaultCPURequest != "50m" {
+			t.Errorf("expected default CPU request 50m, got %s", profile.LimitRange.DefaultCPURequest)
 		}
 	}
 	if profile.PodSecurity != "restricted" {

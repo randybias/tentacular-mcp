@@ -243,7 +243,7 @@ func TestE2E_ClusterPreflightAndProfile(t *testing.T) {
 		} `json:"cni"`
 		Namespace string `json:"namespace"`
 		Quota     *struct {
-			CPULimit string `json:"cpuLimit"`
+			CPURequest string `json:"cpuRequest"`
 		} `json:"quota"`
 	}
 	if err := json.Unmarshal([]byte(text), &profileResult); err != nil {
@@ -261,8 +261,8 @@ func TestE2E_ClusterPreflightAndProfile(t *testing.T) {
 	if profileResult.Namespace != nsName {
 		t.Errorf("cluster_profile namespace: got %q, want %q", profileResult.Namespace, nsName)
 	}
-	if profileResult.Quota == nil || profileResult.Quota.CPULimit != "4" {
-		t.Error("cluster_profile: expected quota with CPU=4")
+	if profileResult.Quota == nil || profileResult.Quota.CPURequest != "16" {
+		t.Error("cluster_profile: expected quota with cpuRequest=16")
 	}
 	t.Logf("cluster_profile: K8s=%s dist=%s CNI=%s nodes=%d",
 		profileResult.K8sVersion, profileResult.Distribution,

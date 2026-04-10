@@ -94,14 +94,14 @@ func TestIntegration_HealthNsUsageWithQuota(t *testing.T) {
 	}
 
 	q := quotas.Items[0]
-	if cpu := q.Spec.Hard[corev1.ResourceLimitsCPU]; cpu.String() != "4" {
-		t.Errorf("expected CPU limit 4, got %s", cpu.String())
+	if cpu := q.Spec.Hard[corev1.ResourceRequestsCPU]; cpu.String() != "16" {
+		t.Errorf("expected CPU request 16, got %s", cpu.String())
 	}
-	if mem := q.Spec.Hard[corev1.ResourceLimitsMemory]; mem.String() != "8Gi" {
-		t.Errorf("expected memory limit 8Gi, got %s", mem.String())
+	if mem := q.Spec.Hard[corev1.ResourceRequestsMemory]; mem.String() != "16Gi" {
+		t.Errorf("expected memory request 16Gi, got %s", mem.String())
 	}
-	if pods := q.Spec.Hard[corev1.ResourcePods]; pods.String() != "20" {
-		t.Errorf("expected pod limit 20, got %s", pods.String())
+	if pods := q.Spec.Hard[corev1.ResourcePods]; pods.String() != "50" {
+		t.Errorf("expected pod limit 50, got %s", pods.String())
 	}
 }
 

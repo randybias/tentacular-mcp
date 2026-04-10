@@ -108,14 +108,14 @@ func TestIntegration_NamespaceGetDetails(t *testing.T) {
 		t.Fatalf("expected 1 quota, got %d", len(quotas.Items))
 	}
 	q := quotas.Items[0]
-	if cpu := q.Spec.Hard["requests.cpu"]; cpu.String() != "4" {
-		t.Errorf("expected CPU request quota 4, got %s", cpu.String())
+	if cpu := q.Spec.Hard["requests.cpu"]; cpu.String() != "16" {
+		t.Errorf("expected CPU request quota 16, got %s", cpu.String())
 	}
-	if mem := q.Spec.Hard["requests.memory"]; mem.String() != "4Gi" {
-		t.Errorf("expected memory request quota 4Gi, got %s", mem.String())
+	if mem := q.Spec.Hard["requests.memory"]; mem.String() != "16Gi" {
+		t.Errorf("expected memory request quota 16Gi, got %s", mem.String())
 	}
-	if pods := q.Spec.Hard["pods"]; pods.String() != "20" {
-		t.Errorf("expected pod limit 20, got %s", pods.String())
+	if pods := q.Spec.Hard["pods"]; pods.String() != "50" {
+		t.Errorf("expected pod limit 50, got %s", pods.String())
 	}
 
 	lrs, err := cs.CoreV1().LimitRanges(nsName).List(ctx, metav1.ListOptions{})
