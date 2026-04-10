@@ -195,3 +195,10 @@ exoskeleton:
     secretKey: ""
     bucket: "tentacular"
     region: "us-east-1"
+
+# -- Platform service URLs for cross-service discovery.
+platform:
+  # -- Chroma enclave UI URL (e.g., "https://chroma.example.com")
+  chromaUrl: ""
+  # -- Documentation site URL (e.g., "https://docs.example.com")
+  docsUrl: ""

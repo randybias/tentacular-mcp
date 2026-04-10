@@ -62,6 +62,14 @@ spec:
             - name: TENTACULAR_EXTERNAL_URL
               value: {{ .Values.externalURL | quote }}
             {{- end }}
+            {{- if .Values.platform.chromaUrl }}
+            - name: TENTACULAR_CHROMA_URL
+              value: {{ .Values.platform.chromaUrl | quote }}
+            {{- end }}
+            {{- if .Values.platform.docsUrl }}
+            - name: TENTACULAR_DOCS_URL
+              value: {{ .Values.platform.docsUrl | quote }}
+            {{- end }}
             {{- if not .Values.authz.enabled }}
             - name: TENTACULAR_AUTHZ_ENABLED
               value: "false"

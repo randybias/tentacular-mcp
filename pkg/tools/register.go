@@ -26,4 +26,5 @@ func RegisterAll(srv *mcp.Server, client *k8s.Client, reconciler *proxy.Reconcil
 	registerAuditTools(srv, client, eval)
 	registerProxyTools(srv, reconciler)
 	registerEnclaveTools(srv, client, exoCtrl, eval)
+	registerPlatformTools(srv)
 }
