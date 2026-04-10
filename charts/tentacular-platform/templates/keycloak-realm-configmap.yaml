@@ -1,19 +1,34 @@
 {{/*
 Keycloak realm import ConfigMap.
-Contains the tentacular realm definition with the tentacular-mcp OIDC client.
+Contains the tentacular realm definition with all OIDC clients.
 Mounted into the Keycloak pod at /opt/keycloak/data/import/ and imported
-on startup via the --import-realm flag.
+on first startup via the --import-realm flag (skips if realm already exists).
+
+IMPORTANT: Keycloak only imports this on FIRST startup when the realm does not
+exist in the database. After that, the Postgres database is authoritative.
+Changes here only take effect on a fresh Keycloak database or if the realm is
+deleted and re-imported.
+
+Client configuration:
+  tentacular-mcp  - PUBLIC client for tntc CLI + Claude Code OAuth (no secret)
+                    Flows: authorization code + PKCE, device authorization, direct access
+                    The MCP server itself is a resource server (validates tokens),
+                    not an OIDC client. This client is used by MCP consumers.
+  thekraken       - CONFIDENTIAL client for the Slack bot
+                    Flows: client_credentials (bot-level MCP calls), device auth,
+                    direct access grants
+  chroma          - CONFIDENTIAL client for the Next.js enclave UI
+                    Flows: authorization code (NextAuth server-side)
 */}}
 {{- if .Values.keycloak.enabled }}
-{{- $kcHost := .Values.keycloak.hostname | default (printf "tentacular-keycloak.%s" .Values.global.domain) }}
+{{- $kcScheme := ternary "https" "http" .Values.ingress.tls.enabled }}
+{{- $realm := .Values.keycloak.realm | default "tentacular" }}
 {{- $mcpHost := "" }}
 {{- if and .Values.ingress .Values.ingress.mcp }}
 {{- $mcpHost = .Values.ingress.mcp.hostname }}
 {{- end }}
 {{- $mcpHost = $mcpHost | default (printf "tentacular-mcp.%s" .Values.global.domain) }}
-{{- $kcScheme := ternary "https" "http" .Values.ingress.tls.enabled }}
-{{- $realm := .Values.keycloak.realm | default "tentacular" }}
-{{- $clientID := .Values.exoskeletonAuth.clientID | default "tentacular-mcp" }}
+{{- $chromaHost := .Values.keycloak.clients.chroma.hostname | default (printf "chroma.%s" .Values.global.domain) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -37,13 +52,35 @@ data:
       "offlineSessionIdleTimeout": 2592000,
       "clients": [
         {
-          "clientId": {{ $clientID | quote }},
+          "clientId": {{ .Values.keycloak.clients.mcp.clientId | default "tentacular-mcp" | quote }},
           "name": "Tentacular MCP Server",
           "enabled": true,
           "protocol": "openid-connect",
-          "publicClient": false,
-          "secret": {{ .Values.exoskeletonAuth.clientSecret | default "" | quote }},
+          "publicClient": true,
           "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "serviceAccountsEnabled": false,
+          "authorizationServicesEnabled": false,
+          "attributes": {
+            "oauth2.device.authorization.grant.enabled": "true",
+            "oauth2.device.polling.interval": "5"
+          },
+          "redirectUris": [
+            "http://localhost:*",
+            "{{ $kcScheme }}://{{ $mcpHost }}/*"
+          ],
+          "webOrigins": ["+"],
+          "defaultClientScopes": ["openid", "email", "profile"]
+        },
+        {
+          "clientId": {{ .Values.keycloak.clients.kraken.clientId | default "thekraken" | quote }},
+          "name": "The Kraken (Slack Bot)",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "clientAuthenticatorType": "client-secret",
+          "secret": {{ .Values.keycloak.clients.kraken.clientSecret | default "" | quote }},
+          "publicClient": false,
+          "standardFlowEnabled": false,
           "directAccessGrantsEnabled": true,
           "serviceAccountsEnabled": true,
           "authorizationServicesEnabled": false,
@@ -51,8 +88,25 @@ data:
             "oauth2.device.authorization.grant.enabled": "true",
             "oauth2.device.polling.interval": "5"
           },
+          "redirectUris": ["*"],
+          "webOrigins": ["+"],
+          "defaultClientScopes": ["openid", "email", "profile"]
+        },
+        {
+          "clientId": {{ .Values.keycloak.clients.chroma.clientId | default "chroma" | quote }},
+          "name": "Chroma (Enclave UI)",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "clientAuthenticatorType": "client-secret",
+          "secret": {{ .Values.keycloak.clients.chroma.clientSecret | default "" | quote }},
+          "publicClient": false,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "authorizationServicesEnabled": false,
           "redirectUris": [
-            "{{ $kcScheme }}://{{ $mcpHost }}/*"
+            "{{ $kcScheme }}://{{ $chromaHost }}/*",
+            "http://localhost:3000/*"
           ],
           "webOrigins": ["+"],
           "defaultClientScopes": ["openid", "email", "profile"]
