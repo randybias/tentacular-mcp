@@ -567,6 +567,121 @@ func TestWfDescribe_PromptsInvalidYAML(t *testing.T) {
 	}
 }
 
+func TestWfDescribe_NodeDescriptionsPresent(t *testing.T) {
+	client := newWfTestClient()
+	ctx := context.Background()
+
+	dep := makeTestDeployment("nodedesc-wf", "nodedesc-ns", map[string]string{
+		"tentacular.io/metadata-ref": "nodedesc-wf-metadata",
+	})
+	if _, err := client.Clientset.AppsV1().Deployments("nodedesc-ns").Create(ctx, dep, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "nodedesc-wf-metadata",
+			Namespace: "nodedesc-ns",
+		},
+		Data: map[string]string{
+			"prompts": `version: "1"
+nodes:
+  - name: fetch-data
+    description: "Fetches data from external API"
+  - name: analyze
+    description: "Runs LLM analysis on fetched data"
+prompts:
+  - node: analyze
+    name: data-analysis
+    model: claude-3-haiku
+`,
+		},
+	}
+	if _, err := client.Clientset.CoreV1().ConfigMaps("nodedesc-ns").Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create configmap: %v", err)
+	}
+
+	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
+		Namespace: "nodedesc-ns",
+		Name:      "nodedesc-wf",
+	}, bearerInfo(), bearerEval())
+	if err != nil {
+		t.Fatalf("handleWfDescribe: %v", err)
+	}
+
+	// NodeDescriptions
+	if len(result.NodeDescriptions) != 2 {
+		t.Fatalf("NodeDescriptions: got %d, want 2", len(result.NodeDescriptions))
+	}
+	if result.NodeDescriptions[0].Name != "fetch-data" {
+		t.Errorf("NodeDescriptions[0].Name = %q, want fetch-data", result.NodeDescriptions[0].Name)
+	}
+	if result.NodeDescriptions[0].Description != "Fetches data from external API" {
+		t.Errorf("NodeDescriptions[0].Description = %q", result.NodeDescriptions[0].Description)
+	}
+	if result.NodeDescriptions[1].Name != "analyze" {
+		t.Errorf("NodeDescriptions[1].Name = %q, want analyze", result.NodeDescriptions[1].Name)
+	}
+	if result.NodeDescriptions[1].Description != "Runs LLM analysis on fetched data" {
+		t.Errorf("NodeDescriptions[1].Description = %q", result.NodeDescriptions[1].Description)
+	}
+
+	// Prompts should still parse correctly alongside nodes.
+	if len(result.Prompts) != 1 {
+		t.Fatalf("Prompts: got %d, want 1", len(result.Prompts))
+	}
+	if result.Prompts[0].Node != "analyze" || result.Prompts[0].Name != "data-analysis" {
+		t.Errorf("Prompts[0] = node=%q name=%q, want analyze/data-analysis", result.Prompts[0].Node, result.Prompts[0].Name)
+	}
+}
+
+func TestWfDescribe_NodeDescriptionsAbsent(t *testing.T) {
+	client := newWfTestClient()
+	ctx := context.Background()
+
+	dep := makeTestDeployment("nonodedesc-wf", "nonodedesc-ns", map[string]string{
+		"tentacular.io/metadata-ref": "nonodedesc-wf-metadata",
+	})
+	if _, err := client.Clientset.AppsV1().Deployments("nonodedesc-ns").Create(ctx, dep, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "nonodedesc-wf-metadata",
+			Namespace: "nonodedesc-ns",
+		},
+		Data: map[string]string{
+			"prompts": `prompts:
+  - node: analyze
+    name: classify
+    model: claude-sonnet-4-20250514
+`,
+		},
+	}
+	if _, err := client.Clientset.CoreV1().ConfigMaps("nonodedesc-ns").Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create configmap: %v", err)
+	}
+
+	result, err := handleWfDescribe(ctx, client, WfDescribeParams{
+		Namespace: "nonodedesc-ns",
+		Name:      "nonodedesc-wf",
+	}, bearerInfo(), bearerEval())
+	if err != nil {
+		t.Fatalf("handleWfDescribe: %v", err)
+	}
+
+	// NodeDescriptions should be nil/empty when no nodes section exists.
+	if len(result.NodeDescriptions) != 0 {
+		t.Errorf("NodeDescriptions should be empty, got %d: %+v", len(result.NodeDescriptions), result.NodeDescriptions)
+	}
+
+	// Prompts should still work.
+	if len(result.Prompts) != 1 {
+		t.Fatalf("Prompts: got %d, want 1", len(result.Prompts))
+	}
+}
+
 func TestWfDescribe_FallbackMetadataConfigMapName(t *testing.T) {
 	client := newWfTestClient()
 	ctx := context.Background()
