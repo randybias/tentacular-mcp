@@ -36,9 +36,8 @@ spec:
             {{- end }}
             - --cookie-secure=true
             - --cookie-samesite=lax
-            - --upstream=static://202
+            - --upstream=http://signoz.{{ include "tentacular-observability.namespace" . }}.svc.cluster.local:8080
             - --reverse-proxy=true
-            - --set-xauthrequest=true
             - --skip-provider-button=true
             - --http-address=0.0.0.0:4180
             - --scope=openid email profile groups

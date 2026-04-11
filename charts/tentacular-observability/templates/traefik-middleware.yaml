@@ -1,18 +1,13 @@
-{{- if .Values.oauth2Proxy.enabled }}
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: signoz-forward-auth
-  namespace: {{ include "tentacular-observability.namespace" . }}
-  labels:
-    {{- include "tentacular-observability.labels" . | nindent 4 }}
-    app.kubernetes.io/component: oauth2-proxy
-spec:
-  forwardAuth:
-    address: http://oauth2-proxy.{{ include "tentacular-observability.namespace" . }}.svc.cluster.local:4180/oauth2/auth
-    trustForwardHeader: true
-    authResponseHeaders:
-      - X-Auth-Request-User
-      - X-Auth-Request-Email
-      - X-Auth-Request-Groups
-{{- end }}
+{{/*
+Traefik forwardAuth middleware for SigNoz.
+
+NOTE: This middleware is NOT currently used. The SigNoz ingress routes
+traffic through oauth2-proxy as a reverse proxy, which handles both
+authentication and proxying to SigNoz. This is more compatible across
+ingress controllers than forwardAuth (which requires controller-specific
+error handling for 401->redirect).
+
+This file is retained for future use if the architecture switches to
+forwardAuth mode (e.g., with an ingress controller that supports
+auth-signin error pages natively).
+*/}}

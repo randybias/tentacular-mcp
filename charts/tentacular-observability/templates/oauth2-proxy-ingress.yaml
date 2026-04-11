@@ -1,44 +1,11 @@
 {{/*
-Separate Ingress for the oauth2-proxy callback and sign-in paths.
-This MUST NOT have the forwardAuth middleware annotation — otherwise
-the auth callback would loop through forwardAuth endlessly.
+Separate Ingress for oauth2-proxy callback paths.
+
+NOTE: This is NOT currently needed. When oauth2-proxy acts as a reverse
+proxy (--upstream=http://signoz:8080), all traffic including /oauth2/*
+callback paths goes through the main SigNoz ingress to oauth2-proxy.
+
+This file is retained for future use if the architecture switches to
+Traefik forwardAuth mode, where the /oauth2/* paths must be routed
+separately to avoid middleware loops.
 */}}
-{{- if and .Values.ingress.enabled .Values.oauth2Proxy.enabled }}
-{{- $annotations := dict }}
-{{- if and .Values.ingress.tls.enabled .Values.ingress.tls.clusterIssuer }}
-{{- $_ := set $annotations "cert-manager.io/cluster-issuer" .Values.ingress.tls.clusterIssuer }}
-{{- end }}
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: signoz-oauth2-proxy
-  namespace: {{ include "tentacular-observability.namespace" . }}
-  labels:
-    {{- include "tentacular-observability.labels" . | nindent 4 }}
-    app.kubernetes.io/component: oauth2-proxy
-  {{- if $annotations }}
-  annotations:
-    {{- toYaml $annotations | nindent 4 }}
-  {{- end }}
-spec:
-  {{- if .Values.ingress.className }}
-  ingressClassName: {{ .Values.ingress.className | quote }}
-  {{- end }}
-  {{- if .Values.ingress.tls.enabled }}
-  tls:
-    - hosts:
-        - {{ .Values.ingress.hostname | quote }}
-      secretName: {{ .Values.ingress.tls.secretName | default "signoz-tls" | quote }}
-  {{- end }}
-  rules:
-    - host: {{ .Values.ingress.hostname | quote }}
-      http:
-        paths:
-          - path: /oauth2
-            pathType: Prefix
-            backend:
-              service:
-                name: oauth2-proxy
-                port:
-                  number: 4180
-{{- end }}
