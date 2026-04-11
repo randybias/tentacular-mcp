@@ -71,6 +71,12 @@ type PromptEntry struct {
 	Tools              []PromptTool `json:"tools,omitempty" yaml:"tools,omitempty"`
 }
 
+// NodeMeta describes a single node with an optional human-readable description.
+type NodeMeta struct {
+	Name        string `json:"name" yaml:"name"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+}
+
 // TemplateEntry describes a single template definition within a tentacle.
 type TemplateEntry struct {
 	Node        string `json:"node" yaml:"node"`
@@ -149,8 +155,9 @@ type WfDescribeResult struct {
 	Readme          string           `json:"readme,omitempty"`
 	MetadataRef     string           `json:"metadata_ref,omitempty"`
 	ScaffoldName    string           `json:"scaffold_name,omitempty"`
-	Nodes           []string         `json:"nodes,omitempty"`
-	Sidecars        []SidecarMeta    `json:"sidecars,omitempty"`
+	Nodes            []string         `json:"nodes,omitempty"`
+	NodeDescriptions []NodeMeta       `json:"node_descriptions,omitempty"`
+	Sidecars         []SidecarMeta    `json:"sidecars,omitempty"`
 	Dependencies    []DependencyMeta `json:"dependencies,omitempty"`
 	Prompts         []PromptEntry    `json:"prompts,omitempty"`
 	Templates       []TemplateEntry  `json:"templates,omitempty"`
@@ -538,10 +545,12 @@ func handleWfDescribe(ctx context.Context, client *k8s.Client, params WfDescribe
 			var promptsDoc struct {
 				Prompts   []PromptEntry   `yaml:"prompts"`
 				Templates []TemplateEntry `yaml:"templates"`
+				Nodes     []NodeMeta      `yaml:"nodes"`
 			}
 			if yamlErr := yaml.Unmarshal([]byte(v), &promptsDoc); yamlErr == nil {
 				result.Prompts = promptsDoc.Prompts
 				result.Templates = promptsDoc.Templates
+				result.NodeDescriptions = promptsDoc.Nodes
 			} else {
 				slog.Warn("wf_describe: invalid YAML in prompts ConfigMap key",
 					"deployment", params.Name, "error", yamlErr)
