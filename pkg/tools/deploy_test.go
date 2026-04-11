@@ -1035,3 +1035,28 @@ func TestValidateNodeDescriptions_PartialDescriptions(t *testing.T) {
 		t.Errorf("error should mention missing node %q, got: %v", "report", err)
 	}
 }
+
+// TestValidateNodeDescriptions_MalformedAnnotation verifies that a Deployment
+// with a tentacular.io/nodes annotation that is present but not valid JSON is
+// rejected (fail-closed, not silently skipped).
+func TestValidateNodeDescriptions_MalformedAnnotation(t *testing.T) {
+	manifests := []map[string]any{
+		{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+			"metadata": map[string]any{
+				"name": "my-wf",
+				"annotations": map[string]any{
+					"tentacular.io/nodes": `not-valid-json`,
+				},
+			},
+		},
+	}
+	err := validateNodeDescriptions(manifests)
+	if err == nil {
+		t.Error("expected error for malformed nodes annotation, got nil")
+	}
+	if err != nil && !strings.Contains(err.Error(), "malformed tentacular.io/nodes annotation") {
+		t.Errorf("error message unexpected: %v", err)
+	}
+}

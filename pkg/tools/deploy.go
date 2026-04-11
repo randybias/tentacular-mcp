@@ -802,8 +802,7 @@ func validateNodeDescriptions(manifests []map[string]any) error {
 			return nil
 		}
 		if jsonErr := json.Unmarshal([]byte(nodesJSON), &nodeNames); jsonErr != nil {
-			// Malformed annotation — skip validation rather than blocking deploy.
-			return nil //nolint:nilerr // intentional: malformed annotation is not a deploy blocker
+			return fmt.Errorf("malformed tentacular.io/nodes annotation: %w", jsonErr)
 		}
 		break
 	}
