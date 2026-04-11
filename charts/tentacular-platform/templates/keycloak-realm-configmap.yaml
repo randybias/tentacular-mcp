@@ -131,7 +131,22 @@ data:
             "{{ $kcScheme }}://{{ $signozHost }}/oauth2/callback"
           ],
           "webOrigins": ["+"],
-          "defaultClientScopes": ["openid", "email", "profile", "groups"]
+          "defaultClientScopes": ["openid", "email", "profile", "groups"],
+          "protocolMappers": [
+            {
+              "name": "audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.client.audience": "signoz",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "included.custom.audience": "",
+                "userinfo.token.claim": "false"
+              }
+            }
+          ]
         }
       ],
       "clientScopes": [

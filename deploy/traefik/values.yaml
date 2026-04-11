@@ -16,14 +16,19 @@ hostNetwork: true
 service:
   type: ClusterIP
 
-# Global HTTP-to-HTTPS redirect for all ingresses.
+# Recreate strategy is required for hostNetwork — only one pod can bind
+# to ports 80/443 at a time, so RollingUpdate deadlocks.
+updateStrategy:
+  type: Recreate
+
+# Global HTTP-to-HTTPS redirect for all ingresses (308 Permanent Redirect).
 ports:
   web:
-    redirectTo:
-      port: websecure
-  websecure:
-    tls:
-      enabled: true
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
 
 # RBAC: allow Traefik to read resources across all namespaces.
 rbac:

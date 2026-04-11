@@ -141,7 +141,7 @@ oauth2Proxy:
   # -- Cookie domain (e.g., .eastus-dev1.ospo-dev.miralabs.dev)
   cookieDomain: ""
   # -- Keycloak group required for access. Empty string allows any authenticated user.
-  allowedGroup: "/signoz-admins"
+  allowedGroup: "signoz-admins"
   # -- Email domains allowed. Use ["*"] to allow any domain (Keycloak is the gatekeeper).
   emailDomains:
     - "*"
