@@ -1060,3 +1060,90 @@ func TestValidateNodeDescriptions_MalformedAnnotation(t *testing.T) {
 		t.Errorf("error message unexpected: %v", err)
 	}
 }
+
+// TestValidateNodeDescriptions_EmptyDescriptionString verifies that a node entry
+// in node_descriptions with an empty description field is treated as missing.
+func TestValidateNodeDescriptions_EmptyDescriptionString(t *testing.T) {
+	nodesAnn := makeNodesAnnotation(t, []string{"fetch"})
+	descJSON := makeNodeDescJSON(t, []NodeMeta{
+		{Name: "fetch", Description: ""},
+	})
+	manifests := []map[string]any{
+		{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+			"metadata": map[string]any{
+				"name": "my-wf",
+				"annotations": map[string]any{
+					"tentacular.io/nodes": nodesAnn,
+				},
+			},
+		},
+		{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata":   map[string]any{"name": "my-wf-metadata"},
+			"data":       map[string]any{"node_descriptions": descJSON},
+		},
+	}
+	err := validateNodeDescriptions(manifests)
+	if err == nil {
+		t.Error("expected error when node description is empty string, got nil")
+	}
+}
+
+// TestValidateNodeDescriptions_MalformedNodeDescriptionsJSON verifies that
+// malformed JSON in the node_descriptions ConfigMap key causes all nodes to fail.
+func TestValidateNodeDescriptions_MalformedNodeDescriptionsJSON(t *testing.T) {
+	nodesAnn := makeNodesAnnotation(t, []string{"fetch"})
+	manifests := []map[string]any{
+		{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+			"metadata": map[string]any{
+				"name": "my-wf",
+				"annotations": map[string]any{
+					"tentacular.io/nodes": nodesAnn,
+				},
+			},
+		},
+		{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata":   map[string]any{"name": "my-wf-metadata"},
+			"data":       map[string]any{"node_descriptions": `not-valid-json{{{`},
+		},
+	}
+	err := validateNodeDescriptions(manifests)
+	if err == nil {
+		t.Error("expected error when node_descriptions JSON is malformed, got nil")
+	}
+}
+
+// TestValidateNodeDescriptions_EmptyDescriptionsArray verifies that an empty
+// node_descriptions array causes all nodes to fail validation.
+func TestValidateNodeDescriptions_EmptyDescriptionsArray(t *testing.T) {
+	nodesAnn := makeNodesAnnotation(t, []string{"fetch"})
+	manifests := []map[string]any{
+		{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+			"metadata": map[string]any{
+				"name": "my-wf",
+				"annotations": map[string]any{
+					"tentacular.io/nodes": nodesAnn,
+				},
+			},
+		},
+		{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata":   map[string]any{"name": "my-wf-metadata"},
+			"data":       map[string]any{"node_descriptions": `[]`},
+		},
+	}
+	err := validateNodeDescriptions(manifests)
+	if err == nil {
+		t.Error("expected error when node_descriptions array is empty, got nil")
+	}
+}
