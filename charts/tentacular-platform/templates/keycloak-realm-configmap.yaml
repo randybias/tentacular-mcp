@@ -19,6 +19,9 @@ Client configuration:
                     direct access grants
   chroma          - CONFIDENTIAL client for the Next.js enclave UI
                     Flows: authorization code (NextAuth server-side)
+  signoz          - CONFIDENTIAL client for the SigNoz observability UI
+                    Flows: authorization code (oauth2-proxy at Traefik ingress)
+                    SigNoz CE lacks native OIDC; oauth2-proxy provides the gate.
 */}}
 {{- if .Values.keycloak.enabled }}
 {{- $kcScheme := ternary "https" "http" .Values.ingress.tls.enabled }}
@@ -29,6 +32,7 @@ Client configuration:
 {{- end }}
 {{- $mcpHost = $mcpHost | default (printf "tentacular-mcp.%s" .Values.global.domain) }}
 {{- $chromaHost := .Values.keycloak.clients.chroma.hostname | default (printf "chroma.%s" .Values.global.domain) }}
+{{- $signozHost := .Values.keycloak.clients.signoz.hostname | default (printf "tentacle-monitor.%s" .Values.global.domain) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -110,6 +114,56 @@ data:
           ],
           "webOrigins": ["+"],
           "defaultClientScopes": ["openid", "email", "profile"]
+        },
+        {
+          "clientId": {{ .Values.keycloak.clients.signoz.clientId | default "signoz" | quote }},
+          "name": "SigNoz (Observability UI)",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "clientAuthenticatorType": "client-secret",
+          "secret": {{ .Values.keycloak.clients.signoz.clientSecret | default "" | quote }},
+          "publicClient": false,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "authorizationServicesEnabled": false,
+          "redirectUris": [
+            "{{ $kcScheme }}://{{ $signozHost }}/oauth2/callback"
+          ],
+          "webOrigins": ["+"],
+          "defaultClientScopes": ["openid", "email", "profile", "groups"]
+        }
+      ],
+      "clientScopes": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "true",
+            "consent.screen.text": "Group membership"
+          },
+          "protocolMappers": [
+            {
+              "name": "groups",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-group-membership-mapper",
+              "consentRequired": false,
+              "config": {
+                "full.path": "false",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "claim.name": "groups",
+                "userinfo.token.claim": "true"
+              }
+            }
+          ]
+        }
+      ],
+      "groups": [
+        {
+          "name": "signoz-admins",
+          "path": "/signoz-admins"
         }
       ]
     }
