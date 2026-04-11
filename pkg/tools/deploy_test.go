@@ -884,3 +884,154 @@ func TestWorkflowApplyConfigMapLargeDataIntegrity(t *testing.T) {
 	checkStringKey("key-small-2", smallValue2)
 	checkStringKey("key-large", largeValue)
 }
+
+// makeNodeDescJSON marshals a slice of name/description pairs into JSON for use
+// in ConfigMap test fixtures.
+func makeNodeDescJSON(t *testing.T, descs []NodeMeta) string {
+	t.Helper()
+	b, err := json.Marshal(descs)
+	if err != nil {
+		t.Fatalf("marshal node descriptions: %v", err)
+	}
+	return string(b)
+}
+
+// makeNodesAnnotation marshals a slice of node names into JSON for use in
+// Deployment annotation test fixtures.
+func makeNodesAnnotation(t *testing.T, names []string) string {
+	t.Helper()
+	b, err := json.Marshal(names)
+	if err != nil {
+		t.Fatalf("marshal nodes annotation: %v", err)
+	}
+	return string(b)
+}
+
+// TestValidateNodeDescriptions_NoDeployment verifies that manifests with no
+// Deployment skip validation (backwards compat — ConfigMap-only apply).
+func TestValidateNodeDescriptions_NoDeployment(t *testing.T) {
+	manifests := []map[string]any{
+		{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata":   map[string]any{"name": "my-wf-metadata"},
+			"data":       map[string]any{},
+		},
+	}
+	if err := validateNodeDescriptions(manifests); err != nil {
+		t.Errorf("expected nil for no Deployment, got: %v", err)
+	}
+}
+
+// TestValidateNodeDescriptions_NoNodesAnnotation verifies that a Deployment
+// without tentacular.io/nodes annotation skips validation (pre-description deploy).
+func TestValidateNodeDescriptions_NoNodesAnnotation(t *testing.T) {
+	manifests := []map[string]any{
+		{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+			"metadata": map[string]any{
+				"name":        "my-wf",
+				"annotations": map[string]any{},
+			},
+		},
+	}
+	if err := validateNodeDescriptions(manifests); err != nil {
+		t.Errorf("expected nil when nodes annotation absent, got: %v", err)
+	}
+}
+
+// TestValidateNodeDescriptions_AllDescribed verifies that manifests with complete
+// node descriptions are accepted.
+func TestValidateNodeDescriptions_AllDescribed(t *testing.T) {
+	nodesAnn := makeNodesAnnotation(t, []string{"fetch", "analyze"})
+	descJSON := makeNodeDescJSON(t, []NodeMeta{
+		{Name: "fetch", Description: "Fetches data"},
+		{Name: "analyze", Description: "Analyzes data"},
+	})
+	manifests := []map[string]any{
+		{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+			"metadata": map[string]any{
+				"name": "my-wf",
+				"annotations": map[string]any{
+					"tentacular.io/nodes": nodesAnn,
+				},
+			},
+		},
+		{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata":   map[string]any{"name": "my-wf-metadata"},
+			"data":       map[string]any{"node_descriptions": descJSON},
+		},
+	}
+	if err := validateNodeDescriptions(manifests); err != nil {
+		t.Errorf("expected nil for complete descriptions, got: %v", err)
+	}
+}
+
+// TestValidateNodeDescriptions_MissingConfigMapKey verifies that manifests with
+// nodes but no node_descriptions ConfigMap key are rejected.
+func TestValidateNodeDescriptions_MissingConfigMapKey(t *testing.T) {
+	nodesAnn := makeNodesAnnotation(t, []string{"fetch", "analyze"})
+	manifests := []map[string]any{
+		{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+			"metadata": map[string]any{
+				"name": "my-wf",
+				"annotations": map[string]any{
+					"tentacular.io/nodes": nodesAnn,
+				},
+			},
+		},
+		{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata":   map[string]any{"name": "my-wf-metadata"},
+			"data":       map[string]any{},
+		},
+	}
+	err := validateNodeDescriptions(manifests)
+	if err == nil {
+		t.Error("expected error when node_descriptions key is absent, got nil")
+	}
+}
+
+// TestValidateNodeDescriptions_PartialDescriptions verifies that manifests where
+// one or more nodes lack a description entry are rejected.
+func TestValidateNodeDescriptions_PartialDescriptions(t *testing.T) {
+	nodesAnn := makeNodesAnnotation(t, []string{"fetch", "analyze", "report"})
+	// Only "fetch" and "analyze" have descriptions; "report" is missing.
+	descJSON := makeNodeDescJSON(t, []NodeMeta{
+		{Name: "fetch", Description: "Fetches data"},
+		{Name: "analyze", Description: "Analyzes data"},
+	})
+	manifests := []map[string]any{
+		{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+			"metadata": map[string]any{
+				"name": "my-wf",
+				"annotations": map[string]any{
+					"tentacular.io/nodes": nodesAnn,
+				},
+			},
+		},
+		{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata":   map[string]any{"name": "my-wf-metadata"},
+			"data":       map[string]any{"node_descriptions": descJSON},
+		},
+	}
+	err := validateNodeDescriptions(manifests)
+	if err == nil {
+		t.Error("expected error for partial descriptions, got nil")
+	}
+	if err != nil && !strings.Contains(err.Error(), "report") {
+		t.Errorf("error should mention missing node %q, got: %v", "report", err)
+	}
+}
