@@ -46,3 +46,129 @@ spec:
         - protocol: TCP
           port: 4318
 {{- end }}
+---
+{{/*
+Allow Traefik ingress controller to reach the oauth2-proxy pod (forwardAuth).
+*/}}
+{{- if and .Values.networkPolicy.create .Values.oauth2Proxy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "tentacular-observability.fullname" . }}-oauth2-proxy-ingress
+  namespace: {{ include "tentacular-observability.namespace" . }}
+  labels:
+    {{- include "tentacular-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: oauth2-proxy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: oauth2-proxy
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 4180
+{{- end }}
+---
+{{/*
+Allow traffic to reach the SigNoz frontend pod.
+Sources: Traefik (direct, when oauth2-proxy disabled) and oauth2-proxy
+(reverse-proxy upstream, when oauth2-proxy enabled).
+*/}}
+{{- if and .Values.networkPolicy.create .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "tentacular-observability.fullname" . }}-signoz-ingress
+  namespace: {{ include "tentacular-observability.namespace" . }}
+  labels:
+    {{- include "tentacular-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: signoz
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: signoz
+      app.kubernetes.io/component: signoz
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- if .Values.oauth2Proxy.enabled }}
+    # oauth2-proxy reverse-proxies authenticated requests to SigNoz
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: oauth2-proxy
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- else }}
+    # Direct ingress from Traefik when no auth proxy is in use
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- end }}
+{{- end }}
+---
+{{/*
+Allow oauth2-proxy egress to Keycloak (HTTPS) and DNS.
+*/}}
+{{- if and .Values.networkPolicy.create .Values.oauth2Proxy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "tentacular-observability.fullname" . }}-oauth2-proxy-egress
+  namespace: {{ include "tentacular-observability.namespace" . }}
+  labels:
+    {{- include "tentacular-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: oauth2-proxy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: oauth2-proxy
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Keycloak OIDC endpoints (HTTPS, via Traefik ingress or in-cluster)
+    - ports:
+        - protocol: TCP
+          port: 443
+    # Keycloak in-cluster (port 8080 in tentacular-exoskeleton)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tentacular-exoskeleton
+      ports:
+        - protocol: TCP
+          port: 8080
+    # SigNoz upstream (reverse-proxy mode, same namespace)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: signoz
+              app.kubernetes.io/component: signoz
+      ports:
+        - protocol: TCP
+          port: 8080
+{{- end }}

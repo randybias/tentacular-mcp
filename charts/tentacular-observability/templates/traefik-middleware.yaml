@@ -1,0 +1,13 @@
+{{/*
+Traefik forwardAuth middleware for SigNoz.
+
+NOTE: This middleware is NOT currently used. The SigNoz ingress routes
+traffic through oauth2-proxy as a reverse proxy, which handles both
+authentication and proxying to SigNoz. This is more compatible across
+ingress controllers than forwardAuth (which requires controller-specific
+error handling for 401->redirect).
+
+This file is retained for future use if the architecture switches to
+forwardAuth mode (e.g., with an ingress controller that supports
+auth-signin error pages natively).
+*/}}

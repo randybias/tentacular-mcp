@@ -1,0 +1,45 @@
+# Traefik Helm values for Tentacular clusters.
+#
+# Install/upgrade:
+#   helm repo add traefik https://traefik.github.io/charts
+#   helm upgrade --install traefik traefik/traefik \
+#     --namespace traefik --create-namespace \
+#     -f deploy/traefik/values.yaml
+#
+# This binds Traefik directly to the node's ports 80/443 via hostNetwork.
+# Acceptable for single-node dev clusters. For multi-node production,
+# switch to a LoadBalancer service or DaemonSet with hostPort.
+
+# Bind directly to node ports 80/443 (no LoadBalancer needed).
+hostNetwork: true
+
+service:
+  type: ClusterIP
+
+# Recreate strategy is required for hostNetwork — only one pod can bind
+# to ports 80/443 at a time, so RollingUpdate deadlocks.
+updateStrategy:
+  type: Recreate
+
+# Global HTTP-to-HTTPS redirect for all ingresses (308 Permanent Redirect).
+ports:
+  web:
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+
+# RBAC: allow Traefik to read resources across all namespaces.
+rbac:
+  enabled: true
+
+# Enable Traefik CRD provider (Middleware, IngressRoute, etc.).
+# allowCrossNamespace lets Traefik read Middleware CRDs from any namespace,
+# which is required for the SigNoz forwardAuth middleware in tentacular-observability.
+providers:
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: true
+  kubernetesIngress:
+    enabled: true

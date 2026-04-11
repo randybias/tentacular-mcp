@@ -342,6 +342,14 @@ keycloak:
       clientSecret: ""
       # -- Chroma hostname for redirect URIs
       hostname: ""
+    # -- SigNoz observability UI client (CONFIDENTIAL).
+    # Uses authorization code flow via oauth2-proxy at the Traefik ingress layer.
+    # SigNoz Community Edition lacks native OIDC — oauth2-proxy provides the gate.
+    signoz:
+      clientId: "signoz"
+      clientSecret: ""
+      # -- SigNoz hostname for redirect URIs
+      hostname: ""
 
 # -- keycloakx subchart configuration (passed through to codecentric/keycloakx)
 # See https://github.com/codecentric/helm-charts/tree/master/charts/keycloakx

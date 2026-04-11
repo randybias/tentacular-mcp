@@ -102,3 +102,66 @@ networkPolicy:
   # -- When true, create a NetworkPolicy allowing OTLP ingress on 4317/4318
   # from all namespaces. Disable only if you manage NetworkPolicy externally.
   create: true
+
+# -- oauth2-proxy authentication for the SigNoz UI.
+# Deploys oauth2-proxy as a Keycloak OIDC gatekeeper in front of SigNoz.
+# SigNoz Community Edition lacks native OIDC — this provides the auth gate
+# at the Traefik ingress layer via forwardAuth middleware.
+oauth2Proxy:
+  # -- Enable oauth2-proxy deployment and Traefik forwardAuth middleware
+  enabled: false
+  image:
+    # -- oauth2-proxy image
+    repository: quay.io/oauth2-proxy/oauth2-proxy
+    # -- oauth2-proxy image tag
+    tag: "v7.7.1"
+    pullPolicy: IfNotPresent
+  # -- Replica count
+  replicaCount: 1
+  # -- Resource requests and limits
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  # -- Keycloak OIDC issuer URL (e.g., https://auth.example.com/realms/tentacular)
+  issuerURL: ""
+  # -- OIDC client ID (must match keycloak.clients.signoz.clientId in tentacular-platform)
+  clientID: "signoz"
+  # -- OIDC client secret (must match keycloak.clients.signoz.clientSecret)
+  clientSecret: ""
+  # -- Random cookie secret (32 bytes, base64-encoded). Generate with:
+  #    openssl rand -base64 32
+  cookieSecret: ""
+  # -- Use an existing Secret instead of creating one from the values above.
+  # Required keys: client-id, client-secret, cookie-secret
+  existingSecret: ""
+  # -- Cookie domain (e.g., .eastus-dev1.ospo-dev.miralabs.dev)
+  cookieDomain: ""
+  # -- Keycloak group required for access. Empty string allows any authenticated user.
+  allowedGroup: "signoz-admins"
+  # -- Email domains allowed. Use ["*"] to allow any domain (Keycloak is the gatekeeper).
+  emailDomains:
+    - "*"
+
+# -- SigNoz Ingress configuration.
+# Creates a Kubernetes Ingress for the SigNoz frontend with optional
+# oauth2-proxy forwardAuth middleware.
+ingress:
+  # -- Enable SigNoz Ingress
+  enabled: false
+  # -- SigNoz hostname (e.g., tentacle-monitor.eastus-dev1.ospo-dev.miralabs.dev)
+  hostname: ""
+  # -- Ingress class name (e.g., traefik)
+  className: ""
+  tls:
+    # -- Enable TLS on the Ingress
+    enabled: false
+    # -- TLS secret name (defaults to signoz-tls)
+    secretName: ""
+    # -- cert-manager ClusterIssuer name
+    clusterIssuer: "letsencrypt-prod"
+  # -- Additional annotations for the Ingress
+  annotations: {}

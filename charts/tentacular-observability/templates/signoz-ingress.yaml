@@ -1,0 +1,51 @@
+{{/*
+SigNoz Ingress.
+When oauth2-proxy is enabled, the backend points to oauth2-proxy (which
+reverse-proxies to SigNoz after authentication). Without oauth2-proxy,
+the backend points directly to the SigNoz service.
+*/}}
+{{- if .Values.ingress.enabled }}
+{{- $annotations := .Values.ingress.annotations | default dict }}
+{{- if and .Values.ingress.tls.enabled .Values.ingress.tls.clusterIssuer }}
+{{- $_ := set $annotations "cert-manager.io/cluster-issuer" .Values.ingress.tls.clusterIssuer }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: signoz
+  namespace: {{ include "tentacular-observability.namespace" . }}
+  labels:
+    {{- include "tentacular-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: signoz
+  {{- if $annotations }}
+  annotations:
+    {{- toYaml $annotations | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.hostname | quote }}
+      secretName: {{ .Values.ingress.tls.secretName | default "signoz-tls" | quote }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.hostname | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                {{- if .Values.oauth2Proxy.enabled }}
+                name: oauth2-proxy
+                port:
+                  number: 4180
+                {{- else }}
+                name: signoz
+                port:
+                  number: 8080
+                {{- end }}
+{{- end }}
