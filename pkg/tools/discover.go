@@ -151,23 +151,23 @@ type WfDescribeResult struct {
 	ParamsSchema  string            `json:"params_schema,omitempty"`
 	// ContractSummary maps to the "contract" key in the metadata ConfigMap.
 	// The field name is more descriptive for API consumers.
-	ContractSummary string           `json:"contract_summary,omitempty"`
-	Readme          string           `json:"readme,omitempty"`
-	MetadataRef     string           `json:"metadata_ref,omitempty"`
-	ScaffoldName    string           `json:"scaffold_name,omitempty"`
+	ContractSummary  string           `json:"contract_summary,omitempty"`
+	Readme           string           `json:"readme,omitempty"`
+	MetadataRef      string           `json:"metadata_ref,omitempty"`
+	ScaffoldName     string           `json:"scaffold_name,omitempty"`
 	Nodes            []string         `json:"nodes,omitempty"`
 	NodeDescriptions []NodeMeta       `json:"node_descriptions,omitempty"`
 	Sidecars         []SidecarMeta    `json:"sidecars,omitempty"`
-	Dependencies    []DependencyMeta `json:"dependencies,omitempty"`
-	Prompts         []PromptEntry    `json:"prompts,omitempty"`
-	Templates       []TemplateEntry  `json:"templates,omitempty"`
-	Edges           [][2]string      `json:"edges,omitempty"`
-	EnclaveMembers  []string         `json:"enclave_members,omitempty"`
-	Tags            []string         `json:"tags,omitempty"`
-	Triggers        []string         `json:"triggers,omitempty"`
-	Replicas        int32            `json:"replicas"`
-	ReadyReplicas   int32            `json:"ready_replicas"`
-	Ready           bool             `json:"ready"`
+	Dependencies     []DependencyMeta `json:"dependencies,omitempty"`
+	Prompts          []PromptEntry    `json:"prompts,omitempty"`
+	Templates        []TemplateEntry  `json:"templates,omitempty"`
+	Edges            [][2]string      `json:"edges,omitempty"`
+	EnclaveMembers   []string         `json:"enclave_members,omitempty"`
+	Tags             []string         `json:"tags,omitempty"`
+	Triggers         []string         `json:"triggers,omitempty"`
+	Replicas         int32            `json:"replicas"`
+	ReadyReplicas    int32            `json:"ready_replicas"`
+	Ready            bool             `json:"ready"`
 }
 
 func registerDiscoverTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
@@ -545,15 +545,25 @@ func handleWfDescribe(ctx context.Context, client *k8s.Client, params WfDescribe
 			var promptsDoc struct {
 				Prompts   []PromptEntry   `yaml:"prompts"`
 				Templates []TemplateEntry `yaml:"templates"`
-				Nodes     []NodeMeta      `yaml:"nodes"`
 			}
 			if yamlErr := yaml.Unmarshal([]byte(v), &promptsDoc); yamlErr == nil {
 				result.Prompts = promptsDoc.Prompts
 				result.Templates = promptsDoc.Templates
-				result.NodeDescriptions = promptsDoc.Nodes
 			} else {
 				slog.Warn("wf_describe: invalid YAML in prompts ConfigMap key",
 					"deployment", params.Name, "error", yamlErr)
+			}
+		}
+		// node_descriptions: JSON array of [{name, description}] written by the builder
+		// (tentacular/pkg/builder/metadata.go). Falls back to empty when the key is absent
+		// (pre-description deploys).
+		if v, ok := metaCM.Data["node_descriptions"]; ok {
+			var descs []NodeMeta
+			if jsonErr := json.Unmarshal([]byte(v), &descs); jsonErr == nil {
+				result.NodeDescriptions = descs
+			} else {
+				slog.Warn("wf_describe: invalid JSON in node_descriptions ConfigMap key",
+					"deployment", params.Name, "error", jsonErr)
 			}
 		}
 	}

@@ -2,10 +2,12 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -239,6 +241,9 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 				IsUpdate:            isUpdate,
 				ExistingAnnotations: existingAnnotations,
 			})
+		}
+		if err := validateNodeDescriptions(params.Manifests); err != nil {
+			return nil, WorkflowApplyResult{}, err
 		}
 		result, err := handleWorkflowApply(ctx, client, params)
 		if err == nil {
@@ -773,6 +778,76 @@ type dependencyYAML struct {
 	Protocol string `yaml:"protocol"`
 	Host     string `yaml:"host"`
 	Version  string `yaml:"version"`
+}
+
+// validateNodeDescriptions checks that every node listed in the Deployment's
+// tentacular.io/nodes annotation has a corresponding entry in the metadata
+// ConfigMap's node_descriptions key. Returns nil when no Deployment manifest
+// is present, when the annotation is absent (pre-description deploys), or when
+// all nodes have descriptions.
+func validateNodeDescriptions(manifests []map[string]any) error {
+	// Step 1: find the Deployment and read tentacular.io/nodes annotation.
+	var nodeNames []string
+	foundDeployment := false
+	for _, m := range manifests {
+		obj := &unstructured.Unstructured{Object: m}
+		if obj.GetKind() != "Deployment" {
+			continue
+		}
+		foundDeployment = true
+		ann := obj.GetAnnotations()
+		nodesJSON, ok := ann["tentacular.io/nodes"]
+		if !ok || nodesJSON == "" {
+			// No annotation — pre-description deploy, skip validation.
+			return nil
+		}
+		if jsonErr := json.Unmarshal([]byte(nodesJSON), &nodeNames); jsonErr != nil {
+			return fmt.Errorf("malformed tentacular.io/nodes annotation: %w", jsonErr)
+		}
+		break
+	}
+	if !foundDeployment || len(nodeNames) == 0 {
+		return nil
+	}
+
+	// Step 2: find the metadata ConfigMap (name ends with "-metadata") and read
+	// the node_descriptions JSON key.
+	described := make(map[string]bool, len(nodeNames))
+	for _, m := range manifests {
+		obj := &unstructured.Unstructured{Object: m}
+		if obj.GetKind() != "ConfigMap" {
+			continue
+		}
+		if !strings.HasSuffix(obj.GetName(), "-metadata") {
+			continue
+		}
+		data, ok, _ := unstructured.NestedStringMap(obj.Object, "data")
+		if !ok {
+			break
+		}
+		descJSON, ok := data["node_descriptions"]
+		if !ok {
+			break
+		}
+		var descs []NodeMeta
+		if err := json.Unmarshal([]byte(descJSON), &descs); err != nil {
+			break
+		}
+		for _, d := range descs {
+			if d.Description != "" {
+				described[d.Name] = true
+			}
+		}
+		break
+	}
+
+	// Step 3: verify every node has a description.
+	for _, name := range nodeNames {
+		if !described[name] {
+			return fmt.Errorf("node %q: description is required (add description field in workflow.yaml)", name)
+		}
+	}
+	return nil
 }
 
 // extractModuleDeps inspects the manifests for a ConfigMap containing

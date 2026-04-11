@@ -578,19 +578,18 @@ func TestWfDescribe_NodeDescriptionsPresent(t *testing.T) {
 		t.Fatalf("create deployment: %v", err)
 	}
 
+	nodeDescs, _ := json.Marshal([]NodeMeta{
+		{Name: "fetch-data", Description: "Fetches data from external API"},
+		{Name: "analyze", Description: "Runs LLM analysis on fetched data"},
+	})
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "nodedesc-wf-metadata",
 			Namespace: "nodedesc-ns",
 		},
 		Data: map[string]string{
-			"prompts": `version: "1"
-nodes:
-  - name: fetch-data
-    description: "Fetches data from external API"
-  - name: analyze
-    description: "Runs LLM analysis on fetched data"
-prompts:
+			"node_descriptions": string(nodeDescs),
+			"prompts": `prompts:
   - node: analyze
     name: data-analysis
     model: claude-3-haiku
@@ -609,7 +608,7 @@ prompts:
 		t.Fatalf("handleWfDescribe: %v", err)
 	}
 
-	// NodeDescriptions
+	// NodeDescriptions come from the node_descriptions JSON key.
 	if len(result.NodeDescriptions) != 2 {
 		t.Fatalf("NodeDescriptions: got %d, want 2", len(result.NodeDescriptions))
 	}
@@ -626,7 +625,7 @@ prompts:
 		t.Errorf("NodeDescriptions[1].Description = %q", result.NodeDescriptions[1].Description)
 	}
 
-	// Prompts should still parse correctly alongside nodes.
+	// Prompts should still parse correctly from the prompts key.
 	if len(result.Prompts) != 1 {
 		t.Fatalf("Prompts: got %d, want 1", len(result.Prompts))
 	}
