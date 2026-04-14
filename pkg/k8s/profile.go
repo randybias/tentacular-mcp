@@ -63,7 +63,7 @@ type ClusterProfile struct {
 	K8sVersion     string             `json:"k8sVersion"`
 	Distribution   string             `json:"distribution"`
 	PodSecurity    string             `json:"podSecurity"`
-	Namespace      string             `json:"namespace"`
+	Namespace      string             `json:"enclave"` // enclave name = K8s namespace name
 	RWXNote        string             `json:"rwxNote"`
 	RuntimeClasses []RuntimeClassInfo `json:"runtimeClasses"`
 	Ingress        []string           `json:"ingress"`

@@ -18,7 +18,7 @@ import (
 
 // AuditRbacParams are the parameters for audit_rbac.
 type AuditRbacParams struct {
-	Namespace string `json:"namespace" jsonschema:"Namespace to audit RBAC in"`
+	Namespace string `json:"enclave" jsonschema:"Enclave to audit RBAC in"`
 }
 
 // AuditFinding is a single RBAC audit finding.
@@ -37,7 +37,7 @@ type AuditRbacResult struct {
 
 // AuditNetpolParams are the parameters for audit_netpol.
 type AuditNetpolParams struct {
-	Namespace string `json:"namespace" jsonschema:"Namespace to audit network policies in"`
+	Namespace string `json:"enclave" jsonschema:"Enclave to audit network policies in"`
 }
 
 // NetpolInfo is a single network policy in the audit result.
@@ -63,7 +63,7 @@ type AuditNetpolResult struct {
 
 // AuditPsaParams are the parameters for audit_psa.
 type AuditPsaParams struct {
-	Namespace string `json:"namespace" jsonschema:"Namespace to audit Pod Security Admission configuration in"`
+	Namespace string `json:"enclave" jsonschema:"Enclave to audit Pod Security Admission configuration in"`
 }
 
 // AuditPsaFinding is a single PSA audit finding.
@@ -85,7 +85,7 @@ type AuditPsaResult struct {
 func registerAuditTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "audit_rbac",
-		Description: "Audit RBAC in a namespace: scan for wildcard verbs/resources, sensitive access, escalation paths (bind/escalate/impersonate verbs), and ClusterRoleBindings targeting namespace service accounts. Returns findings with remediation suggestions.",
+		Description: "Audit RBAC in an enclave: scan for wildcard verbs/resources, sensitive access, escalation paths (bind/escalate/impersonate verbs), and ClusterRoleBindings targeting enclave service accounts. Returns findings with remediation suggestions.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Audit RBAC Configuration",
 			ReadOnlyHint:    true,
@@ -107,7 +107,7 @@ func registerAuditTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluat
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "audit_netpol",
-		Description: "Audit network policies in a namespace: check for default-deny policy, missing egress restrictions, overly broad allow rules, cross-namespace ingress via empty namespaceSelector, and list all policies. Returns findings with remediation suggestions.",
+		Description: "Audit network policies in an enclave: check for default-deny policy, missing egress restrictions, overly broad allow rules, cross-namespace ingress via empty namespaceSelector, and list all policies. Returns findings with remediation suggestions.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Audit Network Policies",
 			ReadOnlyHint:    true,
@@ -129,7 +129,7 @@ func registerAuditTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluat
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "audit_psa",
-		Description: "Audit Pod Security Admission labels on a namespace: check enforce/audit/warn levels, flag privileged or missing enforcement, detect audit/warn level mismatches, and return remediation suggestions.",
+		Description: "Audit Pod Security Admission labels on an enclave: check enforce/audit/warn levels, flag privileged or missing enforcement, detect audit/warn level mismatches, and return remediation suggestions.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Audit Pod Security Admission",
 			ReadOnlyHint:    true,

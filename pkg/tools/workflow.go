@@ -24,7 +24,7 @@ import (
 
 // WfPodsParams are the parameters for wf_pods.
 type WfPodsParams struct {
-	Namespace string `json:"namespace,omitempty" jsonschema:"Namespace to list pods in (auto-resolved if caller belongs to exactly one enclave)"`
+	Namespace string `json:"enclave,omitempty" jsonschema:"Enclave to list pods in (auto-resolved if caller belongs to exactly one enclave)"`
 }
 
 // WfPodInfo is a single pod in the list result.
@@ -44,7 +44,7 @@ type WfPodsResult struct {
 
 // WfLogsParams are the parameters for wf_logs.
 type WfLogsParams struct {
-	Namespace string `json:"namespace,omitempty" jsonschema:"Namespace of the pod (auto-resolved if caller belongs to exactly one enclave)"`
+	Namespace string `json:"enclave,omitempty" jsonschema:"Enclave of the pod (auto-resolved if caller belongs to exactly one enclave)"`
 	Pod       string `json:"pod" jsonschema:"Name of the pod to get logs from"`
 	Container string `json:"container,omitempty" jsonschema:"Container name (optional, defaults to first container)"`
 	TailLines int64  `json:"tail_lines,omitempty" jsonschema:"Number of log lines to return (default 100)"`
@@ -59,7 +59,7 @@ type WfLogsResult struct {
 
 // WfEventsParams are the parameters for wf_events.
 type WfEventsParams struct {
-	Namespace string `json:"namespace,omitempty" jsonschema:"Namespace to list events in (auto-resolved if caller belongs to exactly one enclave)"`
+	Namespace string `json:"enclave,omitempty" jsonschema:"Enclave to list events in (auto-resolved if caller belongs to exactly one enclave)"`
 	Limit     int64  `json:"limit,omitempty" jsonschema:"Maximum number of events to return (default 100)"`
 }
 
@@ -80,7 +80,7 @@ type WfEventsResult struct {
 
 // WfJobsParams are the parameters for wf_jobs.
 type WfJobsParams struct {
-	Namespace string `json:"namespace,omitempty" jsonschema:"Namespace to list jobs in (auto-resolved if caller belongs to exactly one enclave)"`
+	Namespace string `json:"enclave,omitempty" jsonschema:"Enclave to list jobs in (auto-resolved if caller belongs to exactly one enclave)"`
 }
 
 // WfJobInfo is a single job in the list result.
@@ -109,13 +109,13 @@ type WfJobsResult struct {
 
 // WfRestartParams are the parameters for wf_restart.
 type WfRestartParams struct {
-	Namespace  string `json:"namespace,omitempty" jsonschema:"Namespace containing the deployment (auto-resolved if caller belongs to exactly one enclave)"`
+	Namespace  string `json:"enclave,omitempty" jsonschema:"Enclave containing the deployment (auto-resolved if caller belongs to exactly one enclave)"`
 	Deployment string `json:"deployment" jsonschema:"Name of the deployment to restart"`
 }
 
 // WfRestartResult is the result of wf_restart.
 type WfRestartResult struct {
-	Namespace  string `json:"namespace"`
+	Namespace  string `json:"enclave"`
 	Deployment string `json:"deployment"`
 	Restarted  bool   `json:"restarted"`
 }
@@ -123,7 +123,7 @@ type WfRestartResult struct {
 func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_pods",
-		Description: "List pods in a namespace with phase, readiness, restart count, images, and age.",
+		Description: "List pods in an enclave with phase, readiness, restart count, images, and age.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "List Workflow Pods",
 			ReadOnlyHint:    true,
@@ -153,7 +153,7 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_logs",
-		Description: "Get pod logs from a namespace. Returns tail lines (default 100).",
+		Description: "Get pod logs from an enclave. Returns tail lines (default 100).",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Get Pod Logs",
 			ReadOnlyHint:    true,
@@ -186,7 +186,7 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_events",
-		Description: "List events in a namespace sorted by most recent first.",
+		Description: "List events in an enclave sorted by most recent first.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "List Namespace Events",
 			ReadOnlyHint:    true,
@@ -216,7 +216,7 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_jobs",
-		Description: "List Jobs and CronJobs in a namespace.",
+		Description: "List Jobs and CronJobs in an enclave.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "List Jobs and CronJobs",
 			ReadOnlyHint:    true,
@@ -246,7 +246,7 @@ func registerWorkflowTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_restart",
-		Description: "Rollout restart a deployment in a managed namespace by patching the pod template with a restart timestamp. Useful after ConfigMap/Secret changes, credential rotation, or gVisor enablement.",
+		Description: "Rollout restart a deployment in a managed enclave by patching the pod template with a restart timestamp. Useful after ConfigMap/Secret changes, credential rotation, or gVisor enablement.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Restart Workflow Deployment",
 			ReadOnlyHint:    false,

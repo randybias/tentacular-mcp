@@ -96,7 +96,7 @@ type GitProvenance struct {
 
 // WfListParams are the parameters for wf_list.
 type WfListParams struct {
-	Namespace string `json:"namespace,omitempty" jsonschema:"Namespace to filter (optional, empty=all tentacular namespaces)"`
+	Namespace string `json:"enclave,omitempty" jsonschema:"Enclave to filter (optional, empty=all enclaves)"`
 	Owner     string `json:"owner,omitempty" jsonschema:"Filter by owner annotation (optional)"`
 	Tag       string `json:"tag,omitempty" jsonschema:"Filter by tag (optional)"`
 }
@@ -104,7 +104,7 @@ type WfListParams struct {
 // WfListEntry is a single workflow in the list result.
 type WfListEntry struct {
 	Name        string `json:"name"`
-	Namespace   string `json:"namespace"`
+	Namespace   string `json:"enclave"`
 	Version     string `json:"version"`
 	Description string `json:"description,omitempty"`
 	Owner       string `json:"owner,omitempty"`
@@ -124,7 +124,7 @@ type WfListResult struct {
 
 // WfDescribeParams are the parameters for wf_describe.
 type WfDescribeParams struct {
-	Namespace string `json:"namespace,omitempty" jsonschema:"Namespace of the workflow (auto-resolved if caller belongs to exactly one enclave)"`
+	Namespace string `json:"enclave,omitempty" jsonschema:"Enclave of the workflow (auto-resolved if caller belongs to exactly one enclave)"`
 	Name      string `json:"name" jsonschema:"Workflow name"`
 }
 
@@ -138,7 +138,7 @@ type WfDescribeResult struct {
 	Group         string            `json:"group,omitempty"`
 	Mode          string            `json:"mode,omitempty"`
 	Preset        string            `json:"preset,omitempty"`
-	Namespace     string            `json:"namespace"`
+	Namespace     string            `json:"enclave"`
 	Environment   string            `json:"environment,omitempty"`
 	TriggerType   string            `json:"trigger_type,omitempty"`
 	Name          string            `json:"name"`
@@ -173,7 +173,7 @@ type WfDescribeResult struct {
 func registerDiscoverTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evaluator) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_list",
-		Description: "List all tentacular-managed workflow deployments across namespaces, with ownership and status.",
+		Description: "List all tentacular-managed workflow deployments across enclaves, with ownership and status.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "List Deployed Workflows",
 			ReadOnlyHint:    true,

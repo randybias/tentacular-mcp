@@ -43,12 +43,12 @@ type HealthNodesResult struct {
 
 // HealthNsUsageParams are the parameters for health_ns_usage.
 type HealthNsUsageParams struct {
-	Namespace string `json:"namespace" jsonschema:"Namespace to check resource usage for"`
+	Namespace string `json:"enclave" jsonschema:"Enclave to check resource usage for"`
 }
 
 // HealthNsUsageResult is the result of health_ns_usage.
 type HealthNsUsageResult struct {
-	Namespace string  `json:"namespace"`
+	Namespace string  `json:"enclave"`
 	CPUUsed   string  `json:"cpu_used"`
 	CPULimit  string  `json:"cpu_limit"`
 	MemUsed   string  `json:"mem_used"`
@@ -93,8 +93,8 @@ func registerHealthTools(srv *mcp.Server, client *k8s.Client, eval *authz.Evalua
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "health_ns_usage",
-		Description: "Compare namespace resource usage against ResourceQuota limits and return utilization percentages.",
+		Name:        "health_enclave_usage",
+		Description: "Compare enclave resource usage against ResourceQuota limits and return utilization percentages.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Namespace Resource Usage",
 			ReadOnlyHint:    true,

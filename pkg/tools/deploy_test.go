@@ -397,7 +397,7 @@ func TestWorkflowStatusResultJSONNameField(t *testing.T) {
 // TestWorkflowParamStructsJSONNameField verifies that all three param structs
 // accept the "name" JSON key (not the old "release" key).
 func TestWorkflowParamStructsJSONNameField(t *testing.T) {
-	applyJSON := `{"namespace":"ns","name":"rel","manifests":[]}`
+	applyJSON := `{"enclave":"ns","name":"rel","manifests":[]}`
 	var applyParams WorkflowApplyParams
 	if err := json.Unmarshal([]byte(applyJSON), &applyParams); err != nil {
 		t.Fatalf("unmarshal WorkflowApplyParams: %v", err)
@@ -406,7 +406,7 @@ func TestWorkflowParamStructsJSONNameField(t *testing.T) {
 		t.Errorf("WorkflowApplyParams Name: got %q, want rel", applyParams.Name)
 	}
 
-	removeJSON := `{"namespace":"ns","name":"rel"}`
+	removeJSON := `{"enclave":"ns","name":"rel"}`
 	var removeParams WorkflowRemoveParams
 	if err := json.Unmarshal([]byte(removeJSON), &removeParams); err != nil {
 		t.Fatalf("unmarshal WorkflowRemoveParams: %v", err)
@@ -415,7 +415,7 @@ func TestWorkflowParamStructsJSONNameField(t *testing.T) {
 		t.Errorf("WorkflowRemoveParams Name: got %q, want rel", removeParams.Name)
 	}
 
-	statusJSON := `{"namespace":"ns","name":"rel"}`
+	statusJSON := `{"enclave":"ns","name":"rel"}`
 	var statusParams WorkflowStatusParams
 	if err := json.Unmarshal([]byte(statusJSON), &statusParams); err != nil {
 		t.Fatalf("unmarshal WorkflowStatusParams: %v", err)
