@@ -14,7 +14,7 @@ import (
 
 // ClusterPreflightParams are the parameters for cluster_preflight.
 type ClusterPreflightParams struct {
-	Namespace string `json:"namespace" jsonschema:"Namespace to run preflight checks against"`
+	Namespace string `json:"enclave" jsonschema:"Enclave to run preflight checks against"`
 }
 
 // ClusterPreflightResult is the result of cluster_preflight.
@@ -25,13 +25,13 @@ type ClusterPreflightResult struct {
 
 // ClusterProfileParams are the parameters for cluster_profile.
 type ClusterProfileParams struct {
-	Namespace string `json:"namespace,omitempty" jsonschema:"Optional namespace to include quota and limit range details"`
+	Namespace string `json:"enclave,omitempty" jsonschema:"Optional enclave to include quota and limit range details"`
 }
 
 func registerClusterOpsTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exoskeleton.Controller, eval *authz.Evaluator) {
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "cluster_preflight",
-		Description: "Run preflight checks for a namespace: API reachability, namespace existence, RBAC, and gVisor availability.",
+		Name:        "enclave_preflight",
+		Description: "Run preflight checks for an enclave: API reachability, enclave existence, RBAC, and gVisor availability.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Run Cluster Preflight Checks",
 			ReadOnlyHint:    true,

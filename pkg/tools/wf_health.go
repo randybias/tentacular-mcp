@@ -32,7 +32,7 @@ var wfHealthProbe = func(name, namespace string, detail bool) (string, error) {
 
 // WfHealthParams are the parameters for wf_health.
 type WfHealthParams struct {
-	Namespace string `json:"namespace,omitempty" jsonschema:"Workflow namespace (auto-resolved if caller belongs to exactly one enclave)"`
+	Namespace string `json:"enclave,omitempty" jsonschema:"Workflow enclave (auto-resolved if caller belongs to exactly one enclave)"`
 	Name      string `json:"name" jsonschema:"Deployment name"`
 	Detail    bool   `json:"detail,omitempty" jsonschema:"Include execution telemetry from health endpoint (default false)"`
 }
@@ -40,7 +40,7 @@ type WfHealthParams struct {
 // WfHealthResult is the result of wf_health.
 type WfHealthResult struct {
 	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
+	Namespace string `json:"enclave"`
 	Status    string `json:"status"`
 	Reason    string `json:"reason,omitempty"`
 	Detail    string `json:"detail,omitempty"`
@@ -49,7 +49,7 @@ type WfHealthResult struct {
 
 // WfHealthNsParams are the parameters for wf_health_ns.
 type WfHealthNsParams struct {
-	Namespace string `json:"namespace,omitempty" jsonschema:"Namespace to scan (auto-resolved if caller belongs to exactly one enclave)"`
+	Namespace string `json:"enclave,omitempty" jsonschema:"Enclave to scan (auto-resolved if caller belongs to exactly one enclave)"`
 	Limit     int    `json:"limit,omitempty" jsonschema:"Max workflows to check (default 20)"`
 }
 
@@ -69,7 +69,7 @@ type WfHealthNsEntry struct {
 
 // WfHealthNsResult is the result of wf_health_ns.
 type WfHealthNsResult struct {
-	Namespace string            `json:"namespace"`
+	Namespace string            `json:"enclave"`
 	Workflows []WfHealthNsEntry `json:"workflows"`
 	Summary   WfHealthNsSummary `json:"summary"`
 	Total     int               `json:"total"`
@@ -105,8 +105,8 @@ func registerWfHealthTools(srv *mcp.Server, client *k8s.Client, eval *authz.Eval
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "wf_health_ns",
-		Description: "Aggregate G/A/R health status for all tentacular workflow deployments in a namespace.",
+		Name:        "wf_health_enclave",
+		Description: "Aggregate G/A/R health status for all tentacular workflow deployments in an enclave.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Namespace Workflow Health",
 			ReadOnlyHint:    true,

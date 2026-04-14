@@ -63,7 +63,7 @@ var knownGVRs = []schema.GroupVersionResource{
 
 // WorkflowApplyParams are the parameters for wf_apply.
 type WorkflowApplyParams struct {
-	Namespace string           `json:"namespace" jsonschema:"Target namespace for the workflow"`
+	Namespace string           `json:"enclave" jsonschema:"Target enclave for the workflow"`
 	Name      string           `json:"name" jsonschema:"Deployment name for tracking resources"`
 	Mode      string           `json:"mode,omitempty" jsonschema:"Raw permission mode string (e.g. rwxrwx---). Defaults to enclave default mode."`
 	Manifests []map[string]any `json:"manifests" jsonschema:"List of Kubernetes manifest objects to apply"`
@@ -72,7 +72,7 @@ type WorkflowApplyParams struct {
 // WorkflowApplyResult is the result of wf_apply.
 type WorkflowApplyResult struct {
 	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
+	Namespace string `json:"enclave"`
 	Created   int    `json:"created"`
 	Updated   int    `json:"updated"`
 	Deleted   int    `json:"deleted"`
@@ -80,14 +80,14 @@ type WorkflowApplyResult struct {
 
 // WorkflowRemoveParams are the parameters for wf_remove.
 type WorkflowRemoveParams struct {
-	Namespace string `json:"namespace" jsonschema:"Namespace containing the workflow resources"`
+	Namespace string `json:"enclave" jsonschema:"Enclave containing the workflow resources"`
 	Name      string `json:"name" jsonschema:"Deployment name to remove"`
 }
 
 // WorkflowRemoveResult is the result of wf_remove.
 type WorkflowRemoveResult struct {
 	Name              string `json:"name"`
-	Namespace         string `json:"namespace"`
+	Namespace         string `json:"enclave"`
 	ExoCleanupDetails string `json:"exo_cleanup_details,omitempty"`
 	Deleted           int    `json:"deleted"`
 	ExoCleanedUp      bool   `json:"exo_cleaned_up,omitempty"`
@@ -95,7 +95,7 @@ type WorkflowRemoveResult struct {
 
 // WorkflowStatusParams are the parameters for wf_status.
 type WorkflowStatusParams struct {
-	Namespace string `json:"namespace" jsonschema:"Namespace containing the workflow resources"`
+	Namespace string `json:"enclave" jsonschema:"Enclave containing the workflow resources"`
 	Name      string `json:"name" jsonschema:"Deployment name to check status for"`
 	Detail    bool   `json:"detail,omitempty" jsonschema:"Include pods and events in the response"`
 }
@@ -127,7 +127,7 @@ type WorkflowEventInfo struct {
 // WorkflowStatusResult is the result of wf_status.
 type WorkflowStatusResult struct {
 	Name      string                   `json:"name"`
-	Namespace string                   `json:"namespace"`
+	Namespace string                   `json:"enclave"`
 	Version   string                   `json:"version,omitempty"`
 	Resources []WorkflowResourceStatus `json:"resources"`
 	Pods      []WorkflowPodInfo        `json:"pods,omitempty"`
@@ -140,7 +140,7 @@ type WorkflowStatusResult struct {
 func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.Scheduler, exoCtrl *exoskeleton.Controller, eval *authz.Evaluator) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_apply",
-		Description: "Apply a set of Kubernetes manifests as a named deployment in a namespace. Uses release labels for tracking and garbage collection. Includes garbage collection of stale resources.",
+		Description: "Apply a set of Kubernetes manifests as a named deployment in an enclave. Uses release labels for tracking and garbage collection. Includes garbage collection of stale resources.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Apply Workflow Manifests",
 			ReadOnlyHint:    false,
@@ -272,7 +272,7 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_remove",
-		Description: "Remove all resources belonging to a named deployment in a namespace. When exoskeleton cleanup is enabled, also drops backing-service data.",
+		Description: "Remove all resources belonging to a named deployment in an enclave. When exoskeleton cleanup is enabled, also drops backing-service data.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Remove Workflow Deployment",
 			ReadOnlyHint:    false,
@@ -323,7 +323,7 @@ func registerDeployTools(srv *mcp.Server, client *k8s.Client, sched *scheduler.S
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "wf_status",
-		Description: "Get status of all resources belonging to a named deployment in a namespace.",
+		Description: "Get status of all resources belonging to a named deployment in an enclave.",
 		Annotations: &mcp.ToolAnnotations{
 			Title:           "Get Workflow Status",
 			ReadOnlyHint:    true,

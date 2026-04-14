@@ -157,7 +157,7 @@ func TestE2E_WorkflowPodsEventsJobs(t *testing.T) {
 	})
 
 	// wf_pods - empty namespace, should return empty list.
-	text := callTool(t, session, "wf_pods", map[string]any{"namespace": nsName})
+	text := callTool(t, session, "wf_pods", map[string]any{"enclave": nsName})
 	var podsResult struct {
 		Pods []struct {
 			Name string `json:"name"`
@@ -170,7 +170,7 @@ func TestE2E_WorkflowPodsEventsJobs(t *testing.T) {
 
 	// wf_events
 	text = callTool(t, session, "wf_events", map[string]any{
-		"namespace": nsName,
+		"enclave": nsName,
 		"limit":     10,
 	})
 	var eventsResult struct {
@@ -184,7 +184,7 @@ func TestE2E_WorkflowPodsEventsJobs(t *testing.T) {
 	t.Logf("wf_events: %d events", len(eventsResult.Events))
 
 	// wf_jobs - empty namespace.
-	text = callTool(t, session, "wf_jobs", map[string]any{"namespace": nsName})
+	text = callTool(t, session, "wf_jobs", map[string]any{"enclave": nsName})
 	var jobsResult struct {
 		Jobs     []any `json:"jobs"`
 		CronJobs []any `json:"cronjobs"`
@@ -212,7 +212,7 @@ func TestE2E_ClusterPreflightAndProfile(t *testing.T) {
 	})
 
 	// cluster_preflight
-	text := callTool(t, session, "cluster_preflight", map[string]any{"namespace": nsName})
+	text := callTool(t, session, "enclave_preflight", map[string]any{"enclave": nsName})
 	var preflightResult struct {
 		Checks []struct {
 			Name    string `json:"name"`
@@ -230,7 +230,7 @@ func TestE2E_ClusterPreflightAndProfile(t *testing.T) {
 	}
 
 	// cluster_profile (with namespace)
-	text = callTool(t, session, "cluster_profile", map[string]any{"namespace": nsName})
+	text = callTool(t, session, "cluster_profile", map[string]any{"enclave": nsName})
 	var profileResult struct {
 		K8sVersion   string `json:"k8sVersion"`
 		Distribution string `json:"distribution"`
@@ -241,7 +241,7 @@ func TestE2E_ClusterPreflightAndProfile(t *testing.T) {
 		CNI struct {
 			Name string `json:"name"`
 		} `json:"cni"`
-		Namespace string `json:"namespace"`
+		Namespace string `json:"enclave"`
 		Quota     *struct {
 			CPURequest string `json:"cpuRequest"`
 		} `json:"quota"`
@@ -310,9 +310,9 @@ func TestE2E_HealthNodesUsageSummary(t *testing.T) {
 		"quota_preset": "medium",
 	})
 
-	text = callTool(t, session, "health_ns_usage", map[string]any{"namespace": nsName})
+	text = callTool(t, session, "health_enclave_usage", map[string]any{"enclave": nsName})
 	var usageResult struct {
-		Namespace string  `json:"namespace"`
+		Namespace string  `json:"enclave"`
 		CPULimit  string  `json:"cpu_limit"`
 		MemLimit  string  `json:"mem_limit"`
 		PodLimit  int     `json:"pod_limit"`
@@ -367,7 +367,7 @@ func TestE2E_AuditRbacNetpolPsa(t *testing.T) {
 	})
 
 	// audit_rbac
-	text := callTool(t, session, "audit_rbac", map[string]any{"namespace": nsName})
+	text := callTool(t, session, "audit_rbac", map[string]any{"enclave": nsName})
 	var rbacResult struct {
 		Findings []struct {
 			Role     string `json:"role"`
@@ -381,7 +381,7 @@ func TestE2E_AuditRbacNetpolPsa(t *testing.T) {
 	t.Logf("audit_rbac: %d findings", len(rbacResult.Findings))
 
 	// audit_netpol
-	text = callTool(t, session, "audit_netpol", map[string]any{"namespace": nsName})
+	text = callTool(t, session, "audit_netpol", map[string]any{"enclave": nsName})
 	var netpolResult struct {
 		DefaultDeny bool `json:"default_deny"`
 		Policies    []struct {
@@ -403,7 +403,7 @@ func TestE2E_AuditRbacNetpolPsa(t *testing.T) {
 	}
 
 	// audit_psa
-	text = callTool(t, session, "audit_psa", map[string]any{"namespace": nsName})
+	text = callTool(t, session, "audit_psa", map[string]any{"enclave": nsName})
 	var psaResult struct {
 		Compliant bool   `json:"compliant"`
 		Enforce   string `json:"enforce"`
@@ -448,13 +448,13 @@ func TestE2E_WorkflowApplyStatusRemove(t *testing.T) {
 	}
 
 	text := callTool(t, session, "wf_apply", map[string]any{
-		"namespace": nsName,
+		"enclave": nsName,
 		"name":      "test-app",
 		"manifests": manifests,
 	})
 	var applyResult struct {
 		Name      string `json:"name"`
-		Namespace string `json:"namespace"`
+		Namespace string `json:"enclave"`
 		Created   int    `json:"created"`
 		Updated   int    `json:"updated"`
 		Deleted   int    `json:"deleted"`
@@ -471,7 +471,7 @@ func TestE2E_WorkflowApplyStatusRemove(t *testing.T) {
 
 	// wf_status
 	text = callTool(t, session, "wf_status", map[string]any{
-		"namespace": nsName,
+		"enclave": nsName,
 		"name":      "test-app",
 	})
 	var statusResult struct {
@@ -490,7 +490,7 @@ func TestE2E_WorkflowApplyStatusRemove(t *testing.T) {
 
 	// wf_apply again (update, should be idempotent).
 	text = callTool(t, session, "wf_apply", map[string]any{
-		"namespace": nsName,
+		"enclave": nsName,
 		"name":      "test-app",
 		"manifests": manifests,
 	})
@@ -502,7 +502,7 @@ func TestE2E_WorkflowApplyStatusRemove(t *testing.T) {
 
 	// wf_remove
 	text = callTool(t, session, "wf_remove", map[string]any{
-		"namespace": nsName,
+		"enclave": nsName,
 		"name":      "test-app",
 	})
 	var removeResult struct {

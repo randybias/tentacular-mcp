@@ -18,7 +18,7 @@ import (
 
 // WfRunParams are the parameters for wf_run.
 type WfRunParams struct {
-	Namespace string          `json:"namespace" jsonschema:"Namespace of the workflow"`
+	Namespace string          `json:"enclave" jsonschema:"Enclave of the workflow"`
 	Name      string          `json:"name" jsonschema:"Workflow deployment name"`
 	Input     json.RawMessage `json:"input,omitempty" jsonschema:"Optional JSON input payload"`
 	TimeoutS  int             `json:"timeout_seconds,omitempty" jsonschema:"Timeout in seconds (default 120, max 600)"`
@@ -28,7 +28,7 @@ type WfRunParams struct {
 type WfRunResult struct {
 	Output     map[string]any `json:"output"`
 	Name       string         `json:"name"`
-	Namespace  string         `json:"namespace"`
+	Namespace  string         `json:"enclave"`
 	DurationMs int64          `json:"duration_ms"`
 }
 
