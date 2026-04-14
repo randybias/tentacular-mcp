@@ -391,7 +391,7 @@ func TestEnclave_MemberPermissions(t *testing.T) {
 		},
 	}
 	text := callTool(t, session, "wf_apply", map[string]any{
-		"namespace": enclaveName,
+		"enclave": enclaveName,
 		"name":      "enc-tentacle",
 		"manifests": manifests,
 	})
@@ -480,7 +480,7 @@ func TestEnclave_DeprovisionCleanup(t *testing.T) {
 		},
 	}
 	callTool(t, session, "wf_apply", map[string]any{
-		"namespace": enclaveName,
+		"enclave": enclaveName,
 		"name":      "cleanup-tentacle",
 		"manifests": manifests,
 	})
