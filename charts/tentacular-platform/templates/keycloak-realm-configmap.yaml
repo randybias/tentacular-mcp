@@ -74,7 +74,8 @@ data:
             "{{ $kcScheme }}://{{ $mcpHost }}/*"
           ],
           "webOrigins": ["+"],
-          "defaultClientScopes": ["openid", "email", "profile"]
+          "defaultClientScopes": ["openid", "email", "profile"],
+          "optionalClientScopes": ["offline_access"]
         },
         {
           "clientId": {{ .Values.keycloak.clients.kraken.clientId | default "thekraken" | quote }},

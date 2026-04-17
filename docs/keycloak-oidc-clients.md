@@ -35,12 +35,26 @@ The MCP server is a **resource server**, not an OIDC client. It validates tokens
 | standardFlowEnabled | true | Claude Code uses authorization code + PKCE |
 | directAccessGrantsEnabled | true | tntc CLI can use resource owner password grant |
 | deviceAuth | true | tntc CLI primary flow (device authorization) |
+| defaultClientScopes | `openid`, `email`, `profile` | Baseline identity claims |
+| optionalClientScopes | **`offline_access`** | REQUIRED — see "offline_access requirement" below |
 
 **Consumers:**
 - `tntc` CLI: Device authorization flow (`tntc login` opens browser, polls for token)
 - Claude Code `.mcp.json`: Authorization code + PKCE via OAuth popup (no client secret in config)
 
 **Why public:** Both consumers run on a developer's machine. A CLI binary and a browser-based OAuth popup cannot securely store a client secret. PKCE provides equivalent security for public clients.
+
+#### `offline_access` requirement
+
+The `tentacular-mcp` client **must** list `offline_access` under `optionalClientScopes`. This is not optional despite the field name — Claude Code will refuse to connect without it.
+
+**Why:** Claude Code (verified on 2.1.112) unconditionally appends `offline_access` to the authorization request whenever the auth server's discovery metadata advertises the scope in `scopes_supported`. Keycloak advertises it by default, and the append happens inside Claude Code's scope-resolution code AFTER any `oauth.scopes` override in `.mcp.json`, so the behavior cannot be worked around on the client side.
+
+If the scope is not listed on the client, Keycloak rejects the authorization request with `invalid_scope: Invalid scopes: openid email profile offline_access` and the OAuth flow dies before reaching the callback.
+
+Listing it as **optional** (not default) means Keycloak only issues a refresh token / offline token when a consumer explicitly requests the scope. We don't want to hand every caller long-lived refresh machinery if they didn't ask for it.
+
+This does NOT apply to `thekraken` (device grant, does not request `offline_access`) or `chroma` (NextAuth server-side, manages its own scope set).
 
 ### thekraken (CONFIDENTIAL)
 
@@ -86,6 +100,11 @@ Keycloak uses **PostgreSQL** for persistent storage. The realm import ConfigMap 
 
 ### "Invalid client or Invalid client credentials"
 The client is configured as confidential but the consumer is trying a public flow (no secret). Check `publicClient` on the Keycloak client. For `tentacular-mcp`, this MUST be `true`.
+
+### "invalid_scope: Invalid scopes: openid email profile offline_access"
+Claude Code requested `offline_access` but the `tentacular-mcp` client does not list it. Add `offline_access` under `optionalClientScopes` on the client. See the "offline_access requirement" section above for the full explanation. This is NOT optional for `tentacular-mcp` — Claude Code cannot be configured to skip the scope.
+
+**On a running cluster, also patch live.** The realm ConfigMap is seed-only (see Persistence Model), so editing the Helm template does not update a cluster whose realm already exists in Postgres. Apply the change via `kcadm.sh update clients/$CID/optional-client-scopes/$SCOPE_ID -r tentacular -n` inside the Keycloak pod, or via the admin console. The ConfigMap edit prevents regression on the next DB wipe; the live patch fixes the running cluster.
 
 ### "Invalid refresh token" / token expiry
 Token lifespans are set at the realm level:
