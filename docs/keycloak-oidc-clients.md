@@ -52,7 +52,7 @@ The `tentacular-mcp` client **must** list `offline_access` under `optionalClient
 
 If the scope is not listed on the client, Keycloak rejects the authorization request with `invalid_scope: Invalid scopes: openid email profile offline_access` and the OAuth flow dies before reaching the callback.
 
-Listing it as **optional** (not default) means the scope is only included in tokens when a consumer explicitly requests it — we do not want every access token to carry a refresh-token side channel for consumers that don't need one.
+Listing it as **optional** (not default) means Keycloak only issues a refresh token / offline token when a consumer explicitly requests the scope. We don't want to hand every caller long-lived refresh machinery if they didn't ask for it.
 
 This does NOT apply to `thekraken` (device grant, does not request `offline_access`) or `chroma` (NextAuth server-side, manages its own scope set).
 
@@ -103,6 +103,8 @@ The client is configured as confidential but the consumer is trying a public flo
 
 ### "invalid_scope: Invalid scopes: openid email profile offline_access"
 Claude Code requested `offline_access` but the `tentacular-mcp` client does not list it. Add `offline_access` under `optionalClientScopes` on the client. See the "offline_access requirement" section above for the full explanation. This is NOT optional for `tentacular-mcp` — Claude Code cannot be configured to skip the scope.
+
+**On a running cluster, also patch live.** The realm ConfigMap is seed-only (see Persistence Model), so editing the Helm template does not update a cluster whose realm already exists in Postgres. Apply the change via `kcadm.sh update clients/$CID/optional-client-scopes/$SCOPE_ID -r tentacular -n` inside the Keycloak pod, or via the admin console. The ConfigMap edit prevents regression on the next DB wipe; the live patch fixes the running cluster.
 
 ### "Invalid refresh token" / token expiry
 Token lifespans are set at the realm level:
