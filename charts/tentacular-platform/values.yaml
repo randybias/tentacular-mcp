@@ -224,6 +224,10 @@ exoskeletonAuth:
   clientID: ""
   # -- OIDC client secret
   clientSecret: ""
+  # -- Additional OIDC client IDs whose tokens the MCP server will accept.
+  # The clientID above is always trusted. Add other clients (e.g. "thekraken")
+  # as a comma-separated list when multiple services share the same Keycloak realm.
+  trustedAZPs: ""
 
 # -- esm-sh module proxy configuration
 esm-sh:
