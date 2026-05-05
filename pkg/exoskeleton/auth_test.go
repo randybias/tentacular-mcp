@@ -272,6 +272,47 @@ func TestNewOIDCValidator_MissingClientID(t *testing.T) {
 	}
 }
 
+// TestOIDCValidator_EmptySubjectRejected verifies that tokens with an empty or
+// missing "sub" claim are rejected. An empty Subject would propagate to
+// DeployerInfo.Subject="" which then gets stamped as owner_sub="" on enclaves,
+// creating an RBAC hazard (empty-vs-empty false match on sub comparisons).
+func TestOIDCValidator_EmptySubjectRejected(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	srv := testKeycloakServer(t, key)
+	defer srv.Close()
+
+	validator, err := NewOIDCValidator(AuthConfig{
+		Enabled:   true,
+		IssuerURL: srv.URL,
+		ClientID:  "tentacular-mcp",
+	})
+	if err != nil {
+		t.Fatalf("create validator: %v", err)
+	}
+
+	now := time.Now()
+	claims := map[string]any{
+		"iss":   srv.URL,
+		"aud":   "tentacular-mcp",
+		"sub":   "", // empty sub — should be rejected
+		"email": "user@example.com",
+		"azp":   "tentacular-mcp",
+		"iat":   jwt.NewNumericDate(now),
+		"exp":   jwt.NewNumericDate(now.Add(time.Hour)),
+	}
+
+	token := signToken(t, key, claims)
+
+	_, err = validator.ValidateToken(context.Background(), token)
+	if err == nil {
+		t.Error("expected error for token with empty sub claim, got nil")
+	}
+}
+
 func TestDetermineProvider(t *testing.T) {
 	tests := []struct {
 		name     string

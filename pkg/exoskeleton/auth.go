@@ -109,6 +109,12 @@ func (v *OIDCValidator) ValidateToken(ctx context.Context, tokenString string) (
 		return nil, fmt.Errorf("OIDC token azp %q is not a trusted client (expected one of %v)", claims.AZP, v.trustedAZPs)
 	}
 
+	// The OIDC spec requires "sub" in all tokens. An empty subject is a
+	// malformed token — reject it so callers never see Subject="".
+	if idToken.Subject == "" {
+		return nil, errors.New("OIDC token missing required sub claim")
+	}
+
 	provider := determineProvider(claims)
 
 	displayName := claims.Name
