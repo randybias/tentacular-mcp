@@ -174,6 +174,12 @@ func registerEnclaveTools(srv *mcp.Server, client *k8s.Client, exoCtrl *exoskele
 			if deployer.Email == "" {
 				return nil, EnclaveProvisionResult{}, errors.New("permission denied: OIDC caller has no email claim; cannot provision enclave")
 			}
+			// C2-sub: Require a non-empty OIDC subject. An empty subject would
+			// silently store owner_sub="" which breaks any future sub-based authz
+			// and creates empty-vs-empty false matches. Fail closed.
+			if deployer.Subject == "" {
+				return nil, EnclaveProvisionResult{}, errors.New("permission denied: OIDC caller has no subject claim; cannot provision enclave")
+			}
 			params.OwnerEmail = deployer.Email
 			params.OwnerSub = deployer.Subject
 		}

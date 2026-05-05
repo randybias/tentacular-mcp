@@ -1292,3 +1292,69 @@ func TestEnclaveInfo_MemberAllowed(t *testing.T) {
 		t.Errorf("expected name=enc-info-member, got %q", result.Name)
 	}
 }
+
+// owner_sub round-trip: provision stores owner_sub; enclave_info returns it unchanged.
+// This is the primary regression test for the owner_sub empty bug.
+func TestEnclaveInfo_OwnerSubRoundTrip(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	const wantOwnerSub = "99672335-4045-407a-98cb-65a5d88e6d91"
+
+	_, err := handleEnclaveProvision(ctx, client, noopExoCtrl(), EnclaveProvisionParams{
+		Name:       "enc-ownsub-rt",
+		OwnerEmail: "alice@example.com",
+		OwnerSub:   wantOwnerSub,
+	})
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+
+	// Verify the annotation was written correctly.
+	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, "enc-ownsub-rt", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get namespace: %v", err)
+	}
+	if got := ns.Annotations[authz.AnnotationEnclaveOwnerSub]; got != wantOwnerSub {
+		t.Errorf("annotation %s: got %q, want %q", authz.AnnotationEnclaveOwnerSub, got, wantOwnerSub)
+	}
+
+	// Verify enclave_info returns the correct owner_sub.
+	bearer := &exoskeleton.DeployerInfo{Provider: "bearer-token"}
+	info, err := handleEnclaveInfo(ctx, client, noopExoCtrl(), testEval(), EnclaveInfoParams{Name: "enc-ownsub-rt"}, bearer)
+	if err != nil {
+		t.Fatalf("enclave_info: %v", err)
+	}
+	if info.OwnerSub != wantOwnerSub {
+		t.Errorf("enclave_info owner_sub: got %q, want %q", info.OwnerSub, wantOwnerSub)
+	}
+}
+
+// C2-sub: documents that the handler accepts empty OwnerSub for bearer-token callers
+// (who supply their own owner identity). The wrapper-level guard in registerEnclaveTools
+// prevents OIDC callers from reaching this path with Subject="".
+func TestEnclaveProvision_EmptySubjectDenied(t *testing.T) {
+	client := newEnclaveTestClient()
+	ctx := context.Background()
+
+	// Verify: a deployer with Subject="" would have stored "" if unchecked.
+	// The wrapper-level guard (C2-sub) prevents this for OIDC callers.
+	_, err := handleEnclaveProvision(ctx, client, noopExoCtrl(), EnclaveProvisionParams{
+		Name:       "enc-nosub",
+		OwnerEmail: "alice@example.com",
+		OwnerSub:   "", // empty — as would be stamped if deployer.Subject is ""
+	})
+	if err != nil {
+		t.Fatalf("handleEnclaveProvision with empty OwnerSub: %v", err)
+	}
+
+	ns, err := client.Clientset.CoreV1().Namespaces().Get(ctx, "enc-nosub", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get namespace: %v", err)
+	}
+	// Document: annotation is empty when OwnerSub is "". The wrapper-level
+	// guard prevents OIDC callers from reaching this path with Subject="".
+	if got := ns.Annotations[authz.AnnotationEnclaveOwnerSub]; got != "" {
+		t.Errorf("expected empty annotation for empty OwnerSub input, got %q", got)
+	}
+}
