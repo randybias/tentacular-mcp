@@ -515,6 +515,19 @@ func handleWorkflowApply(ctx context.Context, client *k8s.Client, params Workflo
 	// Ensure all workload manifests have PSA-compliant security contexts.
 	ensurePSACompliance(params.Manifests)
 
+	// Validate the (post-compliance) manifests against the namespace's PSA
+	// enforce policy before touching the API server. This catches hand-rolled
+	// specs that bypass tntc deploy and would be rejected by admission, giving
+	// the caller a structured error instead of a 60-second timeout + misleading
+	// "Deployed" message.
+	psaLevel, psaErr := k8s.NamespacePSALevel(ctx, client, params.Namespace)
+	if psaErr != nil {
+		return WorkflowApplyResult{}, psaErr
+	}
+	if err := k8s.ValidatePSA(params.Namespace, psaLevel, params.Manifests); err != nil {
+		return WorkflowApplyResult{}, err
+	}
+
 	created, updated, deleted := 0, 0, 0
 	appliedKeys := make(map[string]bool)
 
