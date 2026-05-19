@@ -504,6 +504,14 @@ func handleEnclaveList(ctx context.Context, client *k8s.Client, _ *authz.Evaluat
 
 	items := make([]EnclaveListItem, 0)
 	for _, ns := range namespaces {
+		// Skip terminating namespaces — enclave_deprovision triggers deletion
+		// but the namespace lingers in Terminating phase until all finalizers
+		// clear. Returning them confuses callers (Chroma, Kraken) that expect
+		// only active enclaves.
+		if ns.Status.Phase == "Terminating" {
+			continue
+		}
+
 		ann := ns.Annotations
 		if ann == nil {
 			ann = map[string]string{}
