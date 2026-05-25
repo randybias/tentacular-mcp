@@ -142,8 +142,11 @@ exoskeletonAuth:
   # Required keys: issuer-url, client-id, client-secret.
   existingSecret: ""
   # -- Comma-separated list of additional OIDC client IDs whose tokens
-  # are accepted (e.g. "thekraken" for service-to-service auth).
-  trustedAZPs: ""
+  # are accepted. Defaults to "thekraken,tntc" so the Slack bot and CLI
+  # (the first-party clients that authenticate users against MCP) work out
+  # of the box. Override with a different list when additional or different
+  # clients need to be trusted.
+  trustedAZPs: "thekraken,tntc"
 
 # -- Exoskeleton configuration for backing-service registration.
 exoskeleton:
