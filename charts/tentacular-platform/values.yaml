@@ -225,9 +225,12 @@ exoskeletonAuth:
   # -- OIDC client secret
   clientSecret: ""
   # -- Additional OIDC client IDs whose tokens the MCP server will accept.
-  # The clientID above is always trusted. Add other clients (e.g. "thekraken")
-  # as a comma-separated list when multiple services share the same Keycloak realm.
-  trustedAZPs: ""
+  # The clientID above is always trusted. Defaults to "thekraken,tntc" so
+  # tokens from the Slack bot and CLI are accepted out of the box — these
+  # are the first-party clients that authenticate users against MCP.
+  # Override with a different comma-separated list when additional or
+  # different clients need to be trusted.
+  trustedAZPs: "thekraken,tntc"
 
 # -- esm-sh module proxy configuration
 esm-sh:
